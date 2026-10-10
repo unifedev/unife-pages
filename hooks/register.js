@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.2.0",
+  pluginVersion: "0.2.1",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -27,7 +27,8 @@ var state = {
   settingsChain: Promise.resolve(),
   ownSwitch: null,
   commandOutput: [],
-  commandWaiter: null
+  commandWaiter: null,
+  reasoningLevel: null
 };
 async function homeFor($) {
   if (state.home) return state.home;
@@ -425,6 +426,7 @@ function handle($, line) {
         void $.session.messages().then((rows) => post($, "backfill", rows)).catch((e) => $.ui.log(`unife-pages: backfill failed: ${e.message}`, { to: "debug" }));
       }
       void post($, "state", { state: state.turnId ? "working" : "idle", ...state.turnId ? { turnId: state.turnId } : {}, atMs: Date.now() });
+      void postSettings($);
       if (state.contributors.size) void reregister($, state.contributors);
       return;
     }
@@ -469,6 +471,26 @@ function handle($, line) {
       return;
   }
 }
+async function postSettings($) {
+  const body = {};
+  try {
+    const alias = (await $.config.list()).find((c) => c.key === "model")?.value;
+    if (typeof alias === "string" && alias) body.model = alias;
+  } catch {
+  }
+  try {
+    const id = await $.session.model();
+    if (typeof id === "string" && id) body.modelId = id;
+  } catch {
+  }
+  if (state.reasoningLevel) body.reasoningLevel = state.reasoningLevel;
+  if (!Object.keys(body).length) return;
+  try {
+    await post($, "settings", body);
+  } catch (e) {
+    $.ui.log(`unife-pages: settings report failed: ${e.message}`, { to: "debug" });
+  }
+}
 function enqueueSettings($, delivery) {
   state.settingsChain = state.settingsChain.then(() => submitWithSettings($, delivery)).catch(() => void 0);
 }
@@ -484,15 +506,24 @@ function directText(answer) {
   return answer && typeof answer === "object" && typeof answer.text === "string" ? answer.text.trim() : null;
 }
 function noteCommandOutput(e, nowMs = Date.now()) {
-  if (e.door !== "command") return;
+  if (e.door !== "command") return false;
   const blocks = Array.isArray(e.message?.content) ? e.message.content : [];
   const text = typeof e.message?.content === "string" ? e.message.content : blocks.filter((b) => b && typeof b.text === "string").map((b) => b.text).join("\n");
   const m = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
-  if (!m) return;
+  if (!m) return false;
   const line = m[1].trim();
   state.commandOutput.push({ text: line, atMs: nowMs });
   if (state.commandOutput.length > 8) state.commandOutput.shift();
   state.commandWaiter?.(line);
+  return noteSettingLine(line);
+}
+function noteSettingLine(line) {
+  const effort = /^Set effort level to (\S+)/.exec(line);
+  if (effort) {
+    state.reasoningLevel = effort[1];
+    return true;
+  }
+  return /^Set model to /.test(line);
 }
 async function commandLine($, answer, command, sinceMs) {
   const direct = directText(answer);
@@ -547,6 +578,7 @@ async function submitWithSettings($, delivery) {
     } finally {
       state.ownSwitch = null;
     }
+    if (failure === null && field === "reasoningLevel") state.reasoningLevel = value;
     if (failure !== null) {
       const reason = `/${command} ${value}: ${failure}`;
       $.ui.log(`unife-pages: a reply from your page was not delivered \u2014 ${reason}`);
@@ -561,6 +593,7 @@ async function submitWithSettings($, delivery) {
       return;
     }
   }
+  void postSettings($);
   $.ui.toast("Answer from your page");
   try {
     await $.prompt.submit({ text, asUser: true });
@@ -576,7 +609,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.2.0";
+var PLUGIN_VERSION = "0.2.1";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -637,6 +670,7 @@ function register(on) {
     state.turnId = null;
     await flushChunks($);
     void post($, "state", { state: "idle", ...turnId ? { turnId } : {}, ...e.reason ? { reason: e.reason } : {}, atMs: Date.now() });
+    void postSettings($);
     if (state.held.length) flushHeld($);
     return next(e);
   });
@@ -662,7 +696,7 @@ function register(on) {
     return result;
   });
   on("session.append", async ($, e, next) => {
-    noteCommandOutput(e);
+    if (noteCommandOutput(e)) void postSettings($);
     const r = await next(e);
     await sendRow($, e);
     return r;

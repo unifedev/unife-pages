@@ -1,8 +1,99 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 81d752f): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 5137b61): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.10.1 (bb plugin) — 2026-10-10
+
+The bb plugin's release of the 0.2.1 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.10.1`; the marketplace entry's range `^1.3.1` reaches
+it). What changes for bb is U50: `context.get`'s `session.settings` carries the thread's current model, reasoning
+level and permission mode as provider ids, read from `threads.defaultExecutionOptions` on `sessions.get`; snapshot
+rows carry no `settings` (one SDK call per row per poll is not paid). Review: `reviews/current-settings.md`. Root
+`pnpm check` on `main` after the merge (`175a86b`): 101 files, 671 tests passed, 1 skipped.
+
+## 0.2.1 — 2026-10-10
+
+One decision of the owner's (U50, from owner test 4 finding 5: "always my reasoning") in the protocol
+`bartsoj/unife-pages` (spec 03 R-C10 and R5.11d, 04 R6.24, 06 R-P2, 08 A191), on branch `current-settings`, reviewed
+in `reviews/current-settings.md` (`fb73724`: ship-after CS-1, CS-2; after `b942da6` with CS-1…CS-4 applied: ship) and
+merged as `175a86b`. `PROTOCOL_VERSION` stays 1: the new field is optional on both reads. Root `pnpm check` on the
+merge: 101 files, 671 tests passed, 1 skipped.
+
+### Added
+
+- **A page reads the session's current settings (U50).** `context.get`'s `session` gains `settings?: { model?,
+  reasoningLevel?, permissionMode? }` and `sessions.snapshot` rows the same field: the session's current values as the
+  host knows them, in the ids `providers.list` uses; a field the host cannot tell is absent, never guessed. The guide's
+  "Settings for the next turn" tells a composer to start from them. `SessionRecord.settings?` on the provider contract
+  (06 R-P2); `knownSettings` in `@unifedev/pages-core`'s `serving/bridge/handlers/settings.ts` bounds what is
+  projected. On **bb**, `sessions.get` reads
+  `threads.defaultExecutionOptions` for all three (snapshot rows carry none: one SDK call per row per poll is not
+  paid). On **Claude Code**, the mod reports the model (`$.config.list()`'s alias, `$.session.model()`'s id) and the
+  effort from the `Set effort level to …` line any `/effort` prints — the person's in the terminal or its own — at
+  hello, on every such line and at each turn's end; the daemon maps them to the roster's ids (an alias the roster
+  cannot express, `opus[1m]` or `opusplan`, leaves `model` absent); `permissionMode` is never reported (the only
+  config row is the person's default, not the session's mode — probe on 2.1.296, `claude-pages/NOTES.md` "Current
+  settings"). The guide: a composer starts from `session.settings`; a field absent there starts with no value
+  chosen and travels only when the reader picks one.
+
+### Fixed
+
+- **CS-1 — the person's `/effort` line reaches the record (Claude Code).** The mod took `reasoningLevel` only from its
+  own `/effort` run, so a level a page had set stayed reported after the person typed `/effort low` in the terminal —
+  the inversion U50 was decided against. Now `noteSettingLine` in `claude-pages/src/mod/bridge-loop.ts` reads every
+  `Set effort level to <level>` command-door line, whoever ran the command, and the `session.append` hook posts the
+  settings at once on a `Set effort…` or `Set model…` line (the model line only triggers the re-read of
+  `$.config.list()` / `$.session.model()`; nothing is parsed from its display name). `/effort auto` leaves the level
+  absent (not a roster id).
+- **CS-2 — no default stands in for an absent field.** The guide (`@unifedev/pages-core` `agent/guide.ts`, pinned in
+  `guide.test.ts`), spec 04 R6.24 and the Claude host statement XC15 now say: a field absent from `session.settings`
+  starts with no value chosen — an "as it is now" choice or the control left blank — and the reply carries it only when
+  the reader picks a value; never a list's first id, never the provider's `default` (`reasoningLevels` carry none).
+- **CS-3 — an alias the roster cannot express leaves `model` absent** (`claude-pages/src/daemon/providers.ts`):
+  `opus[1m]`, `opusplan`, `best` and a bare `[1m]` id no longer label the session with its 200k family; the plain full
+  id's family is used only for `default` or no alias.
+
+### `@unifedev/pages-core`
+
+- `PAGES_CORE_VERSION` 0.2.1. `domain/capabilities/specs.ts` (the optional `settings` on `context.get`'s session and on
+  snapshot rows), `host/provider.ts` and `host/index.ts` (`SessionRecord.settings`, the `SessionSettings` type),
+  `serving/bridge/handlers/context.ts`, `handlers/sessions.ts`, `handlers/settings.ts` (`knownSettings`),
+  `agent/guide.ts`. Tests: `test/serving/bridge.test.ts`, `test/agent/guide.test.ts`.
+
+### `@unifedev/claude-pages`
+
+- Plugin 0.2.1 (`plugin.json`, `PLUGIN_VERSION`). The mod's `postSettings` (`src/mod/bridge-loop.ts`, `register.ts`,
+  `state.ts`; `shared/protocol.ts` `SettingsBody`) and the daemon's `/v1/sessions/:id/settings` route under the
+  session's bearer (`daemon/control/api.ts`), `currentSettings` mapping to roster ids (`daemon/providers.ts`), the
+  registry entry and `toRecord` (`daemon/registry.ts`, `daemon.ts`). DESIGN §C "Current settings", D-C14; NOTES
+  "Current settings" with the 2.1.296 probe. Tests: `test/mod/mod.test.ts` "reports the current settings",
+  `test/daemon/control.test.ts` "settings report (U50)". Bundles rebuilt.
+
+## 1.10.0 (bb plugin) — 2026-10-10
+
+The bb plugin's release of the 0.2.0 tree below, under the released identity: package `@unifedev/thread-pages`, plugin
+id `thread-pages`, display name "Thread Pages", repository `unifedev/bb-thread-pages`, the Community marketplace entry
+`thread-pages`. The owner's decision (`unife-bb-plugin/docs/DECISIONS.md` D47): the switch from the 1.9.0
+implementation to this one is a **plugin update** with no backward compatibility, and the version is **1.10.0** —
+a minor, so that the marketplace entry's range `^1.3.1` reaches it without a marketplace PR — although the release is
+breaking for everything but the pages themselves. Root `pnpm check` on the branch: 102 files, 666 tests passed, 1 skipped. Nothing in `@unifedev/pages-core` or `@unifedev/claude-pages` changes in this release.
+
+### Breaking
+
+- **1.9.0 → 1.10.0 is a different implementation under the same id.** Kept: the pages (`$BB_THREAD_STORAGE/index.html`
+  is a file), the five settings by name and value (an unedited 1.9 instruction text reads as the built-in one), the
+  contributor RPC methods and the caller id. Gone: `bb thread-page` (the command is `bb pages`), the bar and every
+  bar-era behaviour (0.2.0 Breaking below), the `homeSessionId` setting (the home designation is `bb pages home`), and
+  every kv row 1.9 wrote: offline copies (`cache:*`), storage pages (`state:*`), grants (`grants:v1`) and the signing
+  key (`signing-key:v3`) are **deleted once on the first start** by `src/migrate.ts`, guarded by the marker
+  `pages-core:migrated-from:thread-pages-1`, with one `info` line giving the count; `pages-core:*` is never touched. A
+  reader is asked for embed grants again once; a page's `storage` starts empty; a link 1.9 minted is re-minted on load.
+- **The seed placeholder is `{title}`.** A `pageSeedHtml` from 1.9 carries over by value, but 1.9's `{{TITLE}}` and
+  `{{DATE}}` now render literally: edit the seed to `{title}`; there is no date placeholder. A seed equal to one of
+  1.0.3–1.2.0's shipped defaults reads as "no seed", like an instruction text equal to a shipped default reads as the
+  built-in text (`PAST_SEED_DEFAULTS`, `PAST_INSTRUCTION_DEFAULTS` in `src/settings.ts`: all of 1.9's hashes carried).
 
 ## 0.2.0 — 2026-10-09
 

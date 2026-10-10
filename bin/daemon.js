@@ -2263,6 +2263,7 @@ var SETTING_FIELDS = ["model", "reasoningLevel", "permissionMode"];
 var settingScope = literal(SETTING_SCOPES, "Scope");
 var settingScopes = object({ model: optional(settingScope), reasoningLevel: optional(settingScope), permissionMode: optional(settingScope) }, "Settings");
 var replySettings = object({ model: optional(safeName("Model id")), reasoningLevel: optional(safeName("Reasoning level", 64)), permissionMode: optional(safeName("Permission mode", 64)) }, "Settings");
+var sessionSettings = replySettings;
 var replyDeliveryResult = object({ delivery, duplicate: boolean(), settings: optional(settingScopes) });
 var DECISIONS = ["allow_once", "allow_for_session", "deny"];
 var APPROVAL_SUBJECTS = ["tool", "command", "file_change", "permission", "plan", "other"];
@@ -2334,15 +2335,15 @@ var contextGet = spec({
   validateResult: result(
     object({
       protocolVersion: literal([1]),
-      session: nullable(object({ id: entityId("Session id"), title: title(), workspaceId: entityId("Workspace id") })),
+      session: nullable(object({ id: entityId("Session id"), title: title(), workspaceId: entityId("Workspace id"), settings: optional(sessionSettings) })),
       page: object({ revision, readOnly: boolean() }),
       capabilities: array(rosterEntry, 512)
     })
   ),
   doc: {
     params: "None.",
-    result: "`{ protocolVersion: 1, session: { id, title, workspaceId } | null, page: { revision, readOnly }, capabilities: [{ method, effect, confirmation, maxRequestBytes, maxResponseBytes, contributor?, description?, reasons? }] }`. `confirmation` is `none`, `required`, or `grant` (asked once per session pair, then remembered). `session` is `null` on the built-in home page. `page.readOnly` is true for an offline copy and for an archived session's page.",
-    notes: "The roster lists what is actually enabled, contributed capabilities included; check it rather than assume."
+    result: "`{ protocolVersion: 1, session: { id, title, workspaceId, settings? } | null, page: { revision, readOnly }, capabilities: [{ method, effect, confirmation, maxRequestBytes, maxResponseBytes, contributor?, description?, reasons? }] }`. `confirmation` is `none`, `required`, or `grant` (asked once per session pair, then remembered). `session` is `null` on the built-in home page. `session.settings` is `{ model?, reasoningLevel?, permissionMode? }` \u2014 this session's current values as the host knows them, in the ids `providers.list` uses; a field the host cannot tell is absent, never guessed. `page.readOnly` is true for an offline copy and for an archived session's page.",
+    notes: "The roster lists what is actually enabled, contributed capabilities included; check it rather than assume. A composer that offers `session.reply { settings }` starts from `session.settings`, so the reader's current choice is the preselected one."
   }
 });
 var activityItem = object({
@@ -2492,7 +2493,8 @@ var sessionRow = object({
   startedAtMs: timestamp,
   turnEndedAtMs: nullable(timestamp),
   unread: optional(boolean()),
-  attentionAtMs: optional(timestamp)
+  attentionAtMs: optional(timestamp),
+  settings: optional(sessionSettings)
 });
 var snapshotParams = renamingKey(
   object({
@@ -2516,7 +2518,7 @@ var sessionsSnapshot = spec({
   validateResult: result(object({ sessions: array(sessionRow, LIMITS.snapshotMax), nextCursor: nullable(cursor), generatedAtMs: timestamp })),
   doc: {
     params: `\`{ workspaceId?, includeArchived?, includeChildren?, limit?, cursor? }\` \u2014 \`limit\` 1 to ${LIMITS.snapshotMax}, default ${LIMITS.snapshotDefault}, over it \`invalid_params\`; pass the previous result's \`nextCursor\` to continue. By default only root sessions are listed; \`includeChildren: true\` adds sub-agent sessions. \`projectId\` is accepted for \`workspaceId\`.`,
-    result: "`{ sessions: [{ id, title, workspaceId, parentSessionId, state, status, waiting, archived, page: { available, revision }, updatedAtMs, startedAtMs, turnEndedAtMs, unread?, attentionAtMs? }], nextCursor, generatedAtMs }`. `status` repeats `state` for 0.x readers. `waiting` is as `session.activity` reports it. `page.revision` is known for pages this host served recently and null otherwise.",
+    result: "`{ sessions: [{ id, title, workspaceId, parentSessionId, state, status, waiting, archived, page: { available, revision }, updatedAtMs, startedAtMs, turnEndedAtMs, unread?, attentionAtMs?, settings? }], nextCursor, generatedAtMs }`. `status` repeats `state` for 0.x readers. `waiting` is as `session.activity` reports it. `page.revision` is known for pages this host served recently and null otherwise. `settings` is `{ model?, reasoningLevel?, permissionMode? }`, the session's current values where this host knows them (ids as `providers.list`); absent otherwise.",
     notes: "No message bodies are included; the one piece of agent output is `waiting`. The transcript is `sessions.messages`."
   }
 });
@@ -13366,7 +13368,20 @@ decision; \`model\` and \`reasoningLevel\` are not.
 scope is \`turn\` holds for this one answer: say \u201Cfor this answer\u201D. One
 whose scope is \`session\` holds from now on, until something changes it
 again: say \u201Cfrom now on\u201D. A field the roster leaves out cannot be changed
-mid-session on this host: do not draw a control for it.`;
+mid-session on this host: do not draw a control for it.
+
+**Start from the session's current values.** \`context.get\` answers
+\`session.settings: { model?, reasoningLevel?, permissionMode? }\` \u2014 what this
+session runs on now, as the host knows it, in the same ids \`providers.list\`
+uses; a field the host cannot tell is absent, never guessed. Preselect those
+in your composer, so a reply that does not change anything sends nothing
+under \`settings\`. **A field absent there starts with no value chosen** \u2014 an
+\u201Cas it is now\u201D choice, or the control left blank \u2014 and the reply carries that
+field only when the reader picks a value; never fill it from the first id in
+a list, and never from the provider's \`default\` (that flag says what a new
+session gets, and \`reasoningLevels\` carry none; the control may name it as
+that, not as the selection). Rows of \`sessions.snapshot\` carry the same
+\`settings\` where the host knows them.`;
   if (!provider) return `${head}
 
 On this host no provider is listed, so \`settings\` has nothing to name: a reply that carries it is \`settings_unsupported\`.`;
@@ -15154,6 +15169,72 @@ function checkFilesFit(head, files) {
   fitSummary(head, files);
 }
 
+// ../pages-core/src/serving/bridge/handlers/settings.ts
+function namedSettings(settings) {
+  if (!settings) return [];
+  return SETTING_FIELDS.filter((field) => settings[field] !== void 0);
+}
+var SETTING_VALUE_MAX = { model: 160, reasoningLevel: 64, permissionMode: 64 };
+function knownSettings(record) {
+  const given = record.settings;
+  if (!given) return void 0;
+  const out = {};
+  for (const field of SETTING_FIELDS) {
+    const value = given[field];
+    if (typeof value === "string" && value.length > 0 && value.length <= SETTING_VALUE_MAX[field] && !/[\u0000-\u001f\u007f]/.test(value)) out[field] = value;
+  }
+  return Object.keys(out).length > 0 ? out : void 0;
+}
+function providerOf(record, choices) {
+  if (record.providerId !== void 0) return choices.find((choice) => choice.id === record.providerId) ?? null;
+  return choices.find((choice) => choice.default) ?? choices[0] ?? null;
+}
+async function checkReplySettings(ctx, record, settings) {
+  const named = namedSettings(settings);
+  if (!settings || named.length === 0) return null;
+  const providers = ctx.provider.providers;
+  if (!providers) throw settingsUnsupported(named);
+  let choices;
+  try {
+    choices = await providers.list();
+  } catch (error) {
+    throw mapProviderError(error, ctx.log, "providers.list");
+  }
+  const provider = providerOf(record, choices);
+  if (!provider) throw settingsUnsupported(named);
+  const unsupported = [];
+  const scopes = {};
+  let permissionModeLabel = null;
+  for (const field of named) {
+    const scope = provider.settings[field];
+    const value = settings[field];
+    let listed = false;
+    if (scope !== void 0) {
+      if (field === "model") listed = provider.models.some((model) => model.id === value);
+      else if (field === "permissionMode") {
+        const mode = provider.permissionModes?.find((candidate) => candidate.id === value);
+        listed = mode !== void 0;
+        permissionModeLabel = mode?.displayName ?? null;
+      } else {
+        const chosen = settings.model !== void 0 ? provider.models.find((model) => model.id === settings.model) : void 0;
+        const levels = chosen?.reasoningLevels ?? provider.reasoningLevels ?? [];
+        listed = levels.some((level) => level.id === value);
+      }
+    }
+    if (scope === void 0 || !listed) unsupported.push(field);
+    else scopes[field] = scope;
+  }
+  if (unsupported.length) throw settingsUnsupported(unsupported);
+  return { provider, scopes, permissionModeLabel };
+}
+function permissionModeSummary(record, settings, checked) {
+  const mode = settings.permissionMode;
+  if (mode === void 0 || checked.scopes.permissionMode === void 0) throw new PageError("invalid_params", "No permission mode to confirm");
+  const label = checked.permissionModeLabel && checked.permissionModeLabel !== mode ? `${quoted(checked.permissionModeLabel, 64)} (${quotable(mode, 64)})` : `\u201C${quotable(mode, 64)}\u201D`;
+  const holds = checked.scopes.permissionMode === "turn" ? "for this one answer" : "from now on, for the rest of the session";
+  return `Set the permission mode of \u201C${quotable(boundTitle(record.title)) || "untitled"}\u201D (${record.id}) to ${label} ${holds}?`;
+}
+
 // ../pages-core/src/serving/bridge/handlers/context.ts
 var contextGet2 = handler({
   method: "context.get",
@@ -15164,13 +15245,17 @@ var contextGet2 = handler({
     return {
       result: {
         protocolVersion: 1,
-        session: session.workspaceId === null ? null : { id: session.id, title: boundTitle(session.title), workspaceId: session.workspaceId },
+        session: session.workspaceId === null ? null : { id: session.id, title: boundTitle(session.title), workspaceId: session.workspaceId, ...settingsOf(session) },
         page: { revision: page2.revision, readOnly: page2.stale || page2.archived },
         capabilities: capabilities2
       }
     };
   }
 });
+function settingsOf(session) {
+  const settings = knownSettings(session);
+  return settings ? { settings } : {};
+}
 
 // ../pages-core/src/serving/bridge/handlers/navigation.ts
 var pagesOpen2 = handler({
@@ -15776,61 +15861,6 @@ async function readTranscript(ctx, session, params2) {
   };
 }
 
-// ../pages-core/src/serving/bridge/handlers/settings.ts
-function namedSettings(settings) {
-  if (!settings) return [];
-  return SETTING_FIELDS.filter((field) => settings[field] !== void 0);
-}
-function providerOf(record, choices) {
-  if (record.providerId !== void 0) return choices.find((choice) => choice.id === record.providerId) ?? null;
-  return choices.find((choice) => choice.default) ?? choices[0] ?? null;
-}
-async function checkReplySettings(ctx, record, settings) {
-  const named = namedSettings(settings);
-  if (!settings || named.length === 0) return null;
-  const providers = ctx.provider.providers;
-  if (!providers) throw settingsUnsupported(named);
-  let choices;
-  try {
-    choices = await providers.list();
-  } catch (error) {
-    throw mapProviderError(error, ctx.log, "providers.list");
-  }
-  const provider = providerOf(record, choices);
-  if (!provider) throw settingsUnsupported(named);
-  const unsupported = [];
-  const scopes = {};
-  let permissionModeLabel = null;
-  for (const field of named) {
-    const scope = provider.settings[field];
-    const value = settings[field];
-    let listed = false;
-    if (scope !== void 0) {
-      if (field === "model") listed = provider.models.some((model) => model.id === value);
-      else if (field === "permissionMode") {
-        const mode = provider.permissionModes?.find((candidate) => candidate.id === value);
-        listed = mode !== void 0;
-        permissionModeLabel = mode?.displayName ?? null;
-      } else {
-        const chosen = settings.model !== void 0 ? provider.models.find((model) => model.id === settings.model) : void 0;
-        const levels = chosen?.reasoningLevels ?? provider.reasoningLevels ?? [];
-        listed = levels.some((level) => level.id === value);
-      }
-    }
-    if (scope === void 0 || !listed) unsupported.push(field);
-    else scopes[field] = scope;
-  }
-  if (unsupported.length) throw settingsUnsupported(unsupported);
-  return { provider, scopes, permissionModeLabel };
-}
-function permissionModeSummary(record, settings, checked) {
-  const mode = settings.permissionMode;
-  if (mode === void 0 || checked.scopes.permissionMode === void 0) throw new PageError("invalid_params", "No permission mode to confirm");
-  const label = checked.permissionModeLabel && checked.permissionModeLabel !== mode ? `${quoted(checked.permissionModeLabel, 64)} (${quotable(mode, 64)})` : `\u201C${quotable(mode, 64)}\u201D`;
-  const holds = checked.scopes.permissionMode === "turn" ? "for this one answer" : "from now on, for the rest of the session";
-  return `Set the permission mode of \u201C${quotable(boundTitle(record.title)) || "untitled"}\u201D (${record.id}) to ${label} ${holds}?`;
-}
-
 // ../pages-core/src/serving/bridge/handlers/session.ts
 function own(context) {
   if (context.session.workspaceId === null) throw new PageError("unknown_method", "The built-in home page has no session");
@@ -15952,13 +15982,18 @@ var sessionsSnapshot2 = handler({
           startedAtMs: record.startedAtMs,
           turnEndedAtMs: record.turnEndedAtMs,
           ...record.unread !== void 0 ? { unread: record.unread } : {},
-          ...record.attentionAtMs !== void 0 ? { attentionAtMs: record.attentionAtMs } : {}
+          ...record.attentionAtMs !== void 0 ? { attentionAtMs: record.attentionAtMs } : {},
+          ...settingsRow(record)
         };
       })
     );
     return { result: { sessions, nextCursor: listed.nextCursor !== null ? encodeCursor(caller, listed.nextCursor, serving.signingKey) : null, generatedAtMs: serving.now() } };
   }
 });
+function settingsRow(record) {
+  const settings = knownSettings(record);
+  return settings ? { settings } : {};
+}
 var sessionsMessages2 = handler({
   method: "sessions.messages",
   /** Any session the snapshot would list, children and forks included; the writes below keep `targetSession`. 03 R-C4 */
@@ -18560,6 +18595,18 @@ var PROVIDERS = [{
   ],
   settings: { model: "session", reasoningLevel: "session" }
 }];
+var MODEL_FAMILY_RE = /^claude-(opus|sonnet|haiku)-[^[\]]*$/;
+function currentSettings(body, provider = PROVIDERS[0]) {
+  const out = {};
+  const models = new Set(provider.models.map((m) => m.id));
+  if (typeof body.model === "string" && models.has(body.model)) out.model = body.model;
+  else if (typeof body.modelId === "string" && (body.model === void 0 || body.model === "default")) {
+    const family = MODEL_FAMILY_RE.exec(body.modelId)?.[1];
+    if (family && models.has(family)) out.model = family;
+  }
+  if (typeof body.reasoningLevel === "string" && provider.reasoningLevels?.some((l) => l.id === body.reasoningLevel)) out.reasoningLevel = body.reasoningLevel;
+  return Object.keys(out).length ? out : void 0;
+}
 
 // src/daemon/control/http.ts
 import http2 from "node:http";
@@ -18903,7 +18950,7 @@ var ControlServer = class {
       const ok = this.d.bridges.answer(decodeURIComponent(x[1]), await ctx.body());
       return json3(res, ok ? 200 : 404, { ok });
     }
-    if (x = m(/^\/v1\/sessions\/([^/]+)\/(state|rows|chunks|backfill|waits|instruction|detach)$/)) {
+    if (x = m(/^\/v1\/sessions\/([^/]+)\/(state|rows|chunks|backfill|waits|instruction|detach|settings)$/)) {
       const id = decodeURIComponent(x[1]);
       if (!ctx.session || ctx.session !== id) return json3(res, ctx.session ? 403 : 401, { error: ctx.session ? "forbidden" : "unauthorized" });
       return this.sessionRoute(ctx, id, x[2]);
@@ -19069,6 +19116,16 @@ ${this.hostStatus(sessionId)}`;
         const rec = this.d.waits.openWait(id, w);
         this.d.registry.upsert(id, { liveState: "waiting" });
         return json3(res, 201, { waitId: rec.id });
+      }
+      case "settings": {
+        const settings = currentSettings(body ?? {});
+        const prev = this.d.registry.get(id);
+        if (settings) this.d.registry.upsert(id, { settings });
+        else if (prev?.settings) {
+          const { settings: _s, ...rest } = prev;
+          this.d.registry.replace({ ...rest, updatedAtMs: Date.now() });
+        }
+        return json3(res, 200, { ok: true, ...settings ? { settings } : {} });
       }
       case "detach": {
         const b = body ?? {};
@@ -19300,7 +19357,9 @@ var Daemon = class {
       archived: false,
       startedAtMs: e.startedAtMs,
       turnEndedAtMs: e.turnEndedAtMs,
-      updatedAtMs: e.updatedAtMs
+      updatedAtMs: e.updatedAtMs,
+      ...e.settings && Object.keys(e.settings).length ? { settings: e.settings } : {}
+      // the current model and effort as the mod last reported them (U50)
     };
   }
   async record(id) {
