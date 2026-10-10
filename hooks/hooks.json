@@ -1,0 +1,4 @@
+{
+  "description": "unife-pages hooks module: the in-process half of the Unife Pages provider",
+  "modules": ["./register.js"]
+}
