@@ -17056,7 +17056,1883 @@ function failure2(error, log, where, asPage) {
 }
 
 // ../pages-core/src/generated/builtin-home.ts
-var BUILTIN_HOME_HTML = '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>Sessions</title>\n<style>\n  /* The built-in home page: every session on this host and the page it writes.\n     Host-neutral, reader-neutral, one file; it holds no authority a page does not hold. 05 R-S12 */\n  :root {\n    color-scheme: light dark;\n    --bg: #fbfaf7; --panel: #ffffff; --ink: #1b1d22; --ink-2: #555a64; --ink-3: #8a8f99;\n    --line: #e2e0da; --accent: #2f5bd7; --accent-ink: #ffffff; --soft: #eef2fb;\n    --working: #2f8f5b; --waiting: #c47a12; --failed: #c23b3b; --idle: #8a8f99;\n  }\n  @media (prefers-color-scheme: dark) {\n    :root {\n      --bg: #121418; --panel: #1a1d23; --ink: #e8e9ec; --ink-2: #aeb3bd; --ink-3: #7b8190;\n      --line: #2a2e36; --accent: #8fa8ff; --accent-ink: #0f1220; --soft: #1f2536;\n      --working: #5ad48f; --waiting: #f0b25a; --failed: #ff7b7b; --idle: #7b8190;\n    }\n  }\n  * { box-sizing: border-box; }\n  [hidden] { display: none !important; }\n  html { background: var(--bg); -webkit-text-size-adjust: 100%; }\n  body { margin: 0; color: var(--ink); background: var(--bg);\n         font: 16px/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif; }\n  main { max-width: 52rem; margin: 0 auto; padding: 1.5rem 1rem 5rem; }\n  @media (min-width: 640px) { main { padding: 2.5rem 1.5rem 6rem; } }\n  h1 { margin: 0 0 .25rem; font-size: 1.75rem; letter-spacing: -.02em; line-height: 1.15; }\n  h2 { margin: 2rem 0 .75rem; font-size: 1.05rem; }\n  h3 { margin: 1.25rem 0 .4rem; font-size: .95rem; color: var(--ink-2); }\n  p { margin: 0 0 .75rem; }\n  .lede { color: var(--ink-2); margin-bottom: 1.25rem; }\n  .note { color: var(--ink-3); font-size: .9rem; border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 2.5rem; }\n  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; }\n  a { color: var(--accent); }\n  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }\n  button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);\n           border-radius: 8px; padding: .4rem .75rem; cursor: pointer; }\n  button:hover { border-color: var(--ink-3); }\n  button[disabled] { opacity: .55; cursor: default; }\n  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }\n  button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }\n  .toolbar { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: center; margin-bottom: 1rem; color: var(--ink-2); font-size: .92rem; }\n  .toolbar label { display: inline-flex; gap: .35rem; align-items: center; }\n  [data-error] { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .8rem; color: var(--failed); }\n  .workspace { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 1rem; overflow: hidden; }\n  .workspace > header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;\n                        padding: .7rem 1rem; border-bottom: 1px solid var(--line); }\n  .workspace > header h2 { margin: 0; font-size: 1rem; }\n  .counts { color: var(--ink-3); font-size: .85rem; white-space: nowrap; }\n  .row { display: grid; grid-template-columns: auto 1fr auto; gap: .35rem .7rem; align-items: start;\n         padding: .65rem 1rem; border-bottom: 1px solid var(--line); }\n  .row:last-child { border-bottom: 0; }\n  .dot { width: .6rem; height: .6rem; border-radius: 50%; margin-top: .45rem; background: var(--idle); }\n  .row[data-state="working"] .dot { background: var(--working); }\n  .row[data-state="waiting"] .dot { background: var(--waiting); }\n  .row[data-state="failed"] .dot { background: var(--failed); }\n  .row[data-unread="true"] .title::after { content: ""; display: inline-block; width: .45rem; height: .45rem;\n      border-radius: 50%; background: var(--accent); margin-left: .45rem; vertical-align: middle; }\n  .title { border: 0; background: none; padding: 0; text-align: left; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }\n  .title:hover { text-decoration: underline; }\n  .meta { grid-column: 2; color: var(--ink-2); font-size: .88rem; }\n  .meta em { font-style: normal; font-weight: 600; }\n  .row[data-state="waiting"] .meta em { color: var(--waiting); }\n  .row[data-state="failed"] .meta em { color: var(--failed); }\n  .acts { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }\n  .acts button { font-size: .82rem; padding: .25rem .55rem; }\n  .peek { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: .6rem; margin-top: .3rem; font-size: .9rem; }\n  .peek ol { list-style: none; margin: 0; padding: 0; max-height: 22rem; overflow: auto; }\n  .peek li { padding: .3rem 0; border-bottom: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; }\n  .peek li:last-child { border-bottom: 0; }\n  .peek .who { color: var(--ink-3); font-size: .78rem; display: block; }\n  .peek li[data-kind="assistant"] { color: var(--ink); }\n  .peek li[data-kind="user"] { color: var(--ink-2); }\n  .peek li[data-kind="tool"] { color: var(--ink-3); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem; }\n  .embeds { display: grid; gap: 1rem; grid-template-columns: 1fr; }\n  @media (min-width: 760px) { .embeds { grid-template-columns: 1fr 1fr; } }\n  .embed { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }\n  .embed > header { display: flex; justify-content: space-between; gap: .5rem; padding: .5rem .8rem; font-size: .88rem; border-bottom: 1px solid var(--line); }\n  .embed > div { height: 20rem; }\n  .embed iframe { width: 100%; height: 100%; border: 0; display: block; }\n  form[data-start] { display: grid; gap: .8rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 1rem; }\n  form[data-start] label { display: grid; gap: .3rem; font-size: .9rem; color: var(--ink-2); }\n  form[data-start] select, form[data-start] textarea, form[data-start] input[type="file"] {\n    font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; width: 100%; }\n  form[data-start] textarea { min-height: 6rem; resize: vertical; }\n  .choices { display: grid; gap: .8rem; grid-template-columns: 1fr; }\n  @media (min-width: 640px) { .choices { grid-template-columns: 1fr 1fr; } }\n  .submit { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }\n  [role="status"] { color: var(--ink-2); font-size: .9rem; }\n  .empty { color: var(--ink-3); padding: 1rem; }\n  [data-thread-page-notice] { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .8rem; color: var(--ink-2); margin-bottom: 1rem; }\n  .grants { grid-column: 2 / -1; margin: .2rem 0 0; padding: 0; list-style: none; font-size: .85rem; color: var(--ink-2); }\n  .grants li { display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: center; padding: .2rem 0; }\n  .grants button { font-size: .8rem; padding: .15rem .5rem; }\n  .drafts { list-style: none; margin: 0; padding: 0; display: grid; gap: .8rem; }\n  .draft { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: .8rem 1rem; display: grid; gap: .5rem; }\n  .draft .where { font-size: .88rem; color: var(--ink-2); }\n  .draft textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; width: 100%; min-height: 4rem; resize: vertical; }\n  .draft .acts { justify-content: flex-start; }\n  @media (prefers-reduced-motion: no-preference) { .row { transition: background .15s; } }\n</style>\n</head>\n<body>\n<main>\n  <header>\n    <h1>Sessions</h1>\n    <p class="lede">Every session on this host and the page its agent writes. <span data-meta></span></p>\n  </header>\n\n  <p data-thread-page-notice hidden></p>\n  <p data-error hidden role="alert"></p>\n\n  <section data-embeds-section hidden>\n    <h2>Working now</h2>\n    <div class="embeds" data-embeds></div>\n  </section>\n\n  <section>\n    <div class="toolbar">\n      <label><input type="checkbox" data-archived> Show archived</label>\n      <label><input type="checkbox" data-children> Show sub-agent sessions</label>\n      <button type="button" data-refresh>Refresh</button>\n    </div>\n    <div data-workspaces><p class="empty">Loading\u2026</p></div>\n  </section>\n\n  <section data-drafts-section hidden>\n    <h2>Unsent drafts</h2>\n    <p class="lede">Text you typed into a page that could not be put back where it was: the form changed, or the page filled the field itself. Copy it where you need it, or discard it.</p>\n    <ul class="drafts" data-drafts></ul>\n  </section>\n\n  <section>\n    <h2>Start a session</h2>\n    <form data-start data-thread-page-manual>\n      <div class="choices">\n        <label>Workspace <select name="workspace" required></select></label>\n        <label data-environment hidden>Environment <select name="environment"></select></label>\n        <label data-provider hidden>Provider <select name="provider"></select></label>\n        <label data-model hidden>Model <select name="model"></select></label>\n      </div>\n      <label>What should it do? Say what to report and what not to change.\n        <textarea name="prompt" rows="4"></textarea></label>\n      <label data-files>Files to attach <input type="file" name="files" multiple></label>\n      <div class="submit">\n        <button type="submit" class="primary">Start</button>\n        <span data-start-status role="status"></span>\n      </div>\n    </form>\n  </section>\n\n  <p class="note">Any page can replace this one: run the <code>home</code> command in a session to make its page home, and\n    <code>home --clear</code> to come back here. This page keeps nothing about you; it reads what the host already shows.</p>\n</main>\n\n<script>\n(async () => {\n  const tp = window.threadPage;\n  const $ = (selector, root) => (root || document).querySelector(selector);\n  const el = (tag, text, className) => {\n    const node = document.createElement(tag);\n    if (text !== undefined) node.textContent = text;\n    if (className) node.className = className;\n    return node;\n  };\n  const errorEl = $("[data-error]"), metaEl = $("[data-meta]"), listEl = $("[data-workspaces]");\n  const archivedEl = $("[data-archived]"), childrenEl = $("[data-children]"), refreshEl = $("[data-refresh]");\n  const embedsSection = $("[data-embeds-section]"), embedsEl = $("[data-embeds]");\n  const draftsSection = $("[data-drafts-section]"), draftsEl = $("[data-drafts]");\n  const form = $("[data-start]"), startStatus = $("[data-start-status]");\n\n  // Every piece of state `render()` and `renderDrafts()` read, declared before any listener that can call them: the host\n  // hands grants and drafts at connect, before the reads below resolve, and `let`/`const` after an `await` would be in\n  // their temporal dead zone then. Loaded values are assigned, never declared, further down.\n  const WATCH_MS = 8000, PAGE_LIMIT = 200, MAX_PAGES = 5, PEEK_ROWS = 20, EMBEDS = 4;\n  let grants = [], drafts = [];\n  let workspaces = [], sessions = [], stopWatch = null, loadedAt = 0;\n  let capabilities = new Set(), canEmbed = false;\n  let prefs = { archived: false, children: false, open: {} };\n  let providers = [];\n  const peeks = new Map();\n  const embedded = new Map();\n  const has = (method) => capabilities.has(method);\n\n  const fail = (message) => { errorEl.hidden = !message; errorEl.textContent = message || ""; };\n  const describe = (error) => (error && error.code ? error.code + ": " : "") + ((error && error.message) || String(error));\n  const handle = (error) => {\n    if (!error) return;\n    if (error.code === "cancelled") return;\n    if (error.code === "rate_limited") { fail("The host is rate limiting this page; it keeps watching."); return; }\n    fail(describe(error));\n  };\n  const ago = (ms) => {\n    if (!ms) return "";\n    const delta = Date.now() - ms;\n    if (delta < 45e3) return "just now";\n    if (delta < 3600e3) return Math.max(1, Math.round(delta / 60e3)) + " min ago";\n    if (delta < 86400e3) return Math.round(delta / 3600e3) + " h ago";\n    return Math.round(delta / 86400e3) + " d ago";\n  };\n  const recency = (session) => Math.max(session.attentionAtMs || 0, session.updatedAtMs || 0);\n  const stateWord = { working: "working", waiting: "waiting on you", failed: "failed", stopped: "stopped", idle: "idle" };\n  const when = (ms) => (ms ? new Date(ms).toLocaleString() : "never");\n\n  // What the host hands this page: every grant pair on the host, and the drafts no page could restore. 05 R-S12\n  document.addEventListener("thread-page:grants", (event) => { grants = (event.detail && event.detail.grants) || []; render(); });\n  document.addEventListener("thread-page:drafts", (event) => { drafts = (event.detail && event.detail.drafts) || []; renderDrafts(); });\n\n  if (!tp) {\n    listEl.replaceChildren(el("p", "This document is a page of the host: open it through the host, not as a file.", "empty"));\n    return;\n  }\n\n  // What is on this host: the roster decides what the page offers. 03 R5.9\n  try {\n    const context = await tp.invoke("context.get");\n    capabilities = new Set(context.capabilities.map((entry) => entry.method));\n  } catch (error) { fail("Could not read this page\'s capabilities: " + describe(error)); }\n  canEmbed = typeof tp.embed === "function" && has("pages.read");\n\n  // Preferences live in this page\'s own storage namespace; nothing about the reader is kept. 05 R-S12\n  try {\n    const stored = await tp.invoke("storage.get", { key: "home.prefs" });\n    if (stored.found && stored.value && typeof stored.value === "object") prefs = { ...prefs, ...stored.value };\n  } catch (error) { if (error.code !== "unavailable") handle(error); }\n  if (!prefs.open || typeof prefs.open !== "object") prefs.open = {};\n  const savePrefs = () => tp.invoke("storage.set", { key: "home.prefs", value: prefs }).catch(() => {});\n  archivedEl.checked = !!prefs.archived;\n  childrenEl.checked = !!prefs.children;\n\n  async function loadWorkspaces() {\n    try {\n      const result = await tp.invoke("workspaces.list");\n      workspaces = result.workspaces;\n    } catch (error) { handle(error); workspaces = []; }\n  }\n\n  /** The rest of a snapshot past the first page: the watch brings the first, `invoke` the others. 03 R5.11 */\n  async function loadMore(first) {\n    const all = first.sessions.slice();\n    let cursor = first.nextCursor;\n    for (let page = 1; page < MAX_PAGES && cursor; page += 1) {\n      const next = await tp.invoke("sessions.snapshot", { limit: PAGE_LIMIT, includeArchived: !!prefs.archived, includeChildren: !!prefs.children, cursor });\n      all.push(...next.sessions);\n      cursor = next.nextCursor;\n    }\n    return all;\n  }\n\n  function startWatch() {\n    if (stopWatch) stopWatch();\n    stopWatch = tp.watch("sessions.snapshot", { limit: PAGE_LIMIT, includeArchived: !!prefs.archived, includeChildren: !!prefs.children }, async (value, error) => {\n      if (error) { handle(error); return; }\n      try {\n        sessions = await loadMore(value);\n        loadedAt = value.generatedAtMs || Date.now();\n        fail("");\n        render();\n        renderEmbeds();\n      } catch (loadError) { handle(loadError); }\n    }, { intervalMs: WATCH_MS });\n  }\n\n  function openPage(session) {\n    if (session.page && session.page.available) { tp.invoke("pages.open", { sessionId: session.id }).catch(handle); return; }\n    if (has("sessions.openHost")) { openInHost(session, null); return; }\n    fail("\u201C" + (session.title || session.id) + "\u201D has no page yet, and this host offers no other way to open it from here.");\n  }\n\n  /** The host\'s own view of the session; a host with nowhere to open it from here says so in a line. 03 R5.31b */\n  async function openInHost(session, button) {\n    const result = await tp.invoke("sessions.openHost", { sessionId: session.id });\n    if (result && result.opened === false && result.notice) {\n      const row = button && button.closest(".row");\n      const meta = row && row.querySelector(".meta");\n      if (meta) { const note = el("span", " \u2014 " + result.notice); meta.append(note); setTimeout(() => note.remove(), 8000); }\n      else fail(result.notice);\n    }\n  }\n\n  /** The pairs this session\'s page may answer into, with Revoke; the kernel carries the act to the host. 03 R5.65 */\n  function grantsOf(sessionId) {\n    const own = grants.filter((grant) => grant.from === sessionId);\n    if (!own.length) return null;\n    const list = el("ul", undefined, "grants");\n    for (const grant of own) {\n      const item = el("li");\n      item.append(el("span", "May answer \u201C" + (grant.title || grant.sessionId) + "\u201D \u2014 granted " + when(grant.grantedAtMs) + ", last answered " + when(grant.lastAnsweredAtMs) + ", " + grant.count + (grant.count === 1 ? " answer" : " answers")));\n      item.append(action("Revoke", () => { document.dispatchEvent(new CustomEvent("thread-page:grant-revoke", { detail: { from: grant.from, to: grant.sessionId } })); }));\n      list.append(item);\n    }\n    return list;\n  }\n\n  /** The drafts no page could restore, by session; Copy selects and copies, Discard asks the host to drop it. 02 R-K7 */\n  function renderDrafts() {\n    draftsSection.hidden = drafts.length === 0;\n    const titles = new Map(sessions.map((session) => [session.id, session.title || session.id]));\n    draftsEl.replaceChildren(...drafts.map((draft) => {\n      const item = el("li", undefined, "draft");\n      item.dataset.session = draft.session;\n      const where = el("p", undefined, "where");\n      where.textContent = (titles.get(draft.session) || draft.session) + " \xB7 " + draft.documentPath + " \xB7 " + draft.label + " \xB7 " + draft.field + " \u2014 " + (draft.reason === "field-filled" ? "the page filled this field" : "not on the current version") + ", " + ago(draft.atMs);\n      const text = el("textarea", draft.value);\n      text.readOnly = true;\n      const acts = el("span", undefined, "acts");\n      acts.append(action("Copy", async () => {\n        text.focus(); text.select();\n        try { await navigator.clipboard.writeText(draft.value); } catch (error) { try { document.execCommand("copy"); } catch (again) { /* the text is selected: the reader copies it */ } }\n      }));\n      acts.append(action("Discard", () => { document.dispatchEvent(new CustomEvent("thread-page:draft-discard", { detail: { session: draft.session, documentPath: draft.documentPath, key: draft.key, field: draft.field } })); }));\n      item.append(where, text, acts);\n      return item;\n    }));\n  }\n\n  function action(label, run, options) {\n    const button = el("button", label);\n    button.type = "button";\n    if (options && options.title) button.title = options.title;\n    button.addEventListener("click", async (event) => {\n      event.stopPropagation();\n      button.disabled = true;\n      try { await run(button); } catch (error) { handle(error); } finally { button.disabled = false; }\n    });\n    return button;\n  }\n\n  /** A short look at a session\'s transcript, read through `sessions.messages`. 03 R-C1 */\n  async function togglePeek(session, row) {\n    const open = peeks.get(session.id);\n    if (open) { open.remove(); peeks.delete(session.id); return; }\n    const panel = el("div", undefined, "peek");\n    panel.append(el("p", "Loading the last " + PEEK_ROWS + " rows\u2026"));\n    row.append(panel);\n    peeks.set(session.id, panel);\n    try {\n      const result = await tp.invoke("sessions.messages", { sessionId: session.id, limit: PEEK_ROWS });\n      const list = el("ol");\n      for (const message of result.messages) {\n        const item = el("li");\n        item.dataset.kind = message.kind;\n        const who = message.kind === "user" ? (message.from && message.from.kind === "page" ? "page" : message.from && message.from.label ? message.from.label : "reader") : message.kind;\n        item.append(el("span", who + " \xB7 " + new Date(message.atMs).toLocaleTimeString(), "who"));\n        const text = message.kind === "tool" && message.tool ? message.tool.name + (message.tool.isError ? " (error)" : "") : message.text || (message.question ? "(a question)" : "");\n        item.append(document.createTextNode(text + (message.truncated ? " \u2026" : "")));\n        list.append(item);\n      }\n      panel.replaceChildren(result.messages.length ? list : el("p", "No rows yet.", "empty"));\n      list.scrollTop = list.scrollHeight;\n    } catch (error) {\n      panel.replaceChildren(el("p", "Could not read the transcript: " + describe(error), "empty"));\n    }\n  }\n\n  function row(session) {\n    const node = el("div", undefined, "row");\n    node.dataset.state = session.state;\n    node.dataset.unread = String(!!session.unread);\n    node.dataset.id = session.id;\n    node.append(el("span", undefined, "dot"));\n    const title = el("button", session.title || "(untitled)", "title");\n    title.type = "button";\n    title.title = session.page && session.page.available ? "Open its page" : "No page yet";\n    title.addEventListener("click", () => openPage(session));\n    node.append(title);\n    const acts = el("span", undefined, "acts");\n    acts.append(action("Transcript", () => togglePeek(session, node)));\n    if (session.state === "working" && has("sessions.stop")) acts.append(action("Stop", () => tp.invoke("sessions.stop", { sessionId: session.id }), { title: "Stop the running turn (confirmed)" }));\n    if (has("sessions.openHost")) acts.append(action("Open in host", (button) => openInHost(session, button), { title: "Open this session in the host\'s own interface" }));\n    if (has("sessions.markRead")) acts.append(action(session.unread ? "Mark read" : "Mark unread", async () => { await tp.invoke("sessions.markRead", { sessionId: session.id, read: !!session.unread }); }));\n    if (has("sessions.archive") && !session.archived) acts.append(action("Archive", () => tp.invoke("sessions.archive", { sessionId: session.id }), { title: "Archive (confirmed)" }));\n    node.append(acts);\n    const meta = el("p", undefined, "meta");\n    const state = el("em", stateWord[session.state] || session.state);\n    meta.append(state, document.createTextNode(" \xB7 " + ago(recency(session))));\n    if (session.archived) meta.append(document.createTextNode(" \xB7 archived"));\n    if (session.parentSessionId) meta.append(document.createTextNode(" \xB7 sub-agent"));\n    if (!(session.page && session.page.available)) meta.append(document.createTextNode(" \xB7 no page yet"));\n    if (session.waiting && session.waiting.text) meta.append(el("span", " \u2014 " + session.waiting.text));\n    else if (session.waiting && session.waiting.kind === "approval" && session.waiting.approval) meta.append(el("span", " \u2014 needs a decision: " + session.waiting.approval.subject));\n    else if (session.waiting && session.waiting.kind === "question") meta.append(el("span", " \u2014 asked a question"));\n    node.append(meta);\n    const pairs = grantsOf(session.id);\n    if (pairs) node.append(pairs);\n    return node;\n  }\n\n  function render() {\n    const byWorkspace = new Map(workspaces.map((workspace) => [workspace.id, []]));\n    const other = [];\n    for (const session of sessions) {\n      if (byWorkspace.has(session.workspaceId)) byWorkspace.get(session.workspaceId).push(session);\n      else other.push(session);\n    }\n    const groups = workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, list: byWorkspace.get(workspace.id) }));\n    if (other.length) groups.push({ id: "~other", name: "Other", list: other });\n    const needs = (session) => session.state === "waiting" || session.state === "working" || session.unread;\n    groups.sort((a, b) => {\n      const na = a.list.filter(needs).length, nb = b.list.filter(needs).length;\n      if ((na > 0) !== (nb > 0)) return na > 0 ? -1 : 1;\n      return Math.max(0, ...b.list.map(recency)) - Math.max(0, ...a.list.map(recency));\n    });\n    const fragment = document.createDocumentFragment();\n    for (const group of groups) {\n      if (!group.list.length && group.id === "~other") continue;\n      const section = el("section", undefined, "workspace");\n      const header = el("header");\n      const heading = el("h2", group.name);\n      const counts = el("span", undefined, "counts");\n      const waiting = group.list.filter((session) => session.state === "waiting").length;\n      const working = group.list.filter((session) => session.state === "working").length;\n      counts.textContent = group.list.length + (working ? " \xB7 " + working + " working" : "") + (waiting ? " \xB7 " + waiting + " waiting" : "");\n      header.append(heading, counts);\n      section.append(header);\n      if (!group.list.length) section.append(el("p", "No sessions yet.", "empty"));\n      for (const session of group.list.slice().sort((a, b) => recency(b) - recency(a))) {\n        const node = row(session);\n        section.append(node);\n        if (peeks.has(session.id)) { peeks.delete(session.id); togglePeek(session, node); }\n      }\n      fragment.append(section);\n    }\n    if (!groups.length) fragment.append(el("p", loadedAt ? "No workspaces on this host yet." : "Loading\u2026", "empty"));\n    const homeGrants = grantsOf("~home");\n    if (homeGrants) { const section = el("section", undefined, "workspace"); const header = el("header"); header.append(el("h2", "This page")); section.append(header, homeGrants); fragment.append(section); }\n    listEl.replaceChildren(fragment);\n    renderDrafts();\n    const waitingAll = sessions.filter((session) => session.state === "waiting").length;\n    metaEl.textContent = !loadedAt ? "" : sessions.length + " session" + (sessions.length === 1 ? "" : "s") + (waitingAll ? ", " + waitingAll + " waiting on you" : "") + " \xB7 as of " + new Date(loadedAt).toLocaleTimeString();\n  }\n\n  /** Up to four working sessions\' pages, live, where the host composes pages. 02 \xA7Embedded pages */\n  function renderEmbeds() {\n    if (!canEmbed) return;\n    const wanted = sessions.filter((session) => session.state === "working" && session.page && session.page.available).sort((a, b) => recency(b) - recency(a)).slice(0, EMBEDS);\n    const ids = new Set(wanted.map((session) => session.id));\n    for (const [id, entry] of embedded) {\n      if (!ids.has(id)) { entry.stop(); entry.node.remove(); embedded.delete(id); }\n    }\n    for (const session of wanted) {\n      if (embedded.has(session.id)) { $(".embed-title", embedded.get(session.id).node).textContent = session.title || session.id; continue; }\n      const node = el("article", undefined, "embed");\n      const header = el("header");\n      const title = el("button", session.title || session.id, "link embed-title");\n      title.type = "button";\n      title.addEventListener("click", () => openPage(session));\n      const state = el("span", "working");\n      header.append(title, state);\n      const frame = el("div");\n      node.append(header, frame);\n      embedsEl.append(node);\n      const stop = tp.embed(frame, { sessionId: session.id, onState: (info) => { state.textContent = info.status === "shown" ? (info.working ? "working" : "idle") : info.status; } });\n      embedded.set(session.id, { node, stop });\n    }\n    embedsSection.hidden = embedded.size === 0;\n  }\n\n  // --- Start a session ---------------------------------------------------------\n  const workspaceSelect = form.elements.workspace, environmentSelect = form.elements.environment;\n  const providerSelect = form.elements.provider, modelSelect = form.elements.model;\n\n  function fillWorkspaces() {\n    workspaceSelect.replaceChildren(...workspaces.map((workspace) => { const option = el("option", workspace.name); option.value = workspace.id; return option; }));\n    if (prefs.workspace && workspaces.some((workspace) => workspace.id === prefs.workspace)) workspaceSelect.value = prefs.workspace;\n    fillEnvironments();\n  }\n  function fillEnvironments() {\n    const workspace = workspaces.find((candidate) => candidate.id === workspaceSelect.value);\n    const environments = workspace && workspace.environments ? workspace.environments : [];\n    $("[data-environment]").hidden = environments.length === 0;\n    environmentSelect.replaceChildren(...environments.map((environment) => { const option = el("option", environment.name + (environment.isDefault ? " (default)" : "")); option.value = environment.id; if (environment.isDefault) option.selected = true; return option; }));\n  }\n  function fillModels() {\n    const provider = providers.find((candidate) => candidate.id === providerSelect.value);\n    const models = provider ? provider.models : [];\n    $("[data-model]").hidden = models.length === 0;\n    modelSelect.replaceChildren(...models.map((model) => { const option = el("option", model.displayName + (model.default ? " (default)" : "")); option.value = model.id; if (model.default) option.selected = true; return option; }));\n  }\n  async function loadProviders() {\n    if (!has("providers.list")) return;\n    try {\n      providers = (await tp.invoke("providers.list")).providers.filter((provider) => provider.available);\n    } catch (error) { if (error.code !== "unavailable") handle(error); return; }\n    if (!providers.length) return;\n    $("[data-provider]").hidden = false;\n    providerSelect.replaceChildren(...providers.map((provider) => { const option = el("option", provider.displayName + (provider.default ? " (default)" : "")); option.value = provider.id; if (provider.default) option.selected = true; return option; }));\n    fillModels();\n  }\n  workspaceSelect.addEventListener("change", () => { prefs.workspace = workspaceSelect.value; savePrefs(); fillEnvironments(); });\n  providerSelect.addEventListener("change", fillModels);\n  form.elements.prompt.addEventListener("input", () => tp.setDirty(form.elements.prompt.value.trim().length > 0));\n\n  form.addEventListener("submit", async (event) => {\n    event.preventDefault();\n    const prompt = form.elements.prompt.value.trim();\n    if (!prompt) { startStatus.textContent = "Say what it should do first."; return; }\n    if (!has("sessions.start")) { startStatus.textContent = "This host cannot start sessions from a page."; return; }\n    const params = { workspaceId: workspaceSelect.value, prompt };\n    if (!$("[data-environment]").hidden && environmentSelect.value) params.environment = environmentSelect.value;\n    if (!$("[data-provider]").hidden && providerSelect.value) params.providerId = providerSelect.value;\n    if (!$("[data-model]").hidden && modelSelect.value) params.model = modelSelect.value;\n    const files = form.elements.files;\n    if (files && files.files && files.files.length) params.files = files;\n    startStatus.textContent = "Waiting for your confirmation\u2026";\n    const button = $("button[type=submit]", form);\n    button.disabled = true;\n    try {\n      const result = await tp.invoke("sessions.start", params);\n      startStatus.textContent = "Started.";\n      form.elements.prompt.value = "";\n      if (files) files.value = "";\n      tp.setDirty(false);\n      startStatus.textContent = "Started: " + result.sessionId + ". It appears in the list as it works.";\n    } catch (error) {\n      startStatus.textContent = error && error.code === "cancelled" ? "Nothing started." : describe(error);\n    } finally {\n      button.disabled = false;\n    }\n  });\n\n  // --- Wiring --------------------------------------------------------------------\n  archivedEl.addEventListener("change", () => { prefs.archived = archivedEl.checked; savePrefs(); startWatch(); });\n  childrenEl.addEventListener("change", () => { prefs.children = childrenEl.checked; savePrefs(); startWatch(); });\n  refreshEl.addEventListener("click", async () => { await loadWorkspaces(); fillWorkspaces(); startWatch(); });\n\n  if (!has("sessions.start")) form.hidden = true;\n  await loadWorkspaces();\n  fillWorkspaces();\n  await loadProviders();\n  startWatch();\n})();\n</script>\n</body>\n</html>\n';
+var BUILTIN_HOME_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Home</title>
+<style>
+  /* The built-in home page: every session on this host, its page or its chat, and the home's own duties.
+     Host-neutral, reader-neutral, one file; it holds no authority a page does not hold. 05 R-S12 */
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --side: #fafafa; --ink: #333333; --ink-2: #525252; --ink-3: #636363;
+    --line: #dfdfdf; --seam: #e9eaea; --hover: #ededed; --sel: #e7e7e7; --btnh: #f3f3f3; --recessed: #f3f3f3;
+    --code: #e6e6e6b3; --warn: #b0540e; --red: #a5000f; --live: #3bb974;
+    --send: #333333; --send-ink: #ffffff; --scrim: #00000066;
+    --lift: 0 -4px 12px -4px #33333312; --md: 0 2px 0 0 #33333326, 0 2px 4px -1px #33333326; --lg: 0 2px 0 0 #33333326, 0 4px 6px -1px #33333326;
+    --font: "Inter Variable", Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --row: 28px; --side-w: 267px; --col: 728px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151515; --side: #1b1b1b; --ink: #c1c1c1; --ink-2: #b7b7b7; --ink-3: #989898;
+      --line: #313131; --seam: #252525; --hover: #262626; --sel: #333333; --btnh: #262626; --recessed: #1f1f1f;
+      --code: #2c2c2cb3; --warn: #fc8c45; --red: #e06062; --live: #4bc680;
+      --send: #c1c1c1; --send-ink: #151515; --scrim: #00000099;
+      --lift: 0 -4px 12px -4px #00000042; --md: 0 2px 0 0 #00000066, 0 2px 4px -1px #00000066; --lg: 0 2px 0 0 #00000066, 0 4px 6px -1px #00000080;
+    }
+  }
+  @media (pointer: coarse) { :root { --row: 40px; } .menu .mi { min-height: 40px; } }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+  body { margin: 0; color: var(--ink); background: var(--bg); font: 13px/1.45 var(--font); overflow: hidden; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+  button[disabled] { cursor: default; opacity: .5; }
+  :focus-visible { outline: 2px solid var(--ink-3); outline-offset: 1px; border-radius: 6px; }
+  svg.i { width: 16px; height: 16px; flex: none; }
+  svg.i14 { width: 14px; height: 14px; } svg.i12 { width: 12px; height: 12px; }
+  code { font: 12px/16px var(--mono); background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+  /* ---- frame ---- */
+  .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); height: 100%; }
+  .side { background: var(--side); border-right: 1px solid var(--seam); display: flex; flex-direction: column; min-height: 0; }
+  .chrome { height: 48px; display: flex; align-items: center; gap: 2px; padding: 0 8px; flex: none; }
+  .newrow { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: 6px; flex: 1; min-width: 0; }
+  .newrow:hover, .ib:hover, .picker:hover { background: var(--btnh); }
+  .newrow.on { background: var(--sel); }
+  .ib { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--ink-3); flex: none; position: relative; }
+  .ib:hover { color: var(--ink); }
+  .ib.on { background: var(--sel); color: var(--ink); }
+  .list { flex: 1; overflow: auto; padding: 0 8px 8px; overscroll-behavior: contain; }
+  .group { display: flex; align-items: center; gap: 4px; height: 24px; margin-top: 14px; padding: 0 0 0 8px; font-size: 12px; color: var(--ink-2); border-radius: 6px; cursor: pointer; user-select: none; }
+  .group:first-child { margin-top: 2px; }
+  .group .gname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group .gchev { opacity: 0; color: var(--ink-3); display: inline-flex; }
+  .group:hover .gchev, .group[aria-expanded="false"] .gchev { opacity: 1; }
+  .group .gadd { margin-left: auto; width: 24px; height: 24px; opacity: 0; }
+  .group .gsp { flex: 1; }
+  .group .gsp ~ .gadd { margin-left: 0; display: none; }
+  .group .slot { width: 24px; height: 24px; }
+  .group:hover .gadd, .group .gadd:focus-visible { opacity: 1; }
+  @media (hover: hover) { .group:hover .gsp ~ .gadd { display: inline-flex; } .group:hover .gsp ~ .slot { display: none; } }
+  .row { position: relative; display: flex; align-items: center; gap: 6px; height: var(--row); padding-left: 8px; border-radius: 6px; cursor: pointer; margin-bottom: 2px; }
+  .row .tw[aria-expanded="true"] { opacity: 0; }
+  .row:hover .tw, .row:focus-within .tw { opacity: 1; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .row:hover { background: var(--hover); }
+  .row.sel { background: var(--sel); }
+  .row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; border-radius: 4px; }
+  .row .sp { flex: 1; }
+  .row .tw { color: var(--ink-3); display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; border-radius: 4px; flex: none; }
+  .row .tw:hover { background: var(--btnh); color: var(--ink); }
+  .row[data-depth="1"] { margin-left: 24px; } .row[data-depth="2"] { margin-left: 48px; } .row[data-depth="3"] { margin-left: 72px; }
+  .row[data-depth]::before { content: ""; position: absolute; left: -15px; top: 0; bottom: 0; border-left: 1px solid var(--line); }
+  .slot { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2); flex: none; }
+  .slot.working { opacity: .5; } .slot.waiting { opacity: .75; } .slot.failed { color: var(--red); }
+  .udot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-2); opacity: .6; }
+  .hov { display: none; }
+  @media (hover: hover) { .row:hover .hov, .row:focus-within .hov { display: inline-flex; } .row:hover .slot, .row:focus-within .slot { display: none; } }
+  .empty-side { color: var(--ink-3); padding: 14px 8px; }
+  .none-side { color: var(--ink-3); margin: 0; padding: 0 8px; height: var(--row); display: flex; align-items: center; }
+  .more-side { display: block; width: 100%; margin-top: 10px; height: var(--row); padding: 0 8px; border-radius: 6px; color: var(--ink-3); text-align: left; }
+  .more-side:hover { background: var(--hover); color: var(--ink); }
+  .foot { display: flex; align-items: center; gap: 2px; padding: 6px 8px 8px; flex: none; }
+  .foot .ib { width: 32px; height: 32px; }
+  .bdg { position: absolute; top: 2px; right: 1px; min-width: 14px; height: 14px; border-radius: 7px; background: var(--ink); color: var(--bg); font: 600 9.5px/14px var(--font); text-align: center; padding: 0 3px; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--bg); }
+  [data-thread-page-notice] { margin: 8px 16px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--side); color: var(--ink-2); }
+  .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .bar { height: 48px; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 16px; flex: none; min-width: 0; }
+  .bar.line { border-bottom: 1px solid color-mix(in oklab, var(--seam) 60%, transparent); }
+  .bar .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .bar .fill { flex: 1; }
+  .drawer-btn { display: none; }
+  .seg { display: inline-flex; gap: 2px; margin-right: 6px; flex: none; }
+  .seg button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 6px; color: var(--ink-2); font-size: 12px; }
+  .seg button:hover:not([disabled]) { background: var(--btnh); }
+  .seg button[aria-pressed="true"] { background: var(--sel); color: var(--ink); }
+  .chip { font-size: 11.5px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; line-height: 18px; flex: none; margin-left: 6px; }
+  .hostbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; flex: none; margin-left: 2px; }
+  .hostbtn:hover { background: var(--btnh); }
+  .seg button.attn::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--ink-2); margin-left: 1px; }
+  .strip { display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 16px; border-top: 1px solid color-mix(in oklab, var(--seam) 60%, transparent); background: var(--side); color: var(--ink-2); font-size: 12.5px; flex: none; }
+  .strip .gbtn { margin-left: auto; }
+  .hdot { width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+  .hdot.off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); width: 7px; height: 7px; }
+
+  /* ---- composer ---- */
+  .compose { width: 100%; max-width: var(--col); border: 1px solid var(--line); border-radius: 12px; background: var(--bg); box-shadow: var(--lift); position: relative; }
+  .compose:focus-within { border-color: color-mix(in oklab, var(--ink-3) 45%, var(--line)); }
+  .compose .chips { display: flex; gap: 6px; padding: 10px 12px 0; flex-wrap: wrap; }
+  .compose .chips:empty { display: none; }
+  .fchip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 8px; color: var(--ink-2); max-width: 100%; }
+  .fchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fchip button { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 50%; color: var(--ink-3); }
+  .fchip button:hover { background: var(--btnh); color: var(--ink); }
+  .compose .edrow { display: flex; align-items: flex-end; }
+  .compose textarea { flex: 1; min-width: 0; display: block; border: 0; outline: 0; resize: none; background: transparent; padding: 12px 16px 39px; margin-bottom: 7px; line-height: 1.7; min-height: 105px; max-height: 50vh; }
+  .compose textarea::placeholder { color: var(--ink-3); opacity: 1; }
+  .compose .tools { position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 2px; right: 56px; pointer-events: none; }
+  .compose .tools > * { pointer-events: auto; }
+  .compose .sendcol { flex: none; padding: 0 8px 8px 0; display: flex; gap: 6px; align-items: center; }
+  .send { width: 32px; height: 32px; border-radius: 6px; background: var(--send); color: var(--send-ink); display: inline-flex; align-items: center; justify-content: center; }
+  .send[disabled] { opacity: .5; }
+  .picker { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--ink-2); font-size: 12px; white-space: nowrap; max-width: 100%; overflow: hidden; }
+  .picker .pl { overflow: hidden; text-overflow: ellipsis; }
+  .under { width: 100%; max-width: var(--col); display: flex; align-items: center; gap: 2px; padding: 4px 8px 0; min-height: 28px; }
+  .under .picker { height: 24px; font-weight: 500; }
+  .under .perm { margin-left: auto; }
+  .under .perm.warn { color: var(--warn); }
+  .status { width: 100%; max-width: var(--col); color: var(--ink-3); font-size: 12px; padding: 4px 12px 0; min-height: 20px; }
+  .status:empty { display: none; }
+  .status.err { color: var(--red); }
+
+  /* ---- new session ---- */
+  .newview { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 8px 24px 24px; }
+  .recent { display: none; }
+  .note-host { color: var(--ink-3); max-width: var(--col); width: 100%; padding: 16px 4px; }
+
+  /* ---- session: page ---- */
+  .pagewrap { flex: 1; min-height: 0; position: relative; border-top: 1px solid color-mix(in oklab, var(--seam) 60%, transparent); }
+  .pagewrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+
+  /* ---- session: chat ---- */
+  .scroller { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 14px 24px 12px; overscroll-behavior: contain; }
+  .col { width: 100%; max-width: var(--col); display: flex; flex-direction: column; gap: 8px; line-height: 1.625; }
+  .older { align-self: center; color: var(--ink-3); font-size: 12px; padding: 2px 0 8px; }
+  .ub { align-self: flex-end; max-width: min(70%, 510px); background: var(--recessed); border: 1px solid var(--seam); border-radius: 12px; padding: 8px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ub .from { display: block; font-size: 11.5px; color: var(--ink-3); white-space: normal; }
+  .ub .files, .md .files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; white-space: normal; }
+  .md { overflow-wrap: anywhere; }
+  .md p { margin: 0 0 8px; } .md p:last-child { margin-bottom: 0; }
+  .md ul, .md ol { margin: 0 0 8px; padding-left: 22px; }
+  .md h1, .md h2, .md h3, .md h4 { font-size: 14px; margin: 10px 0 6px; font-weight: 600; }
+  .md pre { margin: 0 0 8px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font: 12px/1.45 var(--mono); overflow: auto; white-space: pre; }
+  .md a { color: inherit; text-underline-offset: 2px; }
+  .md strong { font-weight: 700; }
+  .worked { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-3); align-self: flex-start; border-radius: 6px; padding: 0 2px; }
+  .worked:hover { color: var(--ink-2); }
+  .worked .chev { transition: transform .15s; } .worked[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  .tl { margin-left: 5px; padding-left: 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+  .tl .md { color: var(--ink); }
+  .trow { display: flex; align-items: center; gap: 7px; color: var(--ink-2); min-height: 22px; text-align: left; width: 100%; border-radius: 4px; }
+  .trow:hover { color: var(--ink); }
+  .trow .tn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .trow .tn em { font-style: normal; color: var(--ink-3); }
+  .trow .errtag { font: 12px var(--mono); color: var(--ink-3); opacity: .75; }
+  .tbox .out { display: block; margin-top: 6px; color: var(--ink-2); }
+  .tbox { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; margin: 2px 0 4px; }
+  .tbox .lbl { color: var(--ink-3); font-family: var(--font); display: block; margin-bottom: 2px; }
+  .sysline { color: var(--ink-3); display: flex; gap: 6px; align-items: center; }
+  .waitslot { width: 100%; max-width: var(--col); }
+  .ask { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); box-shadow: var(--md); margin-top: 8px; }
+  .ask .q { font-weight: 500; margin: 0 0 8px; display: flex; gap: 8px; align-items: flex-start; }
+  .ask .q svg { margin-top: 1px; opacity: .75; }
+  .ask .qtext { white-space: pre-wrap; }
+  .ask fieldset { border: 0; margin: 0 0 8px; padding: 0; }
+  .ask legend { padding: 0; margin-bottom: 4px; }
+  .ask label.o { display: flex; align-items: center; gap: 9px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; margin-top: 6px; cursor: pointer; }
+  .ask label.o:has(input:checked) { background: var(--btnh); }
+  .ask input[type="radio"], .ask input[type="checkbox"] { accent-color: var(--ink); margin: 0; }
+  .ask input[type="text"] { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; background: var(--bg); margin-top: 6px; outline: 0; }
+  .ask input[type="text"]:focus { border-color: var(--ink-3); }
+  .ask pre { margin: 0 0 4px; font: 12px/1.45 var(--mono); background: var(--recessed); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+  .ask .act { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  .ask .hint { color: var(--ink-3); font-size: 12px; }
+  .pbtn { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 6px; background: var(--send); color: var(--send-ink); font-weight: 500; font-size: 12px; }
+  .gbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); font-weight: 500; font-size: 12px; background: var(--bg); white-space: nowrap; }
+  .gbtn:hover { background: var(--btnh); }
+  .gbtn.red { color: var(--red); }
+  .dock { flex: none; display: flex; flex-direction: column; align-items: center; padding: 0 24px 10px; }
+  .dock .compose textarea { min-height: 88px; }
+  .nudge { width: 100%; max-width: var(--col); display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-bottom: 0; background: var(--side); border-radius: 12px 12px 0 0; padding: 7px 8px 13px 12px; margin-bottom: -6px; font-size: 12.5px; color: var(--ink-2); }
+  .nudge .gbtn { margin-left: auto; }
+  .readonly { width: 100%; max-width: var(--col); color: var(--ink-3); text-align: center; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; }
+
+  /* ---- lists: drafts, permissions, gone ---- */
+  .doc { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 8px 24px 40px; }
+  .doc .col { gap: 10px; }
+  .doc h1 { font-size: 15px; font-weight: 600; margin: 4px 0 2px; }
+  .doc .lede { color: var(--ink-3); margin: 0 0 6px; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .card .where { color: var(--ink-2); font-size: 12px; }
+  .card textarea { width: 100%; min-height: 64px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--recessed); resize: vertical; }
+  .card .act { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pair { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .pair:first-of-type { border-top: 0; }
+  .pair .pt { flex: 1; min-width: 0; }
+  .pair .pt b { font-weight: 500; }
+  .pair .pt span { display: block; color: var(--ink-3); font-size: 12px; }
+  .muted { color: var(--ink-3); }
+
+  /* ---- floating layer: menus, search, toasts ---- */
+  .menu { position: fixed; z-index: 35; min-width: 214px; max-width: min(340px, calc(100vw - 16px)); max-height: min(440px, calc(100vh - 16px)); overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--md); padding: 4px; font-size: 12px; }
+  .menu .mi { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 4px 8px; border-radius: 4px; width: 100%; text-align: left; }
+  .menu .mi:hover, .menu .mi:focus-visible, .menu .mi.cur { background: var(--btnh); outline: 0; }
+  .menu .mi .k { margin-left: auto; color: var(--ink-3); padding-left: 12px; }
+  .menu .mi.red { color: var(--red); }
+  .menu .mi .ck { width: 16px; display: inline-flex; flex: none; margin-left: 8px; }
+  .menu .mi .ck.push { margin-left: auto; }
+  .menu .mi .ml { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu .sep { height: 1px; background: var(--line); margin: 4px -4px; }
+  .menu .mh { font-size: 11.5px; color: var(--ink-3); padding: 6px 8px 2px; }
+  .menu input[type="search"] { width: 100%; border: 0; border-bottom: 1px solid var(--line); outline: 0; background: transparent; padding: 6px 8px 8px; margin-bottom: 4px; }
+  .menu .tabs { display: flex; gap: 2px; padding: 2px 2px 6px; overflow-x: auto; scrollbar-width: none; }
+  .menu .tabs button, .menu .segrow button { white-space: nowrap; flex: none; }
+  .menu.wide { min-width: 320px; }
+  .menu .tabs button { height: 24px; padding: 0 8px; border-radius: 4px; color: var(--ink-2); }
+  .menu .tabs button[aria-pressed="true"] { background: var(--sel); color: var(--ink); }
+  .menu .segrow { display: flex; gap: 2px; padding: 2px 4px 4px; overflow-x: auto; scrollbar-width: none; }
+  .menu .segrow button { height: 24px; padding: 0 8px; border-radius: 4px; color: var(--ink-2); }
+  .menu .segrow button:hover { background: var(--btnh); }
+  .menu .segrow button[aria-pressed="true"] { background: var(--sel); color: var(--ink); }
+  .scrim { position: fixed; inset: 0; z-index: 30; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding: 108px 16px 16px; }
+  .palette { width: 640px; max-width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--lg); overflow: hidden; display: flex; flex-direction: column; max-height: calc(100vh - 140px); }
+  .palette .ph { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line); color: var(--ink-3); }
+  .palette .ph input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 14px; padding: 6px 0; color: var(--ink); min-width: 0; }
+  .palette .res { overflow: auto; padding: 4px; }
+  .palette .pr { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 6px; width: 100%; text-align: left; }
+  .palette .pr.cur { background: var(--btnh); }
+  .palette .pr .pt { flex: 1; min-width: 0; }
+  .palette .pr .pt b { display: block; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .palette .pr .pt span { color: var(--ink-3); font-size: 12px; }
+  .palette .none { color: var(--ink-3); padding: 14px 10px; }
+  .palette .sec { color: var(--ink-3); font-size: 12px; margin: 6px 10px 2px; }
+  .palette .pr .pt span svg { vertical-align: -1px; }
+  .toasts { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 6px; align-items: center; width: max-content; max-width: calc(100vw - 24px); pointer-events: none; }
+  .toast { background: var(--ink); color: var(--bg); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; box-shadow: var(--lg); pointer-events: auto; display: flex; gap: 10px; align-items: center; }
+  .toast button { text-decoration: underline; text-underline-offset: 2px; }
+  .tip { position: fixed; z-index: 50; background: #1f1f1f; color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 6px; pointer-events: none; white-space: nowrap; }
+
+  /* ---- phone: no sidebar column; it opens as a drawer that pushes the main view ---- */
+  @media (max-width: 720px) {
+    .app { transition: transform .2s cubic-bezier(.4,0,.2,1); grid-template-columns: min(335px, 86vw) 100vw; transform: translateX(calc(-1 * min(335px, 86vw))); }
+    .app.drawer { transform: none; }
+    .app.drawer .main::after { content: ""; position: absolute; inset: 0; z-index: 5; }
+    .drawer-btn { display: inline-flex; }
+    .bar { padding: 0 6px; gap: 2px; }
+    .bar .title { padding-left: 4px; }
+    .seg button .sl, .hostbtn .hl, .tabbtn { display: none; }
+    .hostbtn { padding: 0 7px; gap: 4px; }
+    .seg button { padding: 0 7px; }
+    .seg { margin-right: 0; }
+    .newview { padding: 0 10px 8px; justify-content: flex-end; }
+    .newview .compose textarea { font-size: 15px; min-height: 96px; }
+    .recent { display: block; width: 100%; margin-bottom: 10px; }
+    .recent h2 { font-size: 12px; font-weight: 400; color: var(--ink-3); margin: 0 0 6px 6px; }
+    .rc { display: flex; align-items: center; gap: 10px; padding: 7px 6px; width: 100%; text-align: left; border-radius: 8px; }
+    .rc .tile { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2); flex: none; }
+    .rc .tx { min-width: 0; flex: 1; } .rc .tx b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rc .tx span { color: var(--ink-3); font-size: 12px; }
+    .scroller { padding: 10px 12px; }
+    .dock { padding: 0 10px 8px; }
+    .dock .compose textarea { font-size: 15px; min-height: 72px; }
+    .ub { max-width: 85%; }
+    .doc { padding: 8px 12px 32px; }
+    .scrim { padding-top: 56px; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-new" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8M8 12h8"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></symbol>
+    <symbol id="i-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
+    <symbol id="i-ask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-fail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m14.8 9.2-5.6 5.6M9.2 9.2l5.6 5.6"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 8h15v9.5a2.5 2.5 0 0 1-2.5 2.5H7a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M3.5 4.5h17V8h-17z"/><path d="M12 11v5.5M9.8 14.3 12 16.5l2.2-2.2"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18.5" cy="12" r="1.4"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 6 6 6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9.5 6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></symbol>
+    <symbol id="i-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5v6.5a3 3 0 0 1-3 3H6"/><path d="m9.5 11-3.5 3.5L9.5 18"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2l2 2.2h7.8A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5Z"/></symbol>
+    <symbol id="i-folder-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V9.7a2.5 2.5 0 0 0-2.5-2.5h-7.8l-2-2.2H5.5A2.5 2.5 0 0 0 3 7.5v10A2.5 2.5 0 0 0 5.5 20H12"/><path d="M18 15v6M15 18h6"/></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M3.5 8.5h17M7 12.5h6M7 15.5h9"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17A2.5 2.5 0 0 1 4 14.5Z"/></symbol>
+    <symbol id="i-tab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4H20v6.5M20 4l-8.5 8.5"/><path d="M18 14v3.5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 4 17.5v-9A2.5 2.5 0 0 1 6.5 6H10"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></symbol>
+    <symbol id="i-host" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7 10 2.5 2L7 14M12 15h4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+    <symbol id="i-draft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5H7.5A2.5 2.5 0 0 0 5 6v12a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 18V8.5Z"/><path d="M14 3.5v5h5M8.5 13h7M8.5 16.5h4.5"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 7 4.5 4.5L5 16M12 17h7"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5H7.5A2.5 2.5 0 0 0 5 6v12a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 18V8.5Z"/><path d="M14 3.5v5h5"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3Z"/><path d="M14.5 6.5 17 4l3 3-2.5 2.5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9Z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5h.01"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M9.5 4v16"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" data-app>
+  <aside class="side" data-side aria-label="Sessions">
+    <div class="chrome">
+      <button type="button" class="ib drawer-btn" data-drawer-close aria-label="Hide sessions"><svg class="i"><use href="#i-panel"/></svg></button>
+      <button type="button" class="newrow" data-new><svg class="i"><use href="#i-new"/></svg>New session</button>
+      <button type="button" class="ib" data-search data-tip="Search sessions (\u2318K)" aria-label="Search sessions"><svg class="i"><use href="#i-search"/></svg></button>
+    </div>
+    <nav class="list" data-list><p class="empty-side">Loading\u2026</p></nav>
+    <div class="foot" data-foot>
+      <button type="button" class="ib" data-drafts data-tip="Unsent drafts" aria-label="Unsent drafts"><svg class="i"><use href="#i-draft"/></svg></button>
+      <button type="button" class="ib" data-perms data-tip="Page permissions" aria-label="Page permissions"><svg class="i"><use href="#i-lock"/></svg></button>
+    </div>
+  </aside>
+  <main class="main" data-main>
+    <p data-thread-page-notice hidden></p>
+    <div class="view" data-view></div>
+  </main>
+</div>
+<!-- The new-session field is in the markup from the start, so the shell finds it when it restores a draft after a
+     reload, before the script has built the view; the script moves it into the composer. 02 R-K4 -->
+<div hidden data-parking><textarea id="hub-new-prompt" rows="1" placeholder="Ask anything." aria-label="What should the new session do?"></textarea></div>
+<div data-layer></div>
+<div class="toasts" data-toasts role="status" aria-live="polite"></div>
+
+<script>
+(async () => {
+  "use strict";
+  const tp = window.threadPage;
+  const $ = (selector, root) => (root || document).querySelector(selector);
+
+  // Every piece of state a listener can reach is declared before the first \`await\`: the host hands grants and drafts
+  // at connect, before the reads below resolve. 05 R-S12
+  const SNAPSHOT_MS = 6000, CHAT_MS = 2000, CHAT_ROWS = 60, MAX_FILES = 8;
+  let grants = [], drafts = [];
+  let roster = new Set(), canEmbed = false;
+  let workspaces = [], providers = [], sessions = [], byId = new Map(), loadedAt = 0, loadFailed = false;
+  let archived = null;
+  let prefs = { view: null, modes: {}, groups: {}, open: {}, compose: {} };
+  let view = { kind: "new" };
+  let teardown = null, refresh = null;
+  let sideSig = "";
+  const readMarked = new Map();
+  const chatDrafts = new Map();
+  const has = (method) => roster.has(method);
+
+  // ---- small DOM helpers -----------------------------------------------------------------------------
+  function h(tag, props, ...children) {
+    const node = document.createElement(tag);
+    if (props) for (const [key, value] of Object.entries(props)) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else if (key === "dataset") Object.assign(node.dataset, value);
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+    for (const child of children.flat()) if (child !== null && child !== undefined && child !== false) node.append(typeof child === "string" ? document.createTextNode(child) : child);
+    return node;
+  }
+  const SVG = "http://www.w3.org/2000/svg";
+  function icon(name, size, extra) {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("class", "i" + (size ? " i" + size : "") + (extra ? " " + extra : ""));
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS(SVG, "use");
+    use.setAttribute("href", "#i-" + name);
+    svg.append(use);
+    return svg;
+  }
+  function button(props, ...children) { return h("button", { type: "button", ...props }, ...children); }
+
+  const describe = (error) => (error && error.message) || String(error);
+  const ago = (ms) => {
+    if (!ms) return "";
+    const delta = Date.now() - ms;
+    if (delta < 45e3) return "now";
+    if (delta < 3600e3) return Math.max(1, Math.round(delta / 60e3)) + "m ago";
+    if (delta < 86400e3) return Math.round(delta / 3600e3) + "h ago";
+    return Math.round(delta / 86400e3) + "d ago";
+  };
+  const span = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return s + "s";
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + "m " + (s % 60) + "s";
+    return Math.floor(m / 60) + "h " + (m % 60) + "m";
+  };
+  const size = (bytes) => (bytes < 1024 ? bytes + " B" : bytes < 1048576 ? Math.round(bytes / 1024) + " KB" : (bytes / 1048576).toFixed(1) + " MB");
+  const recency = (session) => Math.max(session.attentionAtMs || 0, session.updatedAtMs || 0, session.startedAtMs || 0);
+  const titleOf = (session) => (session && session.title) || "Untitled session";
+  const workspaceName = (id) => { const found = workspaces.find((workspace) => workspace.id === id); return found ? found.name : "Other"; };
+  const isPhone = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches;
+
+  // ---- toasts and errors ----------------------------------------------------------------------------
+  function toast(text, action) {
+    const host = $("[data-toasts]");
+    const node = h("div", { class: "toast" }, h("span", { text }));
+    if (action) node.append(button({ onclick: () => { node.remove(); action.run(); } }, action.label));
+    host.append(node);
+    setTimeout(() => node.remove(), action ? 9000 : 6000);
+  }
+  /** Says what failed, unless the reader declined a confirmation themselves. 03 R5.39 */
+  function handle(error, what) {
+    if (!error || error.code === "cancelled") return;
+    if (error.code === "rate_limited") { toast("The host is busy; the hub keeps trying."); return; }
+    toast((what ? what + ": " : "") + describe(error));
+  }
+
+  // What the host hands this page: every grant pair on the host, and the drafts no page could restore. 05 R-S12
+  document.addEventListener("thread-page:grants", (event) => { grants = (event.detail && event.detail.grants) || []; dutiesChanged(); });
+  document.addEventListener("thread-page:drafts", (event) => { drafts = (event.detail && event.detail.drafts) || []; dutiesChanged(); });
+
+  const viewEl = $("[data-view]"), listEl = $("[data-list]"), appEl = $("[data-app]"), layerEl = $("[data-layer]");
+  // \u2191 and \u2193 move between rows, as in the host's own list.
+  listEl.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const all = [...listEl.querySelectorAll(".row .t, .group")];
+    const at = all.indexOf(document.activeElement);
+    if (at < 0) return;
+    event.preventDefault();
+    const next = all[Math.max(0, Math.min(all.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))];
+    if (next) next.focus();
+  });
+
+  if (!tp) {
+    listEl.replaceChildren(h("p", { class: "empty-side", text: "Open this page through the host." }));
+    viewEl.replaceChildren(h("div", { class: "newview" }, h("p", { class: "note-host", text: "This document is the home page of a host: open it through the host, not as a file." })));
+    return;
+  }
+
+  // ---- floating menus -------------------------------------------------------------------------------
+  let closeMenu = null, menuAnchor = null;
+  function dismiss() { if (closeMenu) { const close = closeMenu; closeMenu = null; close(); } }
+  /** One menu at a time, anchored under (or above) its control; Escape and an outside press close it. */
+  function popup(anchor, build, options) {
+    dismiss();
+    const menu = h("div", { class: "menu", role: "menu" });
+    build(menu, dismiss);
+    layerEl.append(menu);
+    const box = anchor.getBoundingClientRect();
+    const width = menu.offsetWidth, height = menu.offsetHeight;
+    let left = options && options.alignRight ? box.right - width : box.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+    let top = box.bottom + 4;
+    if (top + height > window.innerHeight - 8) top = Math.max(8, box.top - height - 4);
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    anchor.setAttribute("aria-expanded", "true");
+    menuAnchor = anchor;
+    const outside = (event) => { if (!menu.contains(event.target) && !anchor.contains(event.target)) dismiss(); };
+    setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
+    closeMenu = () => { document.removeEventListener("pointerdown", outside, true); anchor.setAttribute("aria-expanded", "false"); menu.remove(); menuAnchor = null; };
+    const first = menu.querySelector("input, .mi");
+    if (first && !(options && options.noFocus)) first.focus();
+    return menu;
+  }
+  function item(label, iconName, run, extra) {
+    const checkable = !!extra && "check" in extra;
+    const node = button({ class: "mi" + (extra && extra.red ? " red" : ""), role: checkable ? "menuitemradio" : "menuitem", "aria-checked": checkable ? String(!!extra.check) : null, disabled: extra && extra.disabled },
+      iconName ? icon(iconName) : null, h("span", { class: "ml", text: label }), extra && extra.hint ? h("span", { class: "k", text: extra.hint }) : null,
+      checkable ? h("span", { class: "ck" + (extra.hint ? "" : " push") }, extra.check ? icon("check") : null) : null);
+    node.addEventListener("click", () => { dismiss(); run(); });
+    return node;
+  }
+  const sep = () => h("div", { class: "sep" });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && closeMenu) { dismiss(); event.preventDefault(); return; }
+    if (event.key === "Escape" && appEl.classList.contains("drawer")) { appEl.classList.remove("drawer"); event.preventDefault(); return; }
+    if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K")) { event.preventDefault(); openSearch(); }
+  });
+  window.addEventListener("resize", dismiss);
+
+  // Tooltips like the host's: a small dark pill under icon buttons.
+  let tipEl = null;
+  document.addEventListener("pointerover", (event) => {
+    const target = event.target.closest && event.target.closest("[data-tip]");
+    if (tipEl) { tipEl.remove(); tipEl = null; }
+    if (!target || isPhone()) return;
+    const box = target.getBoundingClientRect();
+    tipEl = h("div", { class: "tip", text: target.getAttribute("data-tip") });
+    layerEl.append(tipEl);
+    const left = Math.max(6, Math.min(box.left + box.width / 2 - tipEl.offsetWidth / 2, window.innerWidth - tipEl.offsetWidth - 6));
+    const top = box.top - tipEl.offsetHeight - 6 < 4 ? box.bottom + 6 : box.top - tipEl.offsetHeight - 6;
+    tipEl.style.left = left + "px"; tipEl.style.top = top + "px";
+  });
+  document.addEventListener("pointerdown", () => { if (tipEl) { tipEl.remove(); tipEl = null; } }, true);
+
+  // ---- the hub's own budget. Every call it makes goes through \`call\`: a token bucket of 60 a minute (a burst of 8)
+  // and 4 at once, whatever the logic above asks; the rest of the page's 120 a minute and 8 at once is the embed's
+  // (05 R2.38). The reader's own actions go first. A logic bug can make the hub slow, never a storm.
+  const RATE = 60, BURST = 8, AT_ONCE = 4;
+  let tokens = BURST, refilledAt = Date.now(), inFlight = 0, wake = null;
+  const waiting = [];
+  function pump() {
+    const now = Date.now();
+    tokens = Math.min(BURST, tokens + ((now - refilledAt) * RATE) / 60000);
+    refilledAt = now;
+    while (waiting.length && inFlight < AT_ONCE && tokens >= 1) {
+      const next = waiting.shift();
+      tokens -= 1;
+      inFlight += 1;
+      next.run().finally(() => { inFlight -= 1; pump(); });
+    }
+    if (waiting.length && tokens < 1 && !wake) wake = setTimeout(() => { wake = null; pump(); }, Math.ceil(((1 - tokens) * 60000) / RATE));
+  }
+  /** One capability call under the hub's budget; \`urgent\` for what the reader just did. */
+  function call(method, params, urgent) {
+    return new Promise((resolve, reject) => {
+      const entry = { urgent: !!urgent, run: () => (params === undefined ? tp.invoke(method) : tp.invoke(method, params)).then(resolve, reject) };
+      const at = urgent ? waiting.findIndex((one) => !one.urgent) : -1;
+      if (at >= 0) waiting.splice(at, 0, entry); else waiting.push(entry);
+      pump();
+    });
+  }
+  /** A read repeated every \`intervalMs\` after the last one finished, through \`call\`; paused while the tab is hidden. */
+  function every(method, params, intervalMs, listener) {
+    let stopped = false, timer = null;
+    const run = async () => {
+      timer = null;
+      if (stopped) return;
+      if (document.visibilityState !== "hidden") {
+        let value, failure;
+        try { value = await call(method, params); } catch (error) { failure = error; }
+        if (stopped) return;
+        try { await listener(value, failure); } catch (error) { /* the listener reports its own failures */ }
+      }
+      if (!stopped) timer = setTimeout(run, intervalMs);
+    };
+    run();
+    return () => { stopped = true; clearTimeout(timer); };
+  }
+
+  // ---- what this host offers: the roster decides every control. 03 R5.9 ---------------------------------
+  try {
+    const context = await call("context.get");
+    roster = new Set(context.capabilities.map((entry) => entry.method));
+  } catch (error) { handle(error, "Could not read what this host offers"); }
+  canEmbed = typeof tp.embed === "function" && has("pages.read");
+  $("[data-search]").addEventListener("click", () => openSearch());
+  // The phone's drawer closes from its own toggle, a tap on the main view beside it, or Escape.
+  $("[data-drawer-close]").addEventListener("click", () => appEl.classList.remove("drawer"));
+  $("[data-main]").addEventListener("click", (event) => { if (appEl.classList.contains("drawer")) { event.preventDefault(); event.stopPropagation(); appEl.classList.remove("drawer"); } }, true);
+  $("[data-new]").addEventListener("click", () => go({ kind: "new" }));
+  $("[data-drafts]").addEventListener("click", () => go({ kind: "drafts" }));
+  $("[data-perms]").addEventListener("click", () => go({ kind: "permissions" }));
+
+  // The hub's view state lives in its own storage namespace; nothing about the reader is kept. 03 R5.18a
+  try {
+    const stored = await call("storage.get", { key: "hub.v1" });
+    if (stored.found && stored.value && typeof stored.value === "object") prefs = { ...prefs, ...stored.value };
+  } catch (error) { if (error.code !== "unavailable" && error.code !== "unknown_method") handle(error); }
+  for (const key of ["modes", "groups", "open", "compose"]) if (!prefs[key] || typeof prefs[key] !== "object") prefs[key] = {};
+  let saveTimer = null;
+  function savePrefs() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const modes = Object.entries(prefs.modes);
+      if (modes.length > 200) prefs.modes = Object.fromEntries(modes.slice(-200));
+      call("storage.set", { key: "hub.v1", value: prefs }).catch(() => {});
+    }, 600);
+  }
+
+  // ---- data -----------------------------------------------------------------------------------------
+  async function loadWorkspaces(quiet) {
+    try { workspaces = (await call("workspaces.list")).workspaces || []; } catch (error) { if (!quiet) handle(error, "Could not list workspaces"); }
+  }
+  async function loadProviders() {
+    if (!has("providers.list")) return;
+    try { providers = ((await call("providers.list")).providers || []).filter((provider) => provider.available); } catch (error) { if (error.code !== "unavailable") handle(error, "Could not list models"); }
+  }
+  // ---- the session list, in pages small enough for the 64 KiB response bound. 03 R5.11, R5.12, \xA7Limits ---------
+  // A page starts at 50 rows and halves whenever the host answers \`response_too_large\`. The first 200 sessions load
+  // at once; "Show more sessions" loads the next; the watch refreshes the first page and one further page per tick.
+  let pageLimit = 50, pages = [], rotation = 0, stale = [], listErrorShown = false, capped = false;
+  let stopSnapshot = null, perWorkspace = false, generation = 0;
+  const WANT = 200;
+  const listParams = (extra) => ({ limit: pageLimit, includeArchived: false, includeChildren: true, ...extra });
+  /** One page of a list; a page too large for the bound is asked again at half the size. Returns null when the size changed (the caller restarts). */
+  /** What \`readPage\` answers when the read moved the hub to the per-workspace fallback: stop this pass. */
+  const SWITCHED = "switched";
+  /** One page of a list. Null: the page size halved, ask again. SWITCHED: the hub now reads by workspace. */
+  async function readPage(params, cursor) {
+    const limit = pageLimit;
+    try { return await call("sessions.snapshot", { ...params, limit, ...(cursor ? { cursor } : {}) }); }
+    catch (error) {
+      if (error.code === "response_too_large" && pageLimit > 5) { pageLimit = Math.max(5, Math.floor(limit / 2)); return null; }
+      // A row that does not validate, on whichever page of the whole list: read workspace by workspace instead.
+      if (error.code === "invalid_result" && !params.workspaceId) { if (!perWorkspace) { perWorkspace = true; watchSessions(); } return SWITCHED; }
+      throw error;
+    }
+  }
+  const goneIds = new Set(), goneChecked = new Map();
+  /** Asks the host whether a session the list no longer shows still exists, at most every 30 s. */
+  function checkGone(id) {
+    if (Date.now() - (goneChecked.get(id) || 0) < 30000) return;
+    goneChecked.set(id, Date.now());
+    const drop = () => {
+      sessions = sessions.filter((session) => session.id !== id);
+      byId.delete(id);
+      sideSig = "";
+      renderSidebar();
+      if (refresh) refresh();
+    };
+    call("sessions.messages", { sessionId: id, limit: 1 }).then(async () => {
+      // Still there: archived in the host, perhaps. Its workspace's archived rows say so; then it stays open, read-only.
+      const row = byId.get(id);
+      if (!row || !row.workspaceId) return;
+      let cursor = null;
+      for (let page = 0; page < 3; page += 1) {
+        const found = await readPage({ includeArchived: true, includeChildren: true, workspaceId: row.workspaceId }, cursor).catch(() => null);
+        if (!found || found === SWITCHED) return;
+        const hit = found.sessions.find((session) => session.id === id);
+        if (hit) {
+          if (!hit.archived) return;
+          archived = archived || [];
+          if (!archived.some((session) => session.id === id)) archived.unshift(hit);
+          goneIds.add(id);
+          drop();
+          return;
+        }
+        cursor = found.nextCursor;
+        if (!cursor) return;
+      }
+    }, (error) => {
+      if (error.code !== "not_found") return;
+      goneIds.add(id);
+      drop();
+    });
+  }
+  function listFailed(error) {
+    if (!loadedAt) loadFailed = true;
+    // One line per run of failures, not one per tick.
+    if (!listErrorShown) { listErrorShown = true; handle(error, "Could not list sessions"); }
+    renderSidebar();
+  }
+  function applySessions(list, atMs) {
+    const seen = new Set();
+    const next = list.filter((session) => (seen.has(session.id) ? false : (seen.add(session.id), true)));
+    // The open session stays while the list misses it; only the host saying it is gone closes it.
+    const open = view.kind === "session" ? view.id : null;
+    if (open && !seen.has(open) && byId.has(open) && !goneIds.has(open)) { next.push(byId.get(open)); checkGone(open); }
+    sessions = next;
+    byId = new Map(sessions.map((session) => [session.id, session]));
+    loadedAt = atMs || Date.now();
+    loadFailed = false;
+    listErrorShown = false;
+    renderSidebar();
+    if (refresh) refresh();
+  }
+  const moreCursor = () => (pages.length ? pages[pages.length - 1].next : null);
+  async function loadPage(own) {
+    const cursor = moreCursor();
+    const page = await readPage(listParams(), cursor);
+    if (own !== generation || page === SWITCHED) return false;
+    if (!page) { restartList(); return false; }
+    pages.push({ cursor, rows: page.sessions, next: page.nextCursor });
+    return true;
+  }
+  function restartList() { pages = []; rotation = 0; stale = []; watchSessions(); }
+  let loadingMore = false;
+  async function showMore() {
+    if (loadingMore) return;
+    loadingMore = true;
+    const own = generation;
+    try {
+      for (let n = 0; n < 2 && moreCursor(); n += 1) if (!(await loadPage(own))) return;
+      if (own === generation) applySessions(pages.flatMap((page) => page.rows), Date.now());
+    } catch (error) { handle(error, "Could not list more sessions"); }
+    finally { loadingMore = false; sideSig = ""; renderSidebar(); }
+  }
+  function watchSessions() {
+    if (stopSnapshot) stopSnapshot();
+    generation += 1;
+    const own = generation;
+    if (perWorkspace) { stopSnapshot = pollByWorkspace(own); return; }
+    const params = listParams();
+    stopSnapshot = every("sessions.snapshot", params, SNAPSHOT_MS, async (value, error) => {
+      if (own !== generation) return;
+      if (error) {
+        if (error.code === "response_too_large" && pageLimit > 5) { pageLimit = Math.max(5, Math.floor(pageLimit / 2)); restartList(); return; }
+        // A host with a row that does not validate fails the whole list; the hub then reads workspace by workspace,
+        // so one bad row costs that row and not every session.
+        if (error.code === "invalid_result") { perWorkspace = true; watchSessions(); return; }
+        listFailed(error);
+        return;
+      }
+      const fresh = !pages.length;
+      // Rows cross a page boundary only when the first page gained or lost a row, or its last row changed: then the
+      // later pages are marked stale and read one per tick in order; otherwise one page per tick in rotation.
+      if (!fresh) {
+        const before = pages[0].rows.map((one) => one.id), after = value.sessions.map((one) => one.id), had = new Set(before);
+        if (before.length !== after.length || before[before.length - 1] !== after[after.length - 1] || after.some((one) => !had.has(one))) stale = pages.slice(1).map((_, at) => at + 1);
+      }
+      pages[0] = { cursor: null, rows: value.sessions, next: value.nextCursor };
+      try {
+        if (fresh) { while (moreCursor() && pages.reduce((n, page) => n + page.rows.length, 0) < WANT) if (!(await loadPage(own))) return; }
+        else if (pages.length > 1) {
+          const at = stale.length ? stale.shift() : 1 + (rotation++ % (pages.length - 1));
+          if (at < pages.length) {
+            const page = await readPage(params, pages[at].cursor);
+            if (own !== generation || page === SWITCHED) return;
+            if (!page) { restartList(); return; }
+            pages[at] = { cursor: pages[at].cursor, rows: page.sessions, next: page.nextCursor };
+          }
+        }
+      } catch (loadError) { if (loadError.code !== "rate_limited") listFailed(loadError); }
+      if (own === generation) applySessions(pages.flatMap((page) => page.rows), value.generatedAtMs);
+    });
+  }
+  /** The fallback: one read per workspace, each workspace's last good rows kept, its share of the budget held near
+   *  40 calls a minute, empty workspaces read every fourth tick, and the single list tried again every twentieth. */
+  function pollByWorkspace(own) {
+    let timer = null, stopped = false, count = 0, delay = 0;
+    const rowsBy = new Map(), flat = new Set(), cut = new Set();
+    for (const session of sessions) { if (!rowsBy.has(session.workspaceId)) rowsBy.set(session.workspaceId, []); rowsBy.get(session.workspaceId).push(session); }
+    const gone = () => stopped || own !== generation;
+    const tick = async () => {
+      if (gone()) return;
+      count += 1;
+      let calls = 0, limited = false;
+      if (document.visibilityState !== "hidden") {
+        if (count % 20 === 0) {
+          calls += 1;
+          try {
+            const first = await readPage(listParams());
+            if (gone()) return;
+            if (first && first !== SWITCHED) { perWorkspace = false; pages = [{ cursor: null, rows: first.sessions, next: first.nextCursor }]; applySessions(first.sessions, first.generatedAtMs); watchSessions(); return; }
+          } catch (error) { if (error.code === "rate_limited") limited = true; }
+        }
+        if (!limited && count % 6 === 0) { calls += 1; await loadWorkspaces(true); }
+        for (const workspace of workspaces) {
+          if (limited || gone()) break;
+          const known = rowsBy.get(workspace.id);
+          if (known && !known.length && count % 4 !== 1) continue;
+          const scoped = listParams({ includeChildren: !flat.has(workspace.id), workspaceId: workspace.id });
+          try {
+            const all = [];
+            let cursor = null, read = 0;
+            do {
+              calls += 1;
+              const page = await readPage(scoped, cursor);
+              if (!page) { cursor = null; read = -1; break; }
+              all.push(...page.sessions);
+              cursor = page.nextCursor;
+              read += 1;
+            } while (cursor && read < 4);
+            if (read < 0) continue;
+            if (cursor) cut.add(workspace.id); else cut.delete(workspace.id);
+            rowsBy.set(workspace.id, all);
+          } catch (error) {
+            if (error.code === "rate_limited") limited = true;
+            else if (error.code === "invalid_result" && scoped.includeChildren) flat.add(workspace.id);
+            // Any other failure keeps that workspace's previous rows: a failed read never empties the list.
+          }
+        }
+        if (!gone() && !limited) {
+          for (const id of [...rowsBy.keys()]) if (!workspaces.some((workspace) => workspace.id === id)) rowsBy.delete(id);
+          capped = cut.size > 0;
+          applySessions([...rowsBy.values()].flat(), Date.now());
+        }
+      }
+      delay = limited ? Math.min(60000, Math.max(delay, 10000) * 2) : Math.max(SNAPSHOT_MS * 2, calls * 1500);
+      if (!gone()) timer = setTimeout(tick, delay);
+    };
+    tick();
+    return () => { stopped = true; clearTimeout(timer); };
+  }
+  // Every active session, for search: the sidebar holds the newest; while a query is typed the rest of the list is read
+  // page after page, one call every 1.5 s, until the host has no more. Sessions in the sidebar stay the fresher copy.
+  let activeAll = null, activeCursor = null, activeDone = false, activeRunning = false;
+  async function loadActive(isWanted, onProgress) {
+    if (activeRunning || activeDone) return;
+    // Nothing past the sidebar's pages, or the fallback (which lists each workspace itself): nothing more to read.
+    if (perWorkspace || !moreCursor()) return;
+    activeRunning = true;
+    if (!activeAll) activeAll = [];
+    try {
+      while (!activeDone && isWanted()) {
+        const page = await readPage(listParams(), activeCursor);
+        // The fallback took over (its rows are already in the list): stop. Null: the page halved, so ask again.
+        if (page === SWITCHED) return;
+        if (!page) continue;
+        for (const session of page.sessions) if (!activeAll.some((one) => one.id === session.id)) activeAll.push(session);
+        activeCursor = page.nextCursor;
+        activeDone = !activeCursor;
+        onProgress();
+        if (!activeDone) await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    } finally { activeRunning = false; }
+  }
+  // Archived sessions, read only for search: page after page, one call every 1.5 s while the search shows them.
+  // In the fallback they are read workspace by workspace, as the active list is. A failed read ends the pass: the
+  // reader's next look resumes where it stopped.
+  let archivedCursor = null, archivedDone = false, archivedRunning = false, archivedAt = -1;
+  async function loadArchived(isWanted, onProgress) {
+    if (archivedRunning || archivedDone) return;
+    archivedRunning = true;
+    if (!archived) archived = [];
+    try {
+      while (!archivedDone && isWanted()) {
+        if (perWorkspace && archivedAt < 0) { archivedAt = 0; archivedCursor = null; }
+        if (archivedAt >= workspaces.length) { archivedDone = true; break; }
+        const scope = archivedAt >= 0 ? { workspaceId: workspaces[archivedAt].id } : {};
+        let page;
+        try { page = await readPage({ includeArchived: true, includeChildren: false, ...scope }, archivedCursor); }
+        catch (error) { if (archivedAt >= 0 && error.code === "invalid_result") { archivedAt += 1; archivedCursor = null; continue; } throw error; }
+        if (page === SWITCHED || !page) continue;
+        for (const session of page.sessions) if (session.archived && !archived.some((one) => one.id === session.id)) archived.push(session);
+        archivedCursor = page.nextCursor;
+        if (!archivedCursor) { if (archivedAt >= 0) archivedAt += 1; else archivedDone = true; }
+        if (archivedAt >= workspaces.length) archivedDone = true;
+        onProgress();
+        if (!archivedDone) await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    } finally { archivedRunning = false; }
+  }
+  const lookup = (id) => byId.get(id) || (archived && archived.find((session) => session.id === id)) || null;
+  const childrenOf = (id) => sessions.filter((session) => session.parentSessionId === id).sort((a, b) => recency(b) - recency(a));
+
+  // ---- state glyphs, as the host draws them ----------------------------------------------------------------
+  /** One glyph for a row: waiting, then working, then failed, then unread; a collapsed parent shows its sub-agents' too. */
+  function glyphOf(session, withChildren) {
+    const all = [session];
+    if (withChildren) { const walk = (id) => { for (const child of childrenOf(id)) { all.push(child); walk(child.id); } }; walk(session.id); }
+    if (all.some((one) => one.state === "waiting")) return "waiting";
+    if (all.some((one) => one.state === "working")) return "working";
+    if (session.state === "failed") return "failed";
+    if (all.some((one) => one.unread)) return "unread";
+    return "";
+  }
+  function glyph(kind) {
+    const slot = h("span", { class: "slot " + kind });
+    if (kind === "working") { slot.append(icon("spin", null, "spin")); slot.title = "Working"; }
+    else if (kind === "waiting") { slot.append(icon("ask")); slot.title = "Waiting on you"; }
+    else if (kind === "failed") { slot.append(icon("fail")); slot.title = "Failed"; }
+    else if (kind === "unread") { slot.append(h("span", { class: "udot" })); slot.title = "Unread"; }
+    return slot;
+  }
+
+  // ---- sidebar --------------------------------------------------------------------------------------
+  // While the pointer is over the list, rows keep their places, so a row does not move from under the reader.
+  let held = null;
+  const byOrder = (a, b) => {
+    const ha = held && held.has(a.id), hb = held && held.has(b.id);
+    if (ha && hb) return held.get(a.id) - held.get(b.id);
+    if (ha !== hb) return ha ? -1 : 1;
+    return recency(b) - recency(a);
+  };
+  listEl.addEventListener("pointerenter", () => { held = new Map([...listEl.querySelectorAll(".row")].map((node, at) => [node.dataset.id, at])); });
+  listEl.addEventListener("pointerleave", () => { held = null; sideSig = ""; renderSidebar(); });
+  function renderSidebar() {
+    const selected = view.kind === "session" ? view.id : "";
+    const sig = JSON.stringify([selected, prefs.groups, prefs.open, !!moreCursor(), capped, workspaces.map((w) => w.id + w.name), roster.size, loadedAt ? 1 : 0, loadFailed,
+      sessions.map((s) => [s.id, s.title, s.state, s.unread, s.parentSessionId, s.workspaceId, s.archived, Math.floor(recency(s) / 60000)])]);
+    if (sig === sideSig) return;
+    sideSig = sig;
+    $("[data-new]").classList.toggle("on", view.kind === "new");
+    const roots = sessions.filter((session) => !session.parentSessionId || !byId.has(session.parentSessionId));
+    const known = new Set(workspaces.map((workspace) => workspace.id));
+    const groups = workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, list: [] }));
+    const other = { id: "~other", name: "Other", list: [] };
+    for (const session of roots) (known.has(session.workspaceId) ? groups.find((group) => group.id === session.workspaceId).list : other.list).push(session);
+    if (other.list.length) groups.push(other);
+    const fragment = document.createDocumentFragment();
+    for (const group of groups) {
+      if (!group.list.length && (group.id === "~other" || !loadedAt)) continue;
+      const open = !prefs.groups[group.id];
+      const header = h("div", { class: "group", role: "button", tabindex: "0", "aria-expanded": String(open), dataset: { group: group.id } },
+        h("span", { class: "gname", text: group.name }), h("span", { class: "gchev" }, icon(open ? "down" : "right", 12)));
+      // A collapsed group still shows what needs the reader, as a collapsed parent does.
+      if (!open) {
+        const kinds = group.list.map((session) => glyphOf(session, true));
+        const top = ["waiting", "working", "failed", "unread"].find((kind) => kinds.includes(kind));
+        if (top) header.append(h("span", { class: "gsp" }), glyph(top));
+      }
+      const toggle = () => { prefs.groups[group.id] = open ? true : undefined; if (!prefs.groups[group.id]) delete prefs.groups[group.id]; savePrefs(); renderSidebar(); };
+      header.addEventListener("click", toggle);
+      header.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } });
+      if (has("sessions.start") && known.has(group.id)) {
+        const add = button({ class: "ib gadd", "aria-label": "New session in " + group.name, "data-tip": "New session in " + group.name }, icon("plus"));
+        add.addEventListener("click", (event) => { event.stopPropagation(); prefs.compose.workspaceId = group.id; savePrefs(); go({ kind: "new" }); });
+        header.append(add);
+      }
+      fragment.append(header);
+      if (!open) continue;
+      if (!group.list.length) { fragment.append(h("p", { class: "none-side", text: moreCursor() ? "No recent sessions" : "No sessions" })); continue; }
+      for (const session of group.list.sort(byOrder)) appendRow(fragment, session, 0, selected);
+    }
+    if (!fragment.childNodes.length) fragment.append(h("p", { class: "empty-side", text: loadFailed ? "Could not list sessions." : loadedAt ? "No sessions yet." : "Loading\u2026" }));
+    else if (!perWorkspace && moreCursor()) fragment.append(button({ class: "more-side", disabled: loadingMore, onclick: (event) => { event.currentTarget.disabled = true; event.currentTarget.textContent = "Loading\u2026"; showMore(); } }, loadingMore ? "Loading\u2026" : "Show more sessions"));
+    else if (perWorkspace && capped) fragment.append(h("p", { class: "empty-side", text: "Showing the newest 200 sessions of each workspace." }));
+    const focused = document.activeElement && listEl.contains(document.activeElement) ? document.activeElement : null;
+    const focusRow = focused && focused.closest(".row") ? focused.closest(".row").dataset.id : null;
+    const focusLabel = focused ? focused.getAttribute("aria-label") : null;
+    listEl.replaceChildren(fragment);
+    if (focusRow) {
+      const again = listEl.querySelector('.row[data-id="' + focusRow + '"]');
+      const target = again && (focusLabel ? again.querySelector('[aria-label="' + focusLabel + '"]') : again.querySelector(".t"));
+      if (target) target.focus();
+    }
+    if (menuAnchor && !menuAnchor.isConnected) dismiss();
+    dutiesChanged();
+  }
+  function appendRow(into, session, depth, selected) {
+    const kids = childrenOf(session.id);
+    const open = !!prefs.open[session.id];
+    const kind = glyphOf(session, kids.length && !open);
+    const words = { waiting: "waiting on you", working: "working", failed: "failed", unread: "unread" }[kind];
+    const row = h("div", { class: "row" + (session.id === selected ? " sel" : ""), dataset: { id: session.id } },
+      button({ class: "t", "aria-current": session.id === selected ? "page" : null }, titleOf(session), words ? h("span", { class: "sr", text: ", " + words }) : null));
+    if (depth) row.dataset.depth = String(Math.min(depth, 3));
+    if (kids.length) {
+      const twist = button({ class: "tw", "aria-label": (open ? "Hide" : "Show") + " sub-agents", "aria-expanded": String(open) }, icon(open ? "down" : "right", 12));
+      twist.addEventListener("click", (event) => { event.stopPropagation(); if (open) delete prefs.open[session.id]; else prefs.open[session.id] = true; savePrefs(); renderSidebar(); });
+      row.append(twist);
+    }
+    row.append(h("span", { class: "sp" }), glyph(kind));
+    const hover = h("span", { class: "hov" });
+    if (has("sessions.archive") && !session.archived) {
+      const archive = button({ class: "ib", "aria-label": "Archive", "data-tip": "Archive" }, icon("archive"));
+      archive.addEventListener("click", (event) => { event.stopPropagation(); archiveSession(session); });
+      hover.append(archive);
+    }
+    const more = button({ class: "ib", "aria-label": "Session actions", "aria-haspopup": "menu" }, icon("more"));
+    more.addEventListener("click", (event) => { event.stopPropagation(); sessionMenu(more, session); });
+    hover.append(more);
+    row.append(hover);
+    row.addEventListener("click", () => openSession(session.id));
+    into.append(row);
+    if (open) for (const kid of kids) appendRow(into, kid, depth + 1, selected);
+  }
+
+  /** The footer's duties: badges for drafts and permissions, which open their own views. 05 R-S12 */
+  function dutiesChanged() {
+    const draftButton = $("[data-drafts]"), permButton = $("[data-perms]");
+    for (const [node, count, label] of [[draftButton, drafts.length, "Unsent drafts"], [permButton, grants.length, "Page permissions"]]) {
+      const badge = node.querySelector(".bdg");
+      if (count && !badge) node.append(h("span", { class: "bdg" }));
+      if (!count && badge) badge.remove();
+      if (count) node.querySelector(".bdg").textContent = String(count);
+      node.setAttribute("data-tip", count ? label + " (" + count + ")" : label);
+      node.setAttribute("aria-label", count ? label + ", " + count : label);
+      node.classList.toggle("on", view.kind === (node === draftButton ? "drafts" : "permissions"));
+    }
+    if ((view.kind === "drafts" || view.kind === "permissions") && refresh) refresh();
+  }
+
+  // ---- session actions ------------------------------------------------------------------------------
+  async function archiveSession(session) {
+    try {
+      await call("sessions.archive", { sessionId: session.id }, true);
+      byId.delete(session.id);
+      sessions = sessions.filter((one) => one.id !== session.id);
+      if (archived) archived.unshift({ ...session, archived: true });
+      if (view.kind === "session" && view.id === session.id) go({ kind: "new" });
+      else renderSidebar();
+      toast("Archived \u201C" + titleOf(session) + "\u201D.");
+    } catch (error) { handle(error, "Could not archive"); }
+  }
+  /** The host's own view of the session; a host with nowhere to open it from here says so in a line. 03 R5.31b */
+  async function openInHost(session) {
+    try {
+      const result = await call("sessions.openHost", { sessionId: session.id }, true);
+      if (result && result.opened === false && result.notice) toast(result.notice);
+    } catch (error) { handle(error, "Could not open it in the host"); }
+  }
+  async function markRead(session, read) {
+    try {
+      const result = await call("sessions.markRead", { sessionId: session.id, read }, true);
+      session.unread = !!(result && result.unread);
+      sideSig = ""; renderSidebar();
+    } catch (error) { handle(error); }
+  }
+  async function stopSession(session) {
+    try { await call("sessions.stop", { sessionId: session.id }, true); toast("Stopped."); } catch (error) { handle(error, "Could not stop it"); }
+  }
+  /** The page on its own: in place, where the reader's Back returns to the hub. 03 R5.29 */
+  function openPageAlone(session) {
+    call("pages.open", { sessionId: session.id }, true).catch((error) => handle(error, "Could not open the page"));
+  }
+  function sessionMenu(anchor, session, alignRight) {
+    popup(anchor, (menu) => {
+      if (has("sessions.markRead")) menu.append(item(session.unread ? "Mark read" : "Mark unread", "dot", () => markRead(session, !!session.unread)));
+      if (session.page && session.page.available && has("pages.open")) menu.append(item("Open the page on its own", "expand", () => openPageAlone(session)));
+      if (has("sessions.openHost")) menu.append(item("Open in host", "host", () => openInHost(session)));
+      const own = grants.filter((grant) => grant.from === session.id).length;
+      const stop = session.state === "working" && has("sessions.stop");
+      if (own || stop) menu.append(sep());
+      if (own) menu.append(item("Page permissions", "lock", () => go({ kind: "permissions", from: session.id }), { hint: String(own) }));
+      if (stop) menu.append(item("Stop the turn", "stop", () => stopSession(session)));
+      if (has("sessions.archive") && !session.archived) menu.append(sep(), item("Archive", "archive", () => archiveSession(session)));
+      if (!menu.children.length) menu.append(h("div", { class: "mh", text: "Nothing to do here on this host." }));
+    }, { alignRight });
+  }
+
+  // ---- navigation -----------------------------------------------------------------------------------
+  function go(next, options) {
+    dismiss();
+    if (teardown) { teardown(); teardown = null; }
+    refresh = null;
+    view = next;
+    prefs.view = next.kind === "session" ? { kind: "session", id: next.id, atMs: Date.now() } : { kind: next.kind, atMs: Date.now() };
+    savePrefs();
+    appEl.classList.remove("drawer");
+    sideSig = "";
+    renderSidebar();
+    dutiesChanged();
+    if (next.kind === "session") renderSession(next.id, options);
+    else if (next.kind === "drafts") renderDrafts();
+    else if (next.kind === "permissions") renderPermissions();
+    else renderNew();
+  }
+  function openSession(id) {
+    if (view.kind === "session" && view.id === id) { appEl.classList.remove("drawer"); return; }
+    go({ kind: "session", id });
+  }
+  function drawerButton() {
+    const node = button({ class: "ib drawer-btn", "aria-label": "Sessions" }, icon("panel"));
+    node.addEventListener("click", (event) => { event.stopPropagation(); appEl.classList.toggle("drawer"); });
+    return node;
+  }
+
+  // ---- composer (new session and chat) --------------------------------------------------------------------
+  /** A text area outside any form, so the host's own Dictate appears on it (02 R4.55, R4.60); "+" carries native files. 03 R5.75 */
+  function composer(options) {
+    const files = [];
+    const chips = h("div", { class: "chips" });
+    const area = (options.drafted && document.getElementById(options.id)) || h("textarea", { id: options.id, rows: "1", placeholder: options.placeholder, "aria-label": options.label, autocomplete: options.drafted ? null : "off" });
+    const picker = h("input", { type: "file", multiple: true, hidden: true });
+    const send = button({ class: "send", "aria-label": "Send", "data-tip": "Send (Enter)" }, icon("enter"));
+    const tools = h("div", { class: "tools" });
+    if (options.files && !filesRefused) {
+      const attach = button({ class: "ib", "aria-label": "Attach files", "data-tip": "Attach files" }, icon("plus"));
+      attach.addEventListener("click", () => picker.click());
+      tools.append(attach);
+    }
+    const steer = options.steer ? button({ class: "gbtn steer", hidden: true, "data-tip": "Interrupt the turn with this message (\u2325Enter)" }, "Steer") : null;
+    const box = h("div", { class: "compose" }, chips, h("div", { class: "edrow" }, area, h("div", { class: "sendcol" }, steer, send)), tools, picker);
+    const grow = () => { area.style.height = "auto"; area.style.height = Math.min(area.scrollHeight + 2, Math.round(window.innerHeight * 0.5)) + "px"; };
+    const drawChips = () => chips.replaceChildren(...files.map((file, index) => h("span", { class: "fchip" }, icon(file.type && file.type.startsWith("image/") ? "file" : "file", 14),
+      h("span", { text: file.name + " \xB7 " + size(file.size) }), button({ "aria-label": "Remove " + file.name, onclick: () => { files.splice(index, 1); drawChips(); } }, icon("x", 12)))));
+    picker.addEventListener("change", () => {
+      const chosen = [...picker.files], room = MAX_FILES - files.length;
+      files.push(...chosen.slice(0, Math.max(0, room)));
+      if (chosen.length > room) toast("At most " + MAX_FILES + " files at a time.");
+      picker.value = "";
+      drawChips();
+    });
+    const state = () => { send.disabled = options.canSend ? !options.canSend(area.value.trim().length > 0) : !area.value.trim(); };
+    area.addEventListener("input", () => { grow(); state(); if (options.onInput) options.onInput(area.value); });
+    // Enter sends typed text and nothing else: an empty field never presses Stop. \u2325Enter steers where it can.
+    area.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      if (!area.value.trim()) return;
+      if (event.altKey) { if (steer && !steer.hidden) deliver("steer"); return; }
+      if (!send.disabled) deliver();
+    });
+    async function deliver(mode) {
+      const prompt = area.value.trim();
+      if (!prompt) return;
+      send.disabled = true;
+      if (steer) steer.disabled = true;
+      try {
+        const ok = await options.submit(prompt, files.slice(), mode);
+        if (ok) { area.value = ""; files.length = 0; drawChips(); grow(); tp.setDirty(false); if (options.onInput) options.onInput(""); }
+      } finally { if (steer) steer.disabled = false; state(); if (options.onSent) options.onSent(); }
+    }
+    send.addEventListener("click", () => {
+      if (!area.value.trim()) { if (options.onEmpty) options.onEmpty(); return; }
+      deliver();
+    });
+    if (steer) steer.addEventListener("click", () => deliver("steer"));
+    return { box, area, send, steer, tools, grow, state, files, drawChips };
+  }
+
+  // ---- New session ----------------------------------------------------------------------------------
+  /** A host that cannot attach files says so; the hub stops offering "+" until the next load. 03 R5.80 */
+  let filesRefused = false;
+  function noFiles() {
+    filesRefused = true;
+    document.querySelectorAll('.compose [aria-label="Attach files"]').forEach((node) => node.remove());
+  }
+  function providerOf(id) { return providers.find((provider) => provider.id === id) || providers.find((provider) => provider.default) || providers[0] || null; }
+  function modelOf(provider, id) { if (!provider) return null; return provider.models.find((model) => model.id === id) || provider.models.find((model) => model.default) || provider.models[0] || null; }
+  function levelsOf(provider, model) { return (model && model.reasoningLevels && model.reasoningLevels.length ? model.reasoningLevels : provider && provider.reasoningLevels) || []; }
+  function modeOf(provider, id) { const modes = (provider && provider.permissionModes) || []; return modes.find((mode) => mode.id === id) || modes.find((mode) => mode.default) || modes[0] || null; }
+  // As the host draws it: a mode that lets the agent do anything is orange, default or not ("Auto" is not one).
+  const risky = (mode) => !!mode && /full|bypass|skip|danger|yolo/i.test(mode.id + " " + mode.displayName);
+
+  let newComposer = null;
+  function renderNew() {
+    const c = prefs.compose;
+    if (!c.workspaceId || !workspaces.some((workspace) => workspace.id === c.workspaceId)) {
+      const newest = sessions.filter((session) => workspaces.some((workspace) => workspace.id === session.workspaceId)).sort((a, b) => recency(b) - recency(a))[0];
+      c.workspaceId = newest ? newest.workspaceId : workspaces[0] ? workspaces[0].id : undefined;
+    }
+    const status = h("p", { class: "status", role: "status" });
+    const canStart = has("sessions.start");
+    if (!newComposer) {
+      newComposer = composer({ id: "hub-new-prompt", drafted: true, placeholder: "Ask anything.", label: "What should the new session do?", files: true,
+        canSend: (typed) => typed && !!prefs.compose.workspaceId,
+        submit: (prompt, files) => startSession(prompt, files, status) });
+    }
+    const comp = newComposer;
+    const modelButton = button({ class: "picker", "aria-haspopup": "menu" });
+    comp.tools.querySelectorAll(".picker").forEach((node) => node.remove());
+    const drawModel = () => {
+      const provider = providerOf(c.providerId), model = modelOf(provider, c.model);
+      const level = levelsOf(provider, model).find((one) => one.id === c.reasoningLevel);
+      const parts = [];
+      if (providers.length > 1 && provider) parts.push(provider.displayName);
+      if (model) parts.push(model.displayName);
+      parts.push(level ? level.displayName : levelsOf(provider, model).length ? "Default effort" : "");
+      modelButton.replaceChildren(h("span", { class: "pl", text: parts.filter(Boolean).join(" \xB7 ") || "Model" }), icon("down", 12));
+    };
+    if (providers.length) { drawModel(); comp.tools.append(modelButton); }
+    modelButton.addEventListener("click", () => popup(modelButton, (menu) => {
+      menu.classList.add("wide");
+      const draw = () => {
+        menu.replaceChildren();
+        const provider = providerOf(c.providerId), model = modelOf(provider, c.model);
+        if (providers.length > 1) menu.append(h("div", { class: "tabs" }, providers.map((one) => button({ "aria-pressed": String(one === provider), onclick: () => { c.providerId = one.id; c.model = undefined; c.reasoningLevel = undefined; c.permissionMode = undefined; savePrefs(); draw(); drawModel(); drawUnder(); } }, one.displayName))));
+        menu.append(h("div", { class: "mh", text: "Model" }));
+        for (const one of provider ? provider.models : []) menu.append(item(one.displayName, null, () => { c.providerId = provider.id; c.model = one.id; if (!levelsOf(provider, one).some((level) => level.id === c.reasoningLevel)) c.reasoningLevel = undefined; savePrefs(); drawModel(); }, { check: one === model }));
+        const levels = levelsOf(provider, model);
+        if (levels.length) {
+          menu.append(sep(), h("div", { class: "mh", text: "Reasoning" }), h("div", { class: "segrow" },
+            button({ "aria-pressed": String(!c.reasoningLevel), onclick: () => { c.reasoningLevel = undefined; savePrefs(); drawModel(); draw(); } }, "Default"),
+            levels.map((level) => button({ "aria-pressed": String(c.reasoningLevel === level.id), onclick: () => { c.reasoningLevel = level.id; savePrefs(); drawModel(); draw(); } }, level.displayName))));
+        }
+      };
+      draw();
+    }));
+    const under = h("div", { class: "under" });
+    const drawUnder = () => {
+      under.replaceChildren();
+      const ws = workspaces.find((workspace) => workspace.id === c.workspaceId);
+      const wsButton = button({ class: "picker", "aria-haspopup": "menu" }, icon("folder", 14), h("span", { class: "pl", text: ws ? ws.name : "Choose a workspace" }), icon("down", 12));
+      wsButton.addEventListener("click", () => workspaceMenu(wsButton, () => { drawUnder(); comp.state(); }));
+      under.append(wsButton);
+      const provider = providerOf(c.providerId);
+      const modes = (provider && provider.permissionModes) || [];
+      if (modes.length) {
+        const mode = modeOf(provider, c.permissionMode);
+        const permButton = button({ class: "picker perm" + (risky(mode) ? " warn" : ""), "aria-haspopup": "menu" }, h("span", { class: "pl", text: mode ? mode.displayName : "Permissions" }), icon("down", 12));
+        permButton.addEventListener("click", () => popup(permButton, (menu) => {
+          menu.append(h("div", { class: "mh", text: "Permission mode" }));
+          for (const one of modes) menu.append(item(one.displayName, null, () => { c.permissionMode = one.id; savePrefs(); drawUnder(); }, { check: one === mode, hint: one.default ? "default" : "" }));
+        }, { alignRight: true }));
+        under.append(permButton);
+      }
+    };
+    drawUnder();
+    const recentList = h("div", { class: "recent" });
+    const drawRecent = () => {
+      const needs = (session) => (session.state === "waiting" ? 3 : session.state === "working" ? 2 : session.unread ? 1 : 0);
+      const top = sessions.filter((session) => !session.parentSessionId).sort((a, b) => needs(b) - needs(a) || recency(b) - recency(a)).slice(0, 6);
+      recentList.replaceChildren();
+      if (!top.length) return;
+      recentList.append(h("h2", { text: "Recent" }));
+      for (const session of top) {
+        const row = button({ class: "rc", onclick: () => openSession(session.id) }, h("span", { class: "tile" }, icon(session.page && session.page.available ? "page" : "chat", 14)),
+          h("span", { class: "tx" }, h("b", { text: titleOf(session) }), h("span", { text: workspaceName(session.workspaceId) + " \xB7 " + ago(recency(session)) })), glyph(glyphOf(session, true)));
+        recentList.append(row);
+      }
+    };
+    drawRecent();
+    const body = h("div", { class: "newview" }, recentList);
+    if (canStart) body.append(comp.box, under, status);
+    else body.append(h("p", { class: "note-host", text: "This host does not start sessions from a page. Start one in the host; it appears here." }));
+    viewEl.replaceChildren(h("div", { class: "bar" }, drawerButton()), body);
+    comp.state(); comp.grow();
+    if (!isPhone() && canStart) comp.area.focus();
+    refresh = () => { drawRecent(); };
+  }
+  function workspaceMenu(anchor, done) {
+    popup(anchor, (menu) => {
+      const search = h("input", { type: "search", placeholder: "Search workspaces", "aria-label": "Search workspaces" });
+      const list = h("div");
+      const draw = () => {
+        const query = search.value.trim().toLowerCase();
+        list.replaceChildren(...workspaces.filter((workspace) => !query || workspace.name.toLowerCase().includes(query)).map((workspace) =>
+          item(workspace.name, "folder", () => { prefs.compose.workspaceId = workspace.id; savePrefs(); done(); }, { check: workspace.id === prefs.compose.workspaceId })));
+        if (!list.children.length) list.append(h("div", { class: "mh", text: "No workspace matches." }));
+      };
+      search.addEventListener("input", draw);
+      menu.append(search, h("div", { class: "mh", text: "Workspace" }));
+      menu.append(list);
+      draw();
+      if (has("workspaces.browse") && has("workspaces.create")) menu.append(sep(), item("Add a folder\u2026", "folder-add", () => addWorkspace(done)));
+    });
+  }
+  /** The host's folder picker, then the workspace it names; the page never sees a path. 03 R5.35\u2013R5.37 */
+  async function addWorkspace(done) {
+    try {
+      const picked = await call("workspaces.browse", undefined, true);
+      if (!picked || !picked.selection) return;
+      const created = await call("workspaces.create", { selectionToken: picked.selection.token }, true);
+      await loadWorkspaces();
+      prefs.compose.workspaceId = created.workspaceId;
+      savePrefs();
+      sideSig = ""; renderSidebar();
+      done();
+    } catch (error) { handle(error, "Could not add the folder"); }
+  }
+  async function startSession(prompt, files, status) {
+    const c = prefs.compose;
+    const params = { workspaceId: c.workspaceId, prompt };
+    if (providers.length) {
+      const provider = providerOf(c.providerId), model = modelOf(provider, c.model);
+      if (provider) params.providerId = provider.id;
+      if (model) params.model = model.id;
+      if (c.reasoningLevel && levelsOf(provider, model).some((level) => level.id === c.reasoningLevel)) params.reasoningLevel = c.reasoningLevel;
+      const mode = provider && provider.permissionModes && provider.permissionModes.length ? modeOf(provider, c.permissionMode) : null;
+      if (mode) params.permissionMode = mode.id;
+    }
+    if (files.length) params.files = files;
+    status.className = "status"; status.textContent = "Confirm in the dialog to start it\u2026";
+    try {
+      const result = await call("sessions.start", params, true);
+      status.textContent = "";
+      watchSessions();
+      go({ kind: "session", id: result.sessionId }, { fresh: true });
+      return true;
+    } catch (error) {
+      if (error && error.code === "cancelled") { status.textContent = "Nothing started."; return false; }
+      if (files.length && error && error.code === "unavailable") noFiles();
+      status.className = "status err"; status.textContent = describe(error);
+      return false;
+    }
+  }
+
+  // ---- a session: page or chat ------------------------------------------------------------------------
+  function modeFor(session) {
+    const chosen = prefs.modes[session.id];
+    const pageOk = !!(session.page && session.page.available) && canEmbed;
+    if (chosen === "chat" || !pageOk) return "chat";
+    return "page";
+  }
+  function renderSession(id, options) {
+    let session = lookup(id);
+    let placeholder = !session;
+    const since = Date.now();
+    if (!session && loadedAt && !(options && (options.fresh || options.restore))) { renderGone(id); return; }
+    session = session || { id, title: options && options.restore ? "\u2026" : "New session", state: "working", waiting: null, page: { available: false }, archived: false, workspaceId: prefs.compose.workspaceId };
+    let mode = modeFor(session);
+    const titleEl = h("span", { class: "title", text: titleOf(session) });
+    const more = button({ class: "ib", "aria-label": "Session actions", "aria-haspopup": "menu" }, icon("more"));
+    more.addEventListener("click", () => sessionMenu(more, lookup(id) || session));
+    const pageBtn = button({ "aria-pressed": "false" }, icon("page", 14), h("span", { class: "sl", text: "Page" }));
+    const chatBtn = button({ "aria-pressed": "false" }, icon("chat", 14), h("span", { class: "sl", text: "Chat" }));
+    const seg = h("span", { class: "seg", role: "group", "aria-label": "View" }, pageBtn, chatBtn);
+    const alone = button({ class: "ib tabbtn", "aria-label": "Open the page on its own", "data-tip": "Open the page on its own" }, icon("expand"));
+    alone.addEventListener("click", () => openPageAlone(lookup(id) || session));
+    const hostDot = h("span", { class: "hdot" });
+    const hostBtn = button({ class: "hostbtn", "aria-label": "Open in host" }, icon("host", 14), h("span", { class: "hl", text: "Open in host" }), hostDot);
+    hostBtn.addEventListener("click", () => openInHost(lookup(id) || session));
+    const archivedChip = h("span", { class: "chip", hidden: true, text: "Archived" });
+    const bar = h("div", { class: "bar" }, drawerButton(), titleEl, archivedChip, more, h("span", { class: "fill" }), seg, alone);
+    if (has("sessions.openHost")) bar.append(hostBtn);
+    // In page view a strip says what the page may not: the session waits on you, or is not running in its host.
+    const stripText = h("span"), stripAct = button({ class: "gbtn" });
+    const strip = h("div", { class: "strip", hidden: true }, icon("ask", 14), stripText, stripAct);
+    let stripRun = null;
+    stripAct.addEventListener("click", () => { if (stripRun) stripRun(); });
+    const body = h("div", { class: "view" });
+    viewEl.replaceChildren(bar, strip, body);
+    let stopBody = null;
+    const switchTo = (next, remember) => {
+      if (stopBody) { stopBody(); stopBody = null; }
+      mode = next;
+      if (remember) { prefs.modes[id] = next; savePrefs(); }
+      pageBtn.setAttribute("aria-pressed", String(mode === "page"));
+      chatBtn.setAttribute("aria-pressed", String(mode === "chat"));
+      bar.classList.toggle("line", mode === "chat");
+      if (mode === "chat") strip.hidden = true;
+      stopBody = mode === "page" ? mountPage(body, id, broken) : mountChat(body, id);
+      if (ready) update();
+    };
+    let ready = false;
+    pageBtn.addEventListener("click", () => {
+      const current = lookup(id) || session;
+      if (!canEmbed && current.page && current.page.available) { openPageAlone(current); return; }
+      if (mode !== "page") switchTo("page", true);
+    });
+    chatBtn.addEventListener("click", () => { if (mode !== "chat") switchTo("chat", true); });
+    const update = () => {
+      const current = lookup(id);
+      if (!current) {
+        if (!loadedAt) return;
+        if (options && options.restore) { go({ kind: "new" }); return; }
+        if (options && options.fresh && Date.now() - since < 30000) return;
+        renderGone(id);
+        return;
+      }
+      if (options) { options.fresh = false; options.restore = false; }
+      // Opened before the list had loaded: now the row says whether there is a page to show.
+      if (placeholder) { placeholder = false; const want = modeFor(current); if (!prefs.modes[id] && want !== mode) switchTo(want, false); }
+      session = current;
+      titleEl.textContent = titleOf(current);
+      archivedChip.hidden = !current.archived;
+      document.title = titleOf(current);
+      const hasPage = !!(current.page && current.page.available);
+      pageBtn.disabled = !hasPage || !(canEmbed || has("pages.open"));
+      pageBtn.setAttribute("data-tip", hasPage ? "The session's page" : "No page yet");
+      alone.hidden = !hasPage || !has("pages.open");
+      const live = current.state !== "stopped";
+      hostDot.className = "hdot" + (live ? "" : " off");
+      chatBtn.classList.toggle("attn", current.state === "waiting");
+      const waitWord = current.waiting && current.waiting.kind === "approval" ? "a decision" : current.waiting && current.waiting.kind === "question" ? "a question" : "something";
+      if (mode === "page" && current.state === "waiting") {
+        strip.hidden = false;
+        strip.querySelector("use").setAttribute("href", "#i-ask");
+        stripText.textContent = "Waiting on you: " + waitWord + ".";
+        stripAct.textContent = "Answer";
+        stripRun = () => switchTo("chat", false);
+      } else if (mode === "page" && !live && has("sessions.openHost")) {
+        strip.hidden = false;
+        strip.querySelector("use").setAttribute("href", "#i-host");
+        stripText.textContent = "Not running in its host: open it there to continue.";
+        stripAct.textContent = "Open in host";
+        stripRun = () => openInHost(lookup(id) || current);
+      } else strip.hidden = true;
+      hostBtn.setAttribute("data-tip", live ? "Open this session in its host" : "Not running in its host: open it there");
+      if (mode === "chat" && hasPage && canEmbed && !prefs.modes[id] && wasPageless.has(id)) { wasPageless.delete(id); switchTo("page", false); }
+      if (!hasPage) wasPageless.add(id);
+      // Opening a session marks it read, as the host's own list does. 03 R5.7a
+      if (current.unread && has("sessions.markRead") && document.visibilityState !== "hidden" && readMarked.get(id) !== (current.attentionAtMs || 1)) {
+        readMarked.set(id, current.attentionAtMs || 1);
+        markRead(current, true);
+      }
+      if (bodyRefresh) bodyRefresh(current);
+    };
+    let bodyRefresh = null;
+    // A page that cannot be shown opens the chat instead, without remembering it: Page stays there to try again.
+    const broken = (status) => setTimeout(() => {
+      if (mode !== "page" || view.kind !== "session" || view.id !== id) return;
+      switchTo("chat", false);
+      toast("The page can't be shown here (" + ({ too_large: "too large", not_found: "gone", unavailable: "unreachable", no_page: "not written yet" }[status] || status) + "): this is the chat.");
+    }, 0);
+    const mountChat = (into, sid) => { const chat = chatView(into, sid); bodyRefresh = chat.refresh; return () => { bodyRefresh = null; chat.stop(); }; };
+    switchTo(mode, false);
+    update();
+    ready = true;
+    refresh = update;
+    teardown = () => { if (stopBody) stopBody(); document.title = "Home"; };
+  }
+  const wasPageless = new Set();
+  /** The session's page in the whole main area, live, answering its own agent. 02 \xA7Embedded pages */
+  function mountPage(into, id, onBroken) {
+    const wrap = h("div", { class: "pagewrap" });
+    into.replaceChildren(wrap);
+    // \`unavailable\` may pass (the kernel keeps checking): only one that lasts 10 s opens the chat.
+    let waiting = null;
+    const stop = tp.embed(wrap, { sessionId: id, onState: (info) => {
+      clearTimeout(waiting);
+      if (info.status === "unavailable") waiting = setTimeout(() => onBroken(info.status), 10000);
+      else if (["too_large", "not_found", "no_page"].includes(info.status)) onBroken(info.status);
+    } });
+    return () => { clearTimeout(waiting); stop(); wrap.remove(); };
+  }
+  function renderGone(id) {
+    if (teardown) { teardown(); teardown = null; }
+    refresh = null;
+    viewEl.replaceChildren(h("div", { class: "bar" }, drawerButton()), h("div", { class: "doc" }, h("div", { class: "col" },
+      h("h1", { text: "This session is not listed" }), h("p", { class: "lede", text: "It was archived, deleted, or belongs to no workspace the host shows." }),
+      h("div", { class: "act" }, button({ class: "gbtn", onclick: () => openSearch(true) }, icon("search", 14), "Search archived sessions"), button({ class: "gbtn", onclick: () => go({ kind: "new" }) }, icon("new", 14), "New session")))));
+    void id;
+  }
+
+  // ---- chat -------------------------------------------------------------------------------------------
+  /** The transcript, live: a watch of the newest rows reconciled by id, older rows on demand. 03 R-C1, R-C2 */
+  function chatView(into, id) {
+    const rows = new Map(), order = [];
+    let prev = null, exhausted = false, loadingOlder = false, sig = "", first = true;
+    const expanded = new Set(), toolsOpen = new Set();
+    const col = h("div", { class: "col" });
+    const older = h("div", { class: "older" });
+    const waitSlot = h("div", { class: "waitslot" });
+    const scroller = h("div", { class: "scroller" }, col, waitSlot);
+    const nudge = h("div", { class: "nudge", hidden: true }, icon("host", 14), h("span", { text: "Not running in its host: messages wait until it runs there again." }));
+    if (has("sessions.openHost")) nudge.append(button({ class: "gbtn", onclick: () => openInHost(lookup(id)) }, "Open in host"));
+    const status = h("p", { class: "status", role: "status" });
+    const readonly = h("div", { class: "readonly", hidden: true, text: "Archived: read-only." });
+    let current = lookup(id);
+    const comp = composer({ id: "hub-chat-prompt", placeholder: "Message this session\u2026", label: "Message this session", files: true,
+      canSend: (typed) => typed || (current && current.state === "working" && has("sessions.stop")),
+      onInput: (text) => chatDrafts.set(id, text),
+      onEmpty: () => { if (current && current.state === "working" && has("sessions.stop")) stopSession(current); },
+      onSent: () => sendLook(),
+      steer: true,
+      submit: (prompt, files, mode) => sendTo(prompt, files, mode) });
+    comp.area.value = chatDrafts.get(id) || "";
+    const dock = h("div", { class: "dock" }, nudge, readonly);
+    if (has("sessions.send")) dock.append(comp.box, status);
+    into.replaceChildren(scroller, dock);
+    comp.grow();
+
+    async function sendTo(prompt, files, mode) {
+      const params = { sessionId: id, prompt };
+      if (mode === "steer") params.mode = "steer";
+      if (files.length) params.files = files;
+      status.className = "status"; status.textContent = "Confirm in the dialog to send it\u2026";
+      try {
+        const result = await call("sessions.send", params, true);
+        chatDrafts.delete(id);
+        status.textContent = result.delivery === "steered" ? "Steered: it interrupted the turn." : result.delivery === "queued" ? (current && current.state === "stopped" ? "Queued: it reaches the agent when the session runs again." : "Queued: it reaches the agent after the current turn.") : "";
+        return true;
+      } catch (error) {
+        if (error && error.code === "cancelled") { status.textContent = "Nothing sent."; return false; }
+        if (files.length && error && error.code === "unavailable") noFiles();
+        status.className = "status err"; status.textContent = describe(error);
+        return false;
+      }
+    }
+    const sendLook = () => {
+      // While a turn runs, typed text can wait for it (Enter) or interrupt it (Steer); an empty field offers Stop.
+      if (comp.steer) comp.steer.hidden = !(current && current.state === "working" && comp.area.value.trim());
+      const working = current && current.state === "working" && has("sessions.stop") && !comp.area.value.trim();
+      comp.send.replaceChildren(icon(working ? "stop" : "enter"));
+      comp.send.setAttribute("aria-label", working ? "Stop the turn" : "Send");
+      comp.send.setAttribute("data-tip", working ? "Stop the turn" : "Send (Enter)");
+      comp.state();
+    };
+    comp.area.addEventListener("input", sendLook);
+
+    function merge(list, atStart) {
+      const fresh = [];
+      for (const message of list) {
+        if (rows.has(message.id)) rows.set(message.id, message);
+        else { rows.set(message.id, message); fresh.push(message.id); }
+      }
+      if (atStart) order.unshift(...fresh); else order.push(...fresh);
+    }
+    let filling = false;
+    const stopWatch = every("sessions.messages", { sessionId: id, limit: CHAT_ROWS }, CHAT_MS, async (value, error) => {
+      if (error) { if (error.code !== "rate_limited") { col.replaceChildren(h("p", { class: "sysline", text: "Could not read the transcript: " + describe(error) })); } return; }
+      if (filling) return;
+      const list = value.messages;
+      // Nothing shown yet: this read is the start, and history pages back from it.
+      if (!order.length) { prev = value.prevCursor; exhausted = value.prevCursor === null; first = false; merge(list, false); draw(); return; }
+      first = false;
+      if (list.length && !list.some((message) => rows.has(message.id))) {
+        // More rows arrived since the last read than one read holds: page back from the oldest new row until the pages
+        // meet. Too far behind, the view restarts from the newest rows and history scrolls back from there. 03 R-C2
+        filling = true;
+        let cursor = list[0].cursor, gap = [], met = false;
+        try {
+          for (let page = 0; page < 5 && cursor; page += 1) {
+            const older = await call("sessions.messages", { sessionId: id, limit: CHAT_ROWS, before: cursor });
+            const fresh = older.messages.filter((message) => !rows.has(message.id));
+            gap = fresh.concat(gap);
+            if (fresh.length < older.messages.length || older.prevCursor === null) { met = true; break; }
+            cursor = older.prevCursor;
+          }
+        } catch (fillError) { filling = false; if (fillError.code !== "rate_limited") handle(fillError, "Could not read the transcript"); return; }
+        filling = false;
+        if (!met) { rows.clear(); order.length = 0; prev = cursor; exhausted = !cursor; }
+        merge(gap, false);
+      }
+      merge(list, false);
+      draw();
+    });
+    async function loadOlder() {
+      if (loadingOlder || exhausted || !prev) return;
+      loadingOlder = true;
+      older.textContent = "Loading earlier messages\u2026";
+      const height = scroller.scrollHeight;
+      try {
+        const page = await call("sessions.messages", { sessionId: id, limit: CHAT_ROWS, before: prev }, true);
+        prev = page.prevCursor; exhausted = page.prevCursor === null;
+        merge(page.messages, true);
+        draw(true);
+        scroller.scrollTop += scroller.scrollHeight - height;
+      } catch (error) { handle(error, "Could not read earlier messages"); }
+      finally { loadingOlder = false; }
+    }
+    scroller.addEventListener("scroll", () => { if (scroller.scrollTop < 80) loadOlder(); });
+
+    function draw(keep) {
+      const list = order.map((rowId) => rows.get(rowId));
+      const next = JSON.stringify([list.map((m) => [m.id, (m.text || "").length, (m.text || "").slice(-24), m.done, m.tool && m.tool.result !== undefined, m.question && m.question.answered]), [...expanded], [...toolsOpen], current && current.state, exhausted]);
+      if (next === sig) return;
+      sig = next;
+      const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
+      const fragment = document.createDocumentFragment();
+      if (!exhausted && prev) { older.textContent = "Scroll up for earlier messages"; fragment.append(older); }
+      if (!list.length) fragment.append(h("p", { class: "sysline", text: first ? "Loading\u2026" : "No messages yet." }));
+      // A turn: the reader's message, the work (tools and interim text) folded under "Worked for", then the reply.
+      const turns = [];
+      for (const message of list) {
+        if (message.kind === "user" || !turns.length) turns.push({ user: message.kind === "user" ? message : null, items: [] });
+        if (message.kind !== "user") turns[turns.length - 1].items.push(message);
+      }
+      turns.forEach((turn, index) => {
+        if (turn.user) fragment.append(userBubble(turn.user));
+        const items = turn.items;
+        let lastWork = -1;
+        items.forEach((message, at) => { if (message.kind === "tool") lastWork = at; });
+        const work = items.slice(0, lastWork + 1), tail = items.slice(lastWork + 1);
+        const live = index === turns.length - 1 && current && current.state === "working";
+        if (work.length || (live && !tail.length)) {
+          const key = turn.user ? turn.user.id : "~start";
+          const open = expanded.has(key);
+          const from = turn.user ? turn.user.atMs : work.length ? work[0].atMs : Date.now();
+          const until = live ? Date.now() : (tail.length ? tail[tail.length - 1].atMs : work.length ? work[work.length - 1].atMs : from);
+          const label = live ? "Working for " + span(until - from) : "Worked for " + span(until - from);
+          const toggle = button({ class: "worked" + (live ? " live" : ""), "aria-expanded": String(open), dataset: { from: String(from) } }, live ? icon("spin", 12, "spin") : null, h("span", { class: "wl", text: label }), work.length ? icon("right", 12, "chev") : null);
+          if (work.length) toggle.addEventListener("click", () => { if (open) expanded.delete(key); else expanded.add(key); sig = ""; draw(true); });
+          fragment.append(toggle);
+          if (open && work.length) fragment.append(h("div", { class: "tl" }, work.map(stepRow).filter(Boolean)));
+        }
+        for (const message of tail) { const node = stepRow(message); if (node) fragment.append(node); }
+      });
+      if (current && current.state === "failed") fragment.append(h("p", { class: "sysline" }, icon("fail", 14), h("span", { text: "The last turn failed." })));
+      col.replaceChildren(fragment);
+      if (!keep && (atBottom || !scrolledOnce)) { scroller.scrollTop = scroller.scrollHeight; scrolledOnce = list.length > 0; }
+    }
+    let scrolledOnce = false;
+    function userBubble(message) {
+      const bubble = h("div", { class: "ub" });
+      if (message.from && message.from.kind && message.from.kind !== "reader") {
+        const word = { page: "From ", session: "From ", plugin: "From a plugin", schedule: "Scheduled" }[message.from.kind] || "";
+        bubble.append(h("span", { class: "from", text: word + (message.from.label && /\\s$/.test(word) ? "\u201C" + message.from.label + "\u201D" : "") }));
+      }
+      bubble.append(document.createTextNode((message.text || "") + (message.truncated ? " \u2026" : "")));
+      if (message.files && message.files.length) bubble.append(h("span", { class: "files" }, message.files.map((file) => h("span", { class: "fchip" }, icon("file", 14), h("span", { text: file.name + " \xB7 " + size(file.sizeBytes) })))));
+      return bubble;
+    }
+    function stepRow(message) {
+      if (message.kind === "assistant") return markdown(message.text || "", message.truncated);
+      if (message.kind === "notice") return /^\\s*[\\w-]*\\s*$/.test(message.text || "") ? null : h("p", { class: "sysline" }, icon("info", 14), h("span", { text: message.text || "" }));
+      if (message.kind === "question" && message.question && !message.question.answered && current && current.waiting && current.waiting.id === message.question.id) return null;
+      if (message.kind === "question") return h("p", { class: "sysline" }, icon("ask", 14), h("span", { text: (message.question && message.question.answered ? "Asked: " : "Asks: ") + (message.text || "a question") }));
+      if (message.kind === "tool" && message.tool) return toolRow(message);
+      return h("p", { class: "sysline", text: message.text || "" });
+    }
+    function toolRow(message) {
+      const tool = message.tool;
+      const open = toolsOpen.has(message.id);
+      const name = tool.name || "tool";
+      const kind = /bash|shell|command|exec|terminal/i.test(name) ? "terminal" : /read|edit|write|file|glob|grep|search/i.test(name) ? "file" : /web|fetch|browser|url/i.test(name) ? "globe" : "tool";
+      const head = button({ class: "trow", "aria-expanded": String(open) }, icon(message.done ? kind : "spin", 14, message.done ? "" : "spin"),
+        h("span", { class: "tn" }, verbOf(name, message.done) + " ", h("em", { text: summarize(tool.input) })), tool.isError ? h("span", { class: "errtag", text: "error" }) : null);
+      head.addEventListener("click", () => { if (open) toolsOpen.delete(message.id); else toolsOpen.add(message.id); sig = ""; draw(true); });
+      if (!open) return head;
+      const command = tool.input && typeof tool.input === "object" && typeof tool.input.command === "string" ? tool.input.command : null;
+      const box = command !== null ? h("div", { class: "tbox" }, document.createTextNode("$ " + command)) : h("div", { class: "tbox" }, h("span", { class: "lbl", text: "Input" }), pretty(tool.input));
+      if (tool.result !== undefined) {
+        if (command !== null) box.append(h("span", { class: "out" }, pretty(tool.result)));
+        else box.append(h("span", { class: "lbl", text: tool.isError ? "Error" : "Result", style: "margin-top:8px" }), pretty(tool.result));
+      }
+      if (message.truncated) box.append(h("span", { class: "lbl", text: "Cut to a bound; the host shows it whole.", style: "margin-top:8px" }));
+      return h("div", null, head, box);
+    }
+    const refreshChat = (session) => {
+      current = session;
+      nudge.hidden = !(session.state === "stopped" && has("sessions.openHost"));
+      readonly.hidden = !session.archived;
+      comp.box.hidden = !!session.archived;
+      status.hidden = !!session.archived;
+      sendLook();
+      drawWait(session);
+      if (session.state !== (draw.lastState || "")) { draw.lastState = session.state; sig = ""; draw(); }
+    };
+    let waitKey = "";
+    function drawWait(session) {
+      const wait = session.waiting;
+      const key = wait ? (wait.id || "") + wait.kind + (wait.text || "") : "";
+      if (key === waitKey) return;
+      waitKey = key;
+      waitSlot.replaceChildren(wait && session.state === "waiting" ? waitCard(session, wait) : "");
+    }
+    if (current) refreshChat(current);
+    // The running turn's clock moves on its own, between reads.
+    const clock = setInterval(() => { for (const node of col.querySelectorAll(".worked.live .wl")) node.textContent = "Working for " + span(Date.now() - Number(node.parentNode.dataset.from)); }, 1000);
+    return { stop: () => { stopWatch(); clearInterval(clock); }, refresh: refreshChat };
+  }
+  /** The host's wording for a step: "Ran", "Read", "Edited"\u2026 and the tool's own name otherwise. */
+  function verbOf(name, done) {
+    const pairs = [[/^(bash|shell|exec|command|terminal)/i, "Ran", "Running"], [/^read/i, "Read", "Reading"], [/^(edit|multiedit|str_replace)/i, "Edited", "Editing"], [/^write/i, "Wrote", "Writing"], [/^(grep|glob|search|find)/i, "Searched", "Searching"], [/^(webfetch|fetch)/i, "Fetched", "Fetching"], [/^websearch/i, "Searched the web", "Searching the web"], [/^(task|agent)/i, "Ran an agent", "Running an agent"]];
+    const found = pairs.find(([pattern]) => pattern.test(name));
+    return found ? (done ? found[1] : found[2]) : name;
+  }
+  function summarize(input) {
+    if (input === null || input === undefined) return "";
+    if (typeof input === "string") return input.replace(/\\s+/g, " ").slice(0, 120);
+    if (typeof input === "object") {
+      for (const key of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) if (typeof input[key] === "string") return input[key].replace(/\\s+/g, " ").slice(0, 120);
+      const firstString = Object.values(input).find((value) => typeof value === "string");
+      if (firstString) return firstString.replace(/\\s+/g, " ").slice(0, 120);
+    }
+    return "";
+  }
+  function pretty(value) {
+    if (typeof value === "string") return document.createTextNode(value);
+    try { return document.createTextNode(JSON.stringify(value, null, 2)); } catch (error) { return document.createTextNode(String(value)); }
+  }
+
+  /** A waiting question or approval, answered where the reader reads it. A decision is confirmed by the host every time. 03 R-C7 */
+  function waitCard(session, wait) {
+    const card = h("div", { class: "ask" });
+    const answerable = has("sessions.respond") && wait.id && !session.archived;
+    const hostLine = (text) => {
+      const act = h("div", { class: "act" }, h("span", { class: "hint", text }));
+      if (has("sessions.openHost")) act.prepend(button({ class: "gbtn", onclick: () => openInHost(session) }, icon("host", 14), "Open in host"));
+      return act;
+    };
+    if (wait.kind === "question" && wait.questions && wait.questions.length) {
+      const fields = wait.questions.map((question, index) => {
+        const set = h("fieldset", null, h("legend", null, h("span", { class: "q" }, index === 0 ? icon("ask") : null, h("span", { class: "qtext", text: question.text }))));
+        const name = "q-" + session.id + "-" + index;
+        for (const option of question.options || []) {
+          set.append(h("label", { class: "o" }, h("input", { type: question.multiSelect ? "checkbox" : "radio", name, value: option.id, autocomplete: "off" }), h("span", { text: option.label })));
+        }
+        let free = null;
+        if (question.allowFreeText) { free = h("input", { type: "text", placeholder: (question.options || []).length ? "Or type an answer\u2026" : "Type an answer\u2026", autocomplete: "off", "aria-label": "Your answer" }); set.append(free); }
+        return { question, set, name, free };
+      });
+      card.append(...fields.map((field) => field.set));
+      if (!answerable) { card.append(hostLine("Answer it in the host.")); return card; }
+      const status = h("span", { class: "hint", role: "status" });
+      const send = button({ class: "pbtn" }, "Answer");
+      send.addEventListener("click", async () => {
+        const answers = {};
+        for (const field of fields) {
+          const selected = [...field.set.querySelectorAll("input[name='" + field.name + "']:checked")].map((input) => input.value);
+          const text = field.free ? field.free.value.trim() : "";
+          if (!selected.length && !text) { status.textContent = "Choose or type an answer to every question."; return; }
+          answers[field.question.id] = text ? { selected, freeText: text } : { selected };
+        }
+        send.disabled = true; status.textContent = "Sending\u2026";
+        try { await call("sessions.respond", { sessionId: session.id, id: wait.id, answers }, true); status.textContent = "Answered."; }
+        catch (error) { send.disabled = false; status.textContent = error && error.code === "cancelled" ? "Not sent." : error && error.code === "not_found" ? "That question is over." : describe(error); }
+      });
+      card.append(h("div", { class: "act" }, send, status));
+      return card;
+    }
+    if (wait.kind === "approval" && wait.approval) {
+      const subject = { tool: "Use a tool", command: "Run a command", file_change: "Change files", permission: "Change permissions", plan: "Go ahead with the plan", other: "Go ahead" }[wait.approval.subject] || "Go ahead";
+      card.append(h("p", { class: "q" }, icon("ask"), h("span", { class: "qtext", text: "Needs your decision: " + subject.toLowerCase() })));
+      if (wait.approval.summary) card.append(h("pre", { text: wait.approval.summary }));
+      if (wait.truncated || !answerable) { card.append(hostLine(wait.truncated ? "Too long to show whole here: decide in the host." : "Decide in the host.")); return card; }
+      const status = h("span", { class: "hint", role: "status" });
+      const act = h("div", { class: "act" });
+      const words = { allow_once: "Allow once", allow_for_session: "Allow for this session", deny: "Deny" };
+      for (const decision of wait.approval.decisions || []) {
+        const node = button({ class: decision === "allow_once" ? "pbtn" : decision === "deny" ? "gbtn red" : "gbtn" }, words[decision] || decision);
+        node.addEventListener("click", async () => {
+          act.querySelectorAll("button").forEach((one) => { one.disabled = true; });
+          status.textContent = "Confirm in the dialog\u2026";
+          try { await call("sessions.respond", { sessionId: session.id, id: wait.id, decision }, true); status.textContent = "Decided."; }
+          catch (error) { act.querySelectorAll("button").forEach((one) => { one.disabled = false; }); status.textContent = error && error.code === "cancelled" ? "Not decided." : describe(error); }
+        });
+        act.append(node);
+      }
+      act.append(status);
+      card.append(act);
+      return card;
+    }
+    card.append(h("p", { class: "q" }, icon("ask"), h("span", { class: "qtext", text: wait.text || "It is waiting for you in the host." })));
+    card.append(hostLine(wait.kind === "question" ? "Answer it in the host." : "It waits on something only the host shows."));
+    return card;
+  }
+
+  /** A small, safe Markdown subset for the agent's text: paragraphs, lists, headings, code, bold, links. Built as nodes, never as HTML. */
+  function markdown(text, truncated) {
+    const root = h("div", { class: "md" });
+    const lines = (text + (truncated ? " \u2026" : "")).replace(/\\r\\n?/g, "\\n").split("\\n");
+    let index = 0;
+    while (index < lines.length) {
+      const line = lines[index];
+      const fence = line.match(/^\\s*\`\`\`/);
+      if (fence) {
+        const body = [];
+        index += 1;
+        while (index < lines.length && !/^\\s*\`\`\`/.test(lines[index])) { body.push(lines[index]); index += 1; }
+        index += 1;
+        root.append(h("pre", { text: body.join("\\n") }));
+        continue;
+      }
+      if (!line.trim()) { index += 1; continue; }
+      const heading = line.match(/^(#{1,4})\\s+(.*)$/);
+      if (heading) { root.append(inline(h("h" + heading[1].length), heading[2])); index += 1; continue; }
+      if (/^\\s*([-*+]|\\d+[.)])\\s+/.test(line)) {
+        const ordered = /^\\s*\\d+[.)]/.test(line);
+        const list = h(ordered ? "ol" : "ul");
+        while (index < lines.length && /^\\s*([-*+]|\\d+[.)])\\s+/.test(lines[index])) {
+          let content = lines[index].replace(/^\\s*([-*+]|\\d+[.)])\\s+/, "");
+          index += 1;
+          while (index < lines.length && /^\\s{2,}\\S/.test(lines[index]) && !/^\\s*([-*+]|\\d+[.)])\\s+/.test(lines[index])) { content += " " + lines[index].trim(); index += 1; }
+          list.append(inline(h("li"), content));
+        }
+        root.append(list);
+        continue;
+      }
+      const para = [];
+      while (index < lines.length && lines[index].trim() && !/^\\s*\`\`\`/.test(lines[index]) && !/^(#{1,4})\\s/.test(lines[index]) && !/^\\s*([-*+]|\\d+[.)])\\s+/.test(lines[index])) { para.push(lines[index]); index += 1; }
+      const p = h("p");
+      para.forEach((part, at) => { if (at) p.append(h("br")); inline(p, part); });
+      root.append(p);
+    }
+    return root;
+  }
+  /** The host's own addresses and loopback: \`navigation.openExternal\` refuses them, so they stay text. 03 R5.32a */
+  function ownHost(url) {
+    try {
+      const target = new URL(url), here = new URL(document.baseURI);
+      return target.host === here.host || /^(localhost|127\\.|\\[::1\\]|0\\.0\\.0\\.0)/.test(target.hostname);
+    } catch (error) { return false; }
+  }
+  function inline(into, text) {
+    const pattern = /(\`[^\`]+\`)|(\\*\\*[^*]+\\*\\*)|(\\[[^\\]]+\\]\\((https?:\\/\\/[^)\\s]+)\\))|(https?:\\/\\/[^\\s<>()]+[^\\s<>().,;:!?'"])/g;
+    let last = 0, match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > last) into.append(document.createTextNode(text.slice(last, match.index)));
+      if (match[1]) into.append(h("code", { text: match[1].slice(1, -1) }));
+      else if (match[2]) into.append(h("strong", { text: match[2].slice(2, -2) }));
+      else if (match[3]) into.append(h("a", { href: match[4], target: "_blank", rel: "noopener", text: match[3].slice(1, match[3].indexOf("](")) }));
+      else if (ownHost(match[5])) into.append(document.createTextNode(match[5]));
+      else into.append(h("a", { href: match[5], target: "_blank", rel: "noopener", text: match[5] }));
+      last = pattern.lastIndex;
+    }
+    if (last < text.length) into.append(document.createTextNode(text.slice(last)));
+    return into;
+  }
+
+  // ---- search, with the archived sessions as the host keeps them ---------------------------------------------
+  function openSearch(startArchived) {
+    dismiss();
+    if ($(".scrim", layerEl)) return;
+    let showArchived = !!startArchived, cursor = 0, results = [];
+    const input = h("input", { type: "search", placeholder: "Search sessions", "aria-label": "Search sessions", autocomplete: "off" });
+    const filter = button({ class: "ib", "aria-label": "Filter", "data-tip": "Filter", "aria-haspopup": "menu" }, icon("filter"));
+    const res = h("div", { class: "res", role: "listbox" });
+    const palette = h("div", { class: "palette", role: "dialog", "aria-label": "Search sessions" }, h("div", { class: "ph" }, icon("search"), input, filter), res);
+    const scrim = h("div", { class: "scrim" }, palette);
+    const close = () => { scrim.remove(); document.removeEventListener("keydown", keys, true); };
+    scrim.addEventListener("pointerdown", (event) => { if (event.target === scrim) close(); });
+    const pick = (session) => { close(); openSession(session.id); };
+    const draw = () => {
+      const query = input.value.trim().toLowerCase();
+      const known = new Set(sessions.map((session) => session.id));
+      const pool = showArchived ? archived || [] : sessions.concat((activeAll || []).filter((session) => !known.has(session.id)));
+      results = pool.filter((session) => !query || titleOf(session).toLowerCase().includes(query) || workspaceName(session.workspaceId).toLowerCase().includes(query)).sort((a, b) => recency(b) - recency(a)).slice(0, 60);
+      cursor = Math.min(cursor, Math.max(0, results.length - 1));
+      res.replaceChildren(h("p", { class: "sec", text: showArchived ? "Archived" : "Active" }), ...results.map((session, at) => {
+        const row = button({ class: "pr" + (at === cursor ? " cur" : ""), role: "option" }, h("span", { class: "pt" }, h("b", { text: titleOf(session) }), h("span", null, icon("folder", 12), " " + workspaceName(session.workspaceId) + " \xB7 " + ago(recency(session)))), session.archived ? h("span", { class: "slot" }, icon("archive")) : glyph(glyphOf(session, false)));
+        row.addEventListener("click", () => pick(session));
+        row.addEventListener("pointermove", () => { if (cursor !== at) { cursor = at; draw(); } });
+        return row;
+      }));
+      if (!results.length && !(showArchived && !archivedDone)) res.append(h("p", { class: "none", text: showArchived ? "No archived session matches." : "No session matches." }));
+      if (showArchived && !archivedDone) res.append(h("p", { class: "none", text: "Looking through archived sessions\u2026 " + (archived ? archived.length : 0) + " found so far." }));
+      if (!showArchived && query && activeRunning) res.append(h("p", { class: "none", text: "Looking through every session\u2026 " + pool.length + " searched so far." }));
+      input.placeholder = showArchived ? "Search archived sessions by title or workspace\u2026" : "Search sessions by title or workspace\u2026";
+    };
+    const setArchived = async (on) => {
+      showArchived = on; cursor = 0; draw();
+      if (on && !archivedDone) {
+        try { await loadArchived(() => showArchived && scrim.isConnected, draw); } catch (error) { handle(error, "Could not list archived sessions"); }
+        draw();
+      }
+    };
+    filter.addEventListener("click", () => popup(filter, (menu) => {
+      menu.append(h("div", { class: "mh", text: "Show" }), item("Active", null, () => setArchived(false), { check: !showArchived }), item("Archived", null, () => setArchived(true), { check: showArchived }));
+    }, { alignRight: true, noFocus: false }));
+    const keys = (event) => {
+      if (closeMenu) return;
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
+      else if (event.key === "ArrowDown") { event.preventDefault(); cursor = Math.min(results.length - 1, cursor + 1); draw(); }
+      else if (event.key === "ArrowUp") { event.preventDefault(); cursor = Math.max(0, cursor - 1); draw(); }
+      else if (event.key === "Enter" && results[cursor]) { event.preventDefault(); pick(results[cursor]); }
+    };
+    document.addEventListener("keydown", keys, true);
+    input.addEventListener("input", () => {
+      cursor = 0;
+      draw();
+      if (!showArchived && input.value.trim() && !activeDone) loadActive(() => !showArchived && !!input.value.trim() && scrim.isConnected, draw).catch((error) => handle(error, "Could not search every session")).then(draw);
+    });
+    layerEl.append(scrim);
+    input.focus();
+    if (showArchived) setArchived(true); else draw();
+  }
+
+  // ---- the home's duties: unsent drafts, page permissions. 05 R-S12; 02 R-K7; 03 R5.65 -------------------------
+  function docView(title, lede, build) {
+    const col = h("div", { class: "col" });
+    viewEl.replaceChildren(h("div", { class: "bar" }, drawerButton()), h("div", { class: "doc" }, col));
+    const draw = () => { col.replaceChildren(h("h1", { text: title }), h("p", { class: "lede", text: lede })); build(col); };
+    draw();
+    refresh = draw;
+  }
+  function renderDrafts() {
+    docView("Unsent drafts", "Text you typed into a page that could not be put back where it was: the form changed, or the page filled the field itself. Copy it where you need it, or discard it.", (col) => {
+      if (!drafts.length) { col.append(h("p", { class: "muted", text: "No unsent drafts." })); return; }
+      for (const draft of drafts) {
+        const session = lookup(draft.session);
+        const text = h("textarea", { readonly: true, "aria-label": "Draft text", autocomplete: "off" });
+        text.value = draft.value;
+        const copy = button({ class: "gbtn" }, "Copy");
+        copy.addEventListener("click", async () => {
+          text.focus(); text.select();
+          try { await navigator.clipboard.writeText(draft.value); toast("Copied."); } catch (error) { let copied = false; try { copied = document.execCommand("copy"); } catch (again) { copied = false; } toast(copied ? "Copied." : "Selected: copy it with your keyboard."); }
+        });
+        const discard = button({ class: "gbtn" }, "Discard");
+        discard.addEventListener("click", () => document.dispatchEvent(new CustomEvent("thread-page:draft-discard", { detail: { session: draft.session, documentPath: draft.documentPath, key: draft.key, field: draft.field } })));
+        col.append(h("div", { class: "card", dataset: { session: draft.session } },
+          h("p", { class: "where", text: (session ? titleOf(session) : draft.session) + " \xB7 " + draft.documentPath + " \xB7 " + draft.label + " \xB7 " + draft.field + " \u2014 " + (draft.reason === "field-filled" ? "the page filled this field" : "not on the current version") + ", " + ago(draft.atMs) }),
+          text, h("div", { class: "act" }, copy, discard)));
+      }
+    });
+  }
+  function renderPermissions() {
+    docView("Page permissions", "Pages that may send your answers into another session, each granted once by you. Revoke one and that page asks again next time.", (col) => {
+      if (!grants.length) { col.append(h("p", { class: "muted", text: "No page holds a permission." })); return; }
+      const only = view.from && grants.some((grant) => grant.from === view.from) ? view.from : null;
+      if (only) col.append(button({ class: "gbtn", style: "align-self:flex-start", onclick: () => go({ kind: "permissions" }) }, "Show every page's permissions"));
+      const byFrom = new Map();
+      for (const grant of grants.filter((one) => !only || one.from === only)) { const key = grant.from || "?"; if (!byFrom.has(key)) byFrom.set(key, []); byFrom.get(key).push(grant); }
+      for (const [from, list] of byFrom) {
+        const source = from === "~home" ? "This home page" : "The page of \u201C" + (list[0].fromTitle || titleOf(lookup(from)) || from) + "\u201D";
+        const card = h("div", { class: "card", dataset: { from } }, h("p", { class: "where", text: source + " may answer:" }));
+        for (const grant of list) {
+          const revoke = button({ class: "gbtn" }, "Revoke");
+          revoke.addEventListener("click", () => document.dispatchEvent(new CustomEvent("thread-page:grant-revoke", { detail: { from: grant.from, to: grant.sessionId } })));
+          const when = (ms) => (ms ? new Date(ms).toLocaleString() : "never");
+          card.append(h("div", { class: "pair" }, h("div", { class: "pt" }, h("b", { text: grant.title || grant.sessionId }),
+            h("span", { text: "Granted " + when(grant.grantedAtMs) + " \xB7 last answered " + when(grant.lastAnsweredAtMs) + " \xB7 " + grant.count + (grant.count === 1 ? " answer" : " answers") })), revoke));
+        }
+        col.append(card);
+      }
+    });
+  }
+
+  // ---- start ----------------------------------------------------------------------------------------
+  await loadWorkspaces();
+  await loadProviders();
+  // The view's time moves while the reader stays on it, so a reload after a long read still comes back there.
+  const touchView = () => { if (prefs.view) { prefs.view.atMs = Date.now(); savePrefs(); } };
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") touchView(); });
+  setInterval(() => { if (document.visibilityState !== "hidden") touchView(); }, 180000);
+  // A reload comes back to where the reader was; opening the hub later, or elsewhere, starts at home, as the host does.
+  const recent = prefs.view && prefs.view.kind && (!prefs.view.atMs || Date.now() - prefs.view.atMs < 10 * 60e3);
+  const start = recent ? prefs.view : { kind: "new" };
+  go(start.kind === "session" && start.id ? { kind: "session", id: start.id } : { kind: ["drafts", "permissions"].includes(start.kind) ? start.kind : "new" }, { restore: true });
+  watchSessions();
+})();
+</script>
+</body>
+</html>
+`;
 
 // ../pages-core/src/serving/session-access.ts
 function createSessionAccess(provider) {
@@ -17534,7 +19410,7 @@ function documentSessionRoute(ctx) {
 }
 
 // ../pages-core/src/generated/shell-runtime.ts
-var SHELL_RUNTIME = '"use strict";(()=>{var _n=Object.defineProperty;var Bn=(e,t,r)=>t in e?_n(e,t,{enumerable:!0,configurable:!0,writable:!0,value:r}):e[t]=r;var Je=(e,t,r)=>Bn(e,typeof t!="symbol"?t+"":t,r);var v=Object.freeze({entryDocumentBytes:5242880,uploadFileBytes:25165824,uploadsPerForm:8,submissionBodyBytes:65536,transcriptChars:16e3,answersPerSubmission:64,answerValueChars:8e3,answerListItems:64,capabilityPayloadBytes:65536,capabilityJsonDepth:16,capabilityJsonNodes:1e4,contributedPayloadMaxBytes:1048576,contributedCallMs:3e4,contributionsTtlMs:1e4,contributorInstructionBytes:2048,contributorGuideBytes:16384,contributorMethods:64,declarationBytes:262144,declarationDepth:32,declarationNodes:5e4,methodDescriptionChars:240,scopeChars:1024,scopeSegments:64,fragmentChars:2048,documentQueryChars:2048,questionChars:1024,decisionSummaryChars:16384,promptChars:32768,resultTextBytes:65536,messagesDefault:50,messagesMax:200,messagesResponseBytes:262144,messageTextChars:16e3,toolInputBytes:2048,toolResultBytes:8192,voiceDefaultSeconds:120,voiceMaxSeconds:600,voicePromptChars:1e3,voiceMinMs:1e3,transcriptionBytes:26214400,promptFiles:8,promptFileBytes:25165824,attachGrantMs:18e5,titleChars:240,storageValueBytes:262144,storagePageBytes:4194304,storageSetManyEntries:32,storageKeyChars:128,draftRetentionMs:6048e5,draftsPerSessionBytes:1048576,snapshotDefault:100,snapshotMax:200,activityDefault:8,activityMax:20,actionTokenMs:72e5,confirmationMs:12e4,redeemedConfirmations:4096,selectionTokenMs:6e5,selectionTokens:32,idempotencyRecords:512,idempotencyMs:3e5,ratePerMinute:120,rateConcurrent:8,sessionRatePerMinute:600,sessionRateConcurrent:32,shellPollMs:1e4,shellPollWorkingMs:2e3,shellPollAfterAnswerMs:6e4,refreshSwapMs:4e3,swapIdleMs:3e3,reloadLoopCount:3,reloadLoopClearMs:1e4,reloadPingMs:7500,reloadWaitMs:15e3,includePatternStars:4,includeParts:200,includeElements:400,includeReports:100,includePartBytes:2097152,includeDepth:3,pagesReadEntries:16,pagesReadBytes:8388608,pagesAnswerBytes:98304,embedsPerPage:32,embedPollWorkingMs:3e3,embedPollMs:1e4,embedPollAfterAnswerMs:6e4,embedCallsPerMinute:30,answerTokenMs:72e5,grantsPerPage:64,grantPages:512,watchDefaultMs:8e3,watchMinMs:2e3,watchMaxMs:3e5,inlineFileBytes:2097152,inlineTotalBytes:3145728,inlineCssDepth:3,shellFetchBytes:26214400,shellFetchImageBytes:10485760,offlineCopyBytes:204800,offlineCacheEntries:32,offlineCacheBytes:8388608,requestIdChars:96,methodNameChars:96,tokenChars:8192,errorMessageChars:512,summaryChars:1024,workspacesMax:200,providersMax:64,modelsPerProvider:64,environmentsPerWorkspace:64,declinedCooldownMs:1e4,confirmArmMs:400,recorderSliceMs:250,textareaIconPx:16,draftFlushMs:200,draftDebounceMs:250,ledgerWindowMs:6e4,ledgerEntries:256,uploadBodyBytes:Math.ceil(34952533333333336e-9)+4096});function De(e){return`${Math.round(e/(1024*1024)*100)/100} MiB`}var Qe=["invalid_json","invalid_request","invalid_params","invalid_response","request_too_large","response_too_large","unsupported_version","unknown_method","stale_page","confirmation_required","confirmation_invalid","cancelled","not_found","conflict","unavailable","rate_limited","handler_error","invalid_result","settings_unsupported"],Ln=new Set(Qe);function wt(e){return typeof e=="string"&&Ln.has(e)}var Pr=Object.freeze({invalid_json:400,invalid_request:400,invalid_params:400,unsupported_version:400,cancelled:400,settings_unsupported:400,confirmation_required:401,unauthenticated:401,confirmation_invalid:403,forbidden:403,ineligible:404,no_page:404,page_too_large:413,unknown_method:404,not_found:404,stale_page:409,conflict:409,request_too_large:413,rate_limited:429,handler_error:500,invalid_result:500,response_too_large:500,invalid_response:502,unavailable:503});var Ye=Object.freeze({unauthenticated:"Sign in to read pages.",noPage:"This session has no page yet.",ineligible:"Only visible root sessions have pages.",deleted:"This session was deleted.",pageTooLarge:`The page\'s entry document is larger than ${v.entryDocumentBytes/(1024*1024)} MiB and was not served.`,unreachable:"The page\'s source is unreachable. Reconnect its host and try again.",staleCopy:"The source host is offline; this cached page is read-only.",archived:"This session is archived; its page is read-only.",stalePage:"This page changed; reload it before responding.",handler:"Could not execute the page action.",rateLimited:"Too many requests from this page; try again shortly.",invalidSession:"A valid session id is required.",tokenInvalid:"This page session is invalid or expired; reload the page.",confirmationRequired:"This action needs the reader\'s confirmation.",confirmationInvalid:"This confirmation is not valid for this request.",cancelled:"The reader declined.",notFound:"Not found.",conflict:"The request conflicts with the current state.",unavailable:"This cannot be served right now.",tooLarge:"The request is too large.",invalidJson:"The body is not valid JSON.",summaryTooLong:"The decision\'s summary is too long to show; decide in the host\'s own interface.",homeNoSession:"The built-in home page has no session.",settingsUnsupported:"This session cannot take those settings here; send the reply without them."}),Or=Object.freeze({archived:Ye.archived,offline:Ye.staleCopy,summary_too_long:Ye.summaryTooLong});var St="index.html",xt="uploads";function Et(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")||e.startsWith(`${xt}/`)||!e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")?!1:/\\.html?$/i.test(e)}function Nn(e){return Et(e)&&e.split("/").some(t=>t.startsWith("_"))}function X(e){return Et(e)&&!Nn(e)}function Me(e){return typeof e=="string"&&e.length>1&&e.length<=v.fragmentChars&&e.startsWith("#")?e:""}var Fn=["session","path","render"];function Ze(e){if(e==null||e===""||e==="?")return{ok:!0,query:""};if(typeof e!="string"||!e.startsWith("?"))return{ok:!1,message:"A document\'s query starts with ?"};if(e.length>v.documentQueryChars)return{ok:!1,message:`A document\'s query is at most ${v.documentQueryChars} characters`};if(/[#\\s\\u0000-\\u001f\\u007f-\\u009f]/.test(e))return{ok:!1,message:"A document\'s query has no #, spaces or control characters"};let t=new URLSearchParams(e),r=Fn.find(s=>t.has(s));return r?{ok:!1,message:`"${r}" is the host\'s own parameter; name yours differently`}:{ok:!0,query:e}}var $n="~home",Un=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;function Xe(e){return typeof e=="string"&&Un.test(e)}function Ie(e){return e===$n||Xe(e)}function Se(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")?!1:e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")}function vt(e){let t=e.slice(e.lastIndexOf("/")+1),r=t.lastIndexOf(".");return r<0?"":t.slice(r+1).toLowerCase()}var et=new Set(["png","jpg","jpeg","gif","webp","avif","bmp","ico","heic","heif","tif","tiff"]);function Tt(e){return et.has(vt(e))?v.shellFetchImageBytes:v.shellFetchBytes}var qn=new Set([...et,"pdf","mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus","txt","md","csv","tsv","json","log","vtt","srt"]);function Rt(e){return qn.has(vt(e))}var Ur=new Set([...et,"mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus"]);function At(e){let r=((e??"").split(/[\\\\/]/).pop()??"").replace(/[\\u0000-\\u001f\\u007f"<>:|?*]/g,"_").trim().slice(0,200);return r.length>0&&r!=="."&&r!==".."?r:null}function tt(e){return e.slice(e.lastIndexOf("/")+1)||"download"}function Dt(e){return e.split("/").map(encodeURIComponent).join("/")}var Gn=/[\\u0000-\\u001f\\u007f-\\u009f]/;function Wn(e){if(e==null||e==="")return{ok:!0,scope:null};if(typeof e!="string")return{ok:!1,message:"A scope is a folder path as text, or null"};if(e.length>v.scopeChars)return{ok:!1,message:`A scope is at most ${v.scopeChars} characters`};let t=e.endsWith("/")?e.slice(0,-1):e;if(t.startsWith("/")||/^[A-Za-z]:/.test(t))return{ok:!1,message:"A scope is relative to the session\'s folder, not absolute"};if(t.includes("\\\\"))return{ok:!1,message:"A scope separates folders with /, not \\\\"};if(Gn.test(t))return{ok:!1,message:"A scope cannot contain control characters"};let r=t.split("/");if(r.length>v.scopeSegments)return{ok:!1,message:`A scope is at most ${v.scopeSegments} folders deep`};for(let s of r){if(s===""||s===".")return{ok:!1,message:"A scope has no empty or . folder names"};if(s==="..")return{ok:!1,message:"A scope cannot climb out with .."}}return r[0]==="~"?{ok:!1,message:"A scope is relative to the session\'s folder, not the home folder"}:{ok:!0,scope:t}}function Mt(e){if(typeof e!="string"||e==="")return!1;let t=Wn(e);return t.ok&&t.scope===e}var Hn="up:draft:",jn="up:drafts:";function Ce(e,t,r){return`${Hn}${e}:${t}:${r}`}function nt(e){return`${jn}${e}`}function zn(e){return typeof e=="string"||typeof e=="boolean"||Array.isArray(e)&&e.every(t=>typeof t=="string")}function rt(e){return typeof e=="object"&&e!==null&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024}function Vn(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.name=="string"&&Number.isSafeInteger(t.selectionStart)&&Number.isSafeInteger(t.selectionEnd)&&t.selectionStart>=0&&t.selectionEnd>=0}function ot(e){return typeof e!="object"||e===null||Array.isArray(e)?!1:Object.entries(e).every(([t,r])=>t.length<=512&&zn(r))}function st(e){if(typeof e!="object"||e===null)return!1;let t=e;return rt(t.form)&&ot(t.fields)&&(t.focus===null||Vn(t.focus))&&Number.isSafeInteger(t.savedAtMs)&&typeof t.revision=="string"&&/^[a-f0-9]{64}$/.test(t.revision)}function $e(e){return typeof e=="number"&&Number.isFinite(e)&&e>=0}function It(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.window!="object"||t.window===null||!$e(t.window.x)||!$e(t.window.y)||!Array.isArray(t.elements)||t.elements.length>64?!1:t.elements.every(r=>typeof r=="object"&&r!==null&&typeof r.key=="string"&&r.key.length>0&&r.key.length<=1024&&$e(r.top)&&$e(r.left))}var Kn=2,it=1;var Jn=new Set(Qe),Yn=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/,Qn=/^[a-z][a-zA-Z0-9-]*(?:\\.[a-z][a-zA-Z0-9]*)+$/,Zn=/^[a-z][a-z0-9_]{0,63}$/,at=/^[a-f0-9]{64}$/,Xn=/^[A-Za-z0-9._-]{1,128}$/;function x(e){return typeof e=="object"&&e!==null&&!Array.isArray(e)}function F(e,t){return Object.keys(e).length===t.length&&t.every(s=>Object.prototype.hasOwnProperty.call(e,s))}function fe(e,t,r=[]){let s=Object.keys(e);return t.every(d=>s.includes(d))&&s.every(d=>t.includes(d)||r.includes(d))}function Ue(e){return typeof e=="string"&&Yn.test(e)}var xe=e=>typeof e=="number"&&Number.isSafeInteger(e),N=(e,t)=>typeof e=="string"&&e.length<=t,J=(e,t)=>e===void 0||t(e);function Ct(e){return typeof e=="object"&&e!==null&&typeof e.size=="number"&&typeof e.name=="string"&&typeof e.arrayBuffer=="function"}function lt(e){return x(e)&&F(e,["session","documentPath","key","label","field","value","reason","atMs"])&&Ie(e.session)&&X(e.documentPath)&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024&&N(e.label,512)&&N(e.field,512)&&typeof e.value=="string"&&(e.reason==="not-on-this-version"||e.reason==="field-filled")&&xe(e.atMs)}function Pt(e){return x(e)&&F(e,["kind","v","pageRevision","documentPath","embedded"])&&e.kind==="thread-page:ready"&&e.v===Kn&&typeof e.pageRevision=="string"&&at.test(e.pageRevision)&&X(e.documentPath)&&typeof e.embedded=="boolean"}function er(e){return x(e)&&F(e,["name","label","value"])&&N(e.name,128)&&N(e.label,300)&&(typeof e.value=="boolean"||N(e.value,v.answerValueChars)||Array.isArray(e.value)&&e.value.length<=v.answerListItems&&e.value.every(t=>N(t,2e3)))}function tr(e){return x(e)&&fe(e,["field","file"],["transcribe"])&&N(e.field,128)&&Ct(e.file)&&J(e.transcribe,t=>typeof t=="boolean")}function nr(e,t){return!x(e)||!fe(e,["v","id","method","params","pageRevision"],["scope","files"])||"scope"in e&&!Mt(e.scope)||"files"in e&&!(Array.isArray(e.files)&&e.files.every(Ct))?!1:e.v===it&&Ue(e.id)&&typeof e.method=="string"&&e.method.length>=3&&e.method.length<=v.methodNameChars&&Qn.test(e.method)&&typeof e.pageRevision=="string"&&at.test(e.pageRevision)&&(t===void 0||e.pageRevision===t)}function Ot(e,t){if(!x(e)||e.v!==it||typeof e.id!="string"||typeof e.ok!="boolean"||t!==void 0&&e.id!==t)return!1;if(e.ok===!0)return F(e,["v","id","ok","result"]);if(!F(e,["v","id","ok","error"])||!x(e.error))return!1;let r=e.error;return!fe(r,["code","message"],["reason","detail"])||"reason"in r&&(typeof r.reason!="string"||!Zn.test(r.reason))||"detail"in r&&!("reason"in r)?!1:typeof r.code=="string"&&Jn.has(r.code)&&typeof r.message=="string"&&r.message.length>0&&r.message.length<=v.errorMessageChars}function _t(e){if(!x(e))return!1;if(!("kind"in e))return nr(e);switch(e.kind){case"thread-page:dirty":return F(e,["kind","custom"])&&typeof e.custom=="boolean";case"thread-page:typing":return F(e,["kind","active"])&&typeof e.active=="boolean";case"thread-page:clean":case"thread-page:escape":return F(e,["kind"]);case"thread-page:draft-discard":return F(e,["kind","session","documentPath","key","field"])&&Ie(e.session)&&X(e.documentPath)&&N(e.key,1024)&&typeof e.key=="string"&&e.key.length>0&&N(e.field,512);case"thread-page:grant-revoke":return F(e,["kind","from","to"])&&Ie(e.from)&&Ie(e.to);case"thread-page:submit":return F(e,["kind","submissionId","title","writtenAgainst","formId","formTitle","action","answers","files"])&&(e.action===null||N(e.action,v.answerValueChars))&&typeof e.submissionId=="string"&&Xn.test(e.submissionId)&&N(e.title,300)&&typeof e.writtenAgainst=="string"&&at.test(e.writtenAgainst)&&(e.formId===null||N(e.formId,300))&&(e.formTitle===null||N(e.formTitle,300))&&Array.isArray(e.answers)&&e.answers.length<=v.answersPerSubmission&&e.answers.every(er)&&Array.isArray(e.files)&&e.files.length<=v.uploadsPerForm&&e.files.every(tr);case"thread-page:open-document":return fe(e,["kind","path"],["fragment","query"])&&X(e.path)&&J(e.fragment,t=>N(t,v.fragmentChars))&&J(e.query,t=>N(t,v.documentQueryChars));case"thread-page:open-file":return F(e,["kind","path","download","name"])&&Se(e.path)&&typeof e.download=="boolean"&&(e.name===null||N(e.name,255));case"thread-page:file-request":return fe(e,["kind","id","path","purpose"],["init"])&&Ue(e.id)&&Se(e.path)&&(e.purpose==="media"||e.purpose==="fetch")&&J(e.init,t=>x(t)&&F(t,["method"])&&(t.method==="GET"||t.method==="HEAD"));case"thread-page:fragment":return fe(e,["kind","fragment"],["step"])&&N(e.fragment,v.fragmentChars)&&J(e.step,t=>t===!0);case"thread-page:scroll":return F(e,["kind","state"])&&It(e.state);case"thread-page:draft":return fe(e,["kind","form","fields","focus","cleared"],["embed"])&&rt(e.form)&&ot(e.fields)&&(e.focus===null||x(e.focus)&&F(e.focus,["name","selectionStart","selectionEnd"])&&N(e.focus.name,512)&&xe(e.focus.selectionStart)&&xe(e.focus.selectionEnd))&&Array.isArray(e.cleared)&&e.cleared.every(t=>N(t,512))&&J(e.embed,t=>x(t)&&F(t,["sessionId","documentPath"])&&Xe(t.sessionId)&&X(t.documentPath));case"thread-page:flushed":case"thread-page:pong":return F(e,["kind","nonce"])&&xe(e.nonce);case"thread-page:restored":return F(e,["kind","nonce","firstPaintToRestoreMs"])&&xe(e.nonce)&&(e.firstPaintToRestoreMs===null||typeof e.firstPaintToRestoreMs=="number"&&Number.isFinite(e.firstPaintToRestoreMs));case"thread-page:record":return fe(e,["kind","id","purpose"],["prompt","language","maxDurationSeconds","keepAudio","control"])&&Ue(e.id)&&(e.purpose==="dictate"||e.purpose==="audio"||e.purpose==="capability")&&J(e.prompt,t=>N(t,v.voicePromptChars))&&J(e.language,t=>N(t,35))&&J(e.maxDurationSeconds,t=>xe(t)&&t>=1&&t<=v.voiceMaxSeconds)&&J(e.keepAudio,t=>typeof t=="boolean")&&J(e.control,t=>t===!0);case"thread-page:embed-dirty":return F(e,["kind","dirty"])&&typeof e.dirty=="boolean";case"thread-page:gesture":return F(e,["kind","atMs"])&&typeof e.atMs=="number"&&Number.isFinite(e.atMs);default:return!1}}function Y(e,t,r,s,d){let g={code:t,message:r.slice(0,v.errorMessageChars)||"Request failed",...s?{reason:s,...d!==void 0?{detail:d}:{}}:{}};return{v:it,id:Ue(e)?e:"invalid",ok:!1,error:g}}function Bt(e){let t=e?.getAttribute("data-config");if(!t)throw new Error("The page runtime\'s configuration is missing");return JSON.parse(t)}var rr={heading:"Confirm this action",confirmLabel:"Confirm",cancelLabel:"Cancel"},Nt={heading:"Allow answers from this page?",confirmLabel:"Allow",cancelLabel:"Don\\u2019t allow"},Ft={heading:"Decide for the agent",confirmLabel:"Confirm",cancelLabel:"Cancel"},$t={heading:"Open this file?",confirmLabel:"Open",cancelLabel:"Cancel"};function Lt(e){return e.replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"").slice(0,200)}function Ut(e,t={}){let r=t.armMs??v.confirmArmMs,s=t.otherQuestionOpen??(()=>!1),d=t.onClosed??(()=>{}),g=e.ownerDocument,u=g.createElement("h2"),f=g.createElement("p");f.setAttribute("data-tp","confirm-summary");let m=g.createElement("p");m.setAttribute("data-tp","confirm-detail"),m.hidden=!0;let o=g.createElement("div"),i=g.createElement("button");i.type="button",i.value="cancel";let l=g.createElement("button");l.type="button",l.value="confirm",o.append(i,l),e.replaceChildren(u,f,m,o);let w=null,c=0,a;function k(h){let b=w;if(w=null,h&&a)try{a()}catch{}a=void 0,e.open&&e.close(),b&&d(),b?.(h)}return i.addEventListener("click",h=>{h.preventDefault(),k(!1)}),l.addEventListener("click",h=>{h.preventDefault(),!(Date.now()<c)&&k(!0)}),e.addEventListener("cancel",h=>{h.preventDefault(),k(!1)}),e.addEventListener("close",()=>{w&&k(!1)}),{confirm(h,b={}){return new Promise(T=>{if(w||s()){T(!1);return}let R=b.wording??rr;if(c=Date.now()+r,f.textContent=h,b.grant?(m.hidden=!1,m.textContent=`Target: \\u201C${Lt(b.grant.title)}\\u201D (${Lt(b.grant.sessionId)}). You can revoke this later from the home page or the grants command.`):m.hidden=!0,u.textContent=R.heading,l.textContent=R.confirmLabel,i.textContent=R.cancelLabel,w=T,a=b.onConfirmGesture,typeof e.showModal=="function")try{e.showModal()}catch{k(!1)}else k(!1)})},isOpen:()=>w!==null}}var Wt="A draft was dropped to make room",or="A draft was shortened to fit";function qt(){let e=new Map;return{get:t=>e.get(t)??null,set:(t,r)=>{e.set(t,r)},remove:t=>{e.delete(t)}}}function sr(e){return{get:t=>e.getItem(t),set:(t,r)=>e.setItem(t,r),remove:t=>e.removeItem(t)}}function pe(e){return new TextEncoder().encode(e).length}function Pe(e,t){let r=t.now??(()=>Date.now()),s=nt(t.session),d,g=!1;try{let c=e.localStorage;c.getItem(s),d=sr(c)}catch{d=qt(),g=!0,t.onFallback?.()}function u(c,a){try{return c()}catch{if(!g){let k=qt();for(let h of f().keys){let b=d.get(h);b!==null&&k.set(h,b)}k.set(s,d.get(s)??""),d=k,g=!0,t.onFallback?.();try{return c()}catch{return a}}return a}}function f(){try{let c=d.get(s),a=c?JSON.parse(c):null;return{keys:Array.isArray(a?.keys)?a.keys.filter(k=>typeof k=="string"):[]}}catch{return{keys:[]}}}function m(c){let a=0;for(let k of c)a+=pe(d.get(k)??"");d.set(s,JSON.stringify({keys:c,bytes:a}))}function o(c){try{let a=d.get(c),k=a?JSON.parse(a):null;return st(k)?k:null}catch{return null}}function i(c){let a=Ce(t.session,"",""),k=c.slice(a.length-1);return k.slice(0,k.indexOf(":"))}function l(){let c=f().keys,a=[],k=!1;for(let h of c){let b=o(h);if(!b||r()-b.savedAtMs>t.retentionMs){d.remove(h),k=!0;continue}a.push(h)}return k&&m(a),a}function w(c,a){let k={...c.fields},h=pe(JSON.stringify({...c,fields:k}));for(let[b,T]of Object.entries(k)){if(h<=a)break;if(typeof T!="string")continue;let R=Math.max(0,T.length-(h-a));k[b]=T.slice(0,R),h=pe(JSON.stringify({...c,fields:k}))}return h<=a?{...c,fields:k}:null}return{put(c,a){return u(()=>{let k=[],h=Ce(t.session,c,a.form.key),b=l().filter(C=>C!==h);if(Object.keys(a.fields).length===0)return d.remove(h),m(b),k;let T=a,R=pe(JSON.stringify(T));if(R>t.perSessionBytes){if(T=w(a,t.perSessionBytes),!T)return k;R=pe(JSON.stringify(T)),k.push(or)}let I=R;for(let C of b)I+=pe(d.get(C)??"");for(;I>t.perSessionBytes&&b.length>0;){let C=b.shift();I-=pe(d.get(C)??""),d.remove(C),k.push(Wt)}return d.set(h,JSON.stringify(T)),m([...b,h]),k},[])},delete(c,a){u(()=>{let k=Ce(t.session,c,a);d.remove(k),m(f().keys.filter(h=>h!==k))},void 0)},list(){return u(()=>l().map(c=>({key:c,documentPath:i(c),record:o(c)})).filter(c=>c.record!==null),[])},forDocument(c){return u(()=>l().filter(a=>a.startsWith(Ce(t.session,c,""))).map(a=>o(a)).filter(a=>a!==null),[])},clearSession(){u(()=>{for(let c of f().keys)d.remove(c);d.remove(s),d.remove(qe(t.session))},void 0)},isFallback:()=>g}}var Oe="up:leftovers:",ir="A draft could not be kept for the home page: the browser refused to store it.";function qe(e){return`${Oe}${e}`}function Ee(e){return[e.session,e.documentPath,e.key,e.field].join("|")}function ct(e){return e.startsWith("id:")?`#${e.slice(3)}`:e.startsWith("title:")?e.slice(6):e.startsWith("ctl:name:")?e.slice(9):e.startsWith("ctl:")?`#${e.slice(4)}`:"a form"}function _e(e){try{let t=e.localStorage;return t.getItem(Oe),t}catch{return null}}function Ge(e,t){try{let r=JSON.parse(e.getItem(qe(t))??"[]");return Array.isArray(r)?r.filter(lt):[]}catch{return[]}}var Gt=!1;function We(e,t,r,s){let d=[],g=[...r].sort((f,m)=>f.atMs-m.atMs),u=0;try{let f=JSON.parse(e.getItem(nt(t))??"{}");u=typeof f.bytes=="number"?f.bytes:0}catch{u=0}for(;g.length>0&&u+pe(JSON.stringify(g))>s.perSessionBytes;)g.shift(),d.push(Wt);try{g.length===0?e.removeItem(qe(t)):e.setItem(qe(t),JSON.stringify(g))}catch(f){Gt||(Gt=!0,console.warn("the browser refused to store a draft for the home page",f)),d.push(ir)}return d}function Ht(e,t,r){let s=_e(e);if(!s)return[];let d=Ge(s,t.session).filter(g=>Ee(g)!==Ee(t));return We(s,t.session,[...d,t],r)}function jt(e,t,r,s,d){let g=_e(e);if(!g)return[];let u=Ge(g,t).filter(m=>!(m.documentPath===r&&m.reason==="not-on-this-version")),f=new Set(u.map(Ee));return We(g,t,[...u,...s.filter(m=>!f.has(Ee(m)))],d)}function zt(e,t,r,s){let d=_e(e);if(!d)return;let g=Ge(d,t),u=Pe(e,{session:t,retentionMs:s.retentionMs,perSessionBytes:s.perSessionBytes}),f=new Map(u.forDocument(r).map(o=>[o.form.key,o])),m=g.filter(o=>{if(o.documentPath!==r||o.reason!=="not-on-this-version")return!0;let i=f.get(o.key)?.fields[o.field];return typeof i=="string"&&i!==""});m.length!==g.length&&We(d,t,m,s)}function dt(e,t,r=Date.now()){let s=_e(e);if(!s)return[];let d=[],g=[];for(let u=0;u<s.length;u+=1){let f=s.key(u);f&&f.startsWith(Oe)&&g.push(f)}for(let u of g)try{let f=JSON.parse(s.getItem(u)??"[]");if(!Array.isArray(f))continue;let m=f.filter(lt).filter(o=>r-o.atMs<=t);m.length!==f.length&&(m.length===0?s.removeItem(u):s.setItem(u,JSON.stringify(m))),d.push(...m)}catch{}return d.sort((u,f)=>u.atMs-f.atMs)}function Vt(e,t,r){let s=_e(e);if(!s)return;let d=Ee(t);We(s,t.session,Ge(s,t.session).filter(o=>Ee(o)!==d),r);let g=Pe(e,{session:t.session,retentionMs:r.retentionMs,perSessionBytes:r.perSessionBytes}),u=g.forDocument(t.documentPath).find(o=>o.form.key===t.key);if(!u||!(t.field in u.fields))return;let f={...u.fields};delete f[t.field],Object.values(f).every(o=>o===""||o===!1||Array.isArray(o)&&o.length===0)?g.delete(t.documentPath,t.key):g.put(t.documentPath,{...u,fields:f,focus:u.focus&&u.focus.name===t.field?null:u.focus})}var ar="The recording bar opens only when the reader presses something in the page.",He={mode:"refuse",reason:ar},lr=["pointerdown","pointerup","mousedown","touchend","click","keydown","keyup"];function Kt(e,t={}){let r=t.cooldownMs??2e3,s=t.pollMs??100,d=()=>e.navigator.userActivation,g=!1,u=null,f=Number.NEGATIVE_INFINITY;function m(){u!==null&&clearInterval(u),u=setInterval(()=>{let o=d();(!o||!o.isActive)&&(g=!1,u!==null&&clearInterval(u),u=null)},s)}for(let o of lr)e.addEventListener(o,i=>{i.isTrusted&&(g=!0,m())},!0);return{decide(o={}){let i=d();return i?i.isActive?o.control===!0?{mode:"record"}:g?{mode:"arm",reason:"the last press was in the host\'s chrome"}:Date.now()-f<r?{mode:"arm",reason:"a bar or question just closed"}:{mode:"record"}:He:{mode:"arm",reason:"this browser cannot tell who pressed"}},closed(){f=Date.now()}}}function Jt(e){let t=null;return{inPlace(r){e.location.assign(r)},reserveWindow(){try{if(t=e.open("","_blank"),t)try{t.opener=null}catch{}}catch{t=null}},external(r){let s=t;if(t=null,s&&!s.closed)try{return s.location.href=r,!0}catch{try{s.close()}catch{}}try{return e.open(r,"_blank","noopener,noreferrer")!==null}catch{return!1}},release(){let r=t;t=null;try{r?.close()}catch{}}}}function cr(e){let t=tt(e).replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"");return t.length<=60?t:`${t.slice(0,59)}\\u2026`}var dr=400;function ur(e,t){if(e.filesUrl)return`${e.filesUrl}${Dt(t)}`;let r=e.documentUrl.indexOf("?");if(r<0)return null;let s=new URLSearchParams(e.documentUrl.slice(r+1)).get("session");return s===null?null:`${e.documentUrl.slice(0,r)}?session=${encodeURIComponent(s)}&file=${encodeURIComponent(t)}`}function Yt(e,t,r,s,d=dr){function g(i){let l=null;try{l=e.open(i,"_blank")}catch{l=null}if(l)try{l.opener=null}catch{}return l}function u(){let i=e.document;return i.visibilityState==="visible"&&(typeof i.hasFocus!="function"||i.hasFocus())}function f(i,l){g(i)||e.setTimeout(()=>{if(!u())return;let w=!1;s.confirm(`Open \\u201C${cr(l)}\\u201D in a new tab?`,{wording:$t,onConfirmGesture:()=>{w=g(i)!==null}}).then(c=>{c&&!w&&e.setTimeout(()=>{u()&&e.location.assign(i)},d)})},d)}function m(i,l){let w=e.document,c=w.createElement("a");c.href=i,c.download=l,c.rel="noopener",c.style.display="none",w.body.appendChild(c);try{c.click()}finally{c.remove()}}let o=i=>ur(t,i);return{urlOf:o,open(i,l,w){if(!Se(i)||X(i)&&!l)return;let c=o(i);if(c){if(l||!Rt(i)){m(c,(w?At(w):null)??tt(i));return}f(c,i)}},async fetchFor(i,l){let{id:w,path:c}=l,a=(b,T)=>i({kind:"thread-page:file",id:w,ok:!1,status:b,error:T});if(!Se(c))return a(400,"Not a file of this page");if(l.purpose==="media"&&!t.deferredFiles.includes(c))return a(400,"Not a file this document defers");let k=o(c);if(!k)return a(404,"This page has no files of its own");let h=Tt(c);try{let b=await r(k,{method:l.init?.method??"GET",credentials:"same-origin",cache:"no-store"});if(!b.ok)return a(b.status,b.status===404?"The file does not exist":`The host answered ${b.status}`);let T=Number(b.headers.get("content-length")??"");if(Number.isFinite(T)&&T>h)return a(413,`Larger than ${De(h)}, the most the host reads`);let R=await b.blob();if(R.size>h)return a(413,`Larger than ${De(h)}, the most the host reads`);i({kind:"thread-page:file",id:w,ok:!0,status:b.status,contentType:b.headers.get("content-type")??R.type??"",blob:R})}catch(b){a(502,b instanceof Error&&b.message?b.message.slice(0,200):"The file could not be fetched")}}}}var Qt="X-Pages-Poll",Zt="X-Pages-Working",Xt="X-Pages-Source",en="X-Pages-Session";var fr=3e4,tn=3e4;function pr(e){let t=e.indexOf("?");if(t<0)return e;let r=new URLSearchParams(e.slice(t+1));r.delete("render");let s=r.toString();return s?`${e.slice(0,t)}?${s}`:e.slice(0,t)}function nn(e,t,r,s){let d=`"${t.pageRevision}"`,g=!1,u=!1,f=null,m=0,o=null,i=t.working,l=0,w=!1,c=t.source,a=()=>e.document.visibilityState==="hidden";function k(){return a()?tn:i||Date.now()<l?t.pollWorkingMs:t.pollMs}function h(T){f!==null&&clearTimeout(f),f=null,!g&&(m=Date.now()+T,f=setTimeout(()=>{f=null,b()},T))}async function b(){if(g||u)return;Date.now()>=t.expiresAt-fr&&r.onExpiring(),u=!0,o=new AbortController;let T=t.documentUrl;try{let R=await s(pr(T),{method:"GET",credentials:"same-origin",cache:"no-store",headers:{"if-none-match":d,[Qt]:"1"},signal:o.signal});if(T!==t.documentUrl)return;if(w&&(w=!1,r.onReachable()),R.status===401||R.status===403){g=!0,r.onUnauthorized();return}if(R.status===404){g=!0,r.onDeleted();return}if(!R.ok&&R.status!==304){r.onUnreachable(),w=!0;return}if(R.headers.get(en)==="deleted"){g=!0,r.onDeleted();return}if(R.status===304){i=R.headers.get(Zt)==="1",r.onWorking(i);let C=R.headers.get(Xt);(C==="live"||C==="offline"||C==="archived")&&C!==c&&(c=C,r.onSource(C));return}let I=await R.json().catch(()=>null);if(!gr(I))return;d=`"${I.revision}"`,i=I.working,r.onWorking(i),I.source!==c&&(c=I.source,r.onSource(I.source)),r.onBody(I)}catch(R){R instanceof DOMException&&R.name==="AbortError"||(w=!0,r.onUnreachable())}finally{o=null,u=!1,h(k())}}return e.document.addEventListener("visibilitychange",()=>{g||(a()?h(tn):h(0))}),{start:()=>h(k()),stop(){g=!0,f!==null&&clearTimeout(f),f=null,o?.abort()},expectChange(){l=Date.now()+t.pollAfterAnswerMs,!u&&!a()&&(f===null||m-Date.now()>t.pollWorkingMs)&&h(t.pollWorkingMs)},retarget(){f!==null&&clearTimeout(f),f=null,o?.abort(),o=null,d=`"${t.pageRevision}"`,c=t.source,i=t.working,g=!1,u=!1,h(k())},pollNow:()=>b(),isStopped:()=>g}}function gr(e){return x(e)?typeof e.revision=="string"&&/^[a-f0-9]{64}$/.test(e.revision)&&typeof e.actionToken=="string"&&typeof e.expiresAt=="number"&&typeof e.documentUrl=="string"&&typeof e.working=="boolean"&&(e.source==="live"||e.source==="offline"||e.source==="archived")&&typeof e.empty=="boolean"&&Array.isArray(e.deferredFiles)&&Array.isArray(e.grants)&&x(e.voice)&&typeof e.voice.available=="boolean"&&Array.isArray(e.readMethods):!1}async function ve(e){return mr(new Uint8Array(await e.arrayBuffer()))}function mr(e){let t="";for(let s=0;s<e.length;s+=32768)t+=String.fromCharCode.apply(null,Array.from(e.subarray(s,s+32768)));return btoa(t)}function rn(e){return{name:e.name||"file",size:e.size,type:e.type||""}}function on(e){if(e.length>v.promptFiles)return{code:"request_too_large",message:`At most ${v.promptFiles} files per call; this one has ${e.length}`};let t=e.find(s=>s.size>v.promptFileBytes);if(t)return{code:"request_too_large",message:`\\u201C${t.name}\\u201D is larger than ${De(v.promptFileBytes)}, the most one file may be`};let r=e.find(s=>s.size===0);return r?{code:"invalid_params",message:`\\u201C${r.name}\\u201D is empty`}:null}async function ut(e,t,r,s,d){let g=[];for(let u=0;u<s.length;u+=1){let f=s[u];d(`Attaching ${u+1} of ${s.length}\\u2026`);let m=null;try{let o={actionToken:t.actionToken,requestId:r.requestId,method:r.method,...r.challenge?{challenge:r.challenge}:{},index:u,name:f.name||"file",type:f.type||"",bytes:await ve(f)},i=await e(t.routes.attach,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(o)}),l=await i.json().catch(()=>null);!i.ok||!x(l)||l.ok!==!0||typeof l.attachmentId!="string"?m={code:x(l)&&typeof l.code=="string"?l.code:"",message:x(l)&&typeof l.message=="string"&&l.message?l.message:`Upload failed (${i.status})`}:g.push(l.attachmentId)}catch(o){m={code:"",message:o instanceof Error&&o.message?o.message:"Upload failed"}}if(m)return d(""),{ok:!1,code:m.code==="request_too_large"?"request_too_large":m.code==="unavailable"?"unavailable":"handler_error",message:`Could not attach \\u201C${f.name}\\u201D: ${m.message.replace(/\\.$/,"")}. Nothing was started or sent.`}}return d(""),{ok:!0,attachmentIds:g}}var hr=["audio/webm","audio/mp4","audio/ogg"],yr=900,sn="Another question is open; answer it first.",Be=class extends Error{constructor(r,s){super(s);Je(this,"code",r);this.name="VoiceFailure"}};function br(e){let t=e.MediaRecorder;return hr.find(r=>{try{return t?.isTypeSupported?.(r)===!0}catch{return!1}})}function an(e){let t=e.split(";")[0]?.trim().toLowerCase()??"";return t==="audio/mp4"?"m4a":t==="audio/ogg"?"ogg":"webm"}function ft(e){let t=Math.max(0,Math.floor(e/1e3));return`${Math.floor(t/60)}:${String(t%60).padStart(2,"0")}`}function ln(e){let t=e.ownerDocument,r=t.createElement("canvas");r.width=160,r.height=28;let s=t.createElement("span");s.setAttribute("data-tp","rec-time");let d=t.createElement("span");d.setAttribute("data-tp","rec-status"),d.setAttribute("role","status");let g=t.createElement("button");g.type="button",g.textContent="Cancel",g.setAttribute("data-tp","rec-cancel");let u=t.createElement("button");u.type="button",u.textContent="Record",u.setAttribute("data-tp","rec-record");let f=t.createElement("button");return f.type="button",f.textContent="Done",f.setAttribute("data-tp","rec-done"),e.replaceChildren(r,s,d,g,u,f),e.hidden=!0,e.tabIndex=-1,{bar:e,wave:r,time:s,status:d,cancel:g,done:f,record:u}}function cn(e,t,r,s){let d=[],g=!1,u=!1,f=!1,m=null,{bar:o,wave:i,time:l,status:w,cancel:c,done:a,record:k}=r;function h(){for(let A of d)try{A()}catch{}}async function b(){if(!t.voice.available)return t.voice.reason??"This host cannot transcribe voice.";if(g)return"The microphone was not allowed. Reload the page to try again.";if(!e.isSecureContext)return"Recording needs a secure connection to this host.";let A=e.navigator.mediaDevices;if(!A||typeof A.getUserMedia!="function"||typeof e.MediaRecorder!="function")return"This browser cannot record here.";try{let P=await e.navigator.permissions?.query({name:"microphone"});if(P&&!f&&(f=!0,P.onchange=()=>h()),P?.state==="denied")return"The microphone is blocked for this page."}catch{}return null}async function T(A){let P;try{let Z={actionToken:t.actionToken,type:A.type||"audio/webm",bytes:await ve(A.blob),...A.prompt?{prompt:A.prompt.slice(-v.voicePromptChars)}:{},...A.language?{language:A.language}:{}};P=await s.fetchImpl(t.routes.transcribe,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(Z)})}catch{throw new Be("unavailable","The host could not be reached to transcribe the recording")}let L=await P.json().catch(()=>null);if(P.ok&&x(L)&&L.ok===!0&&typeof L.text=="string")return L.text;let Q=x(L)&&typeof L.code=="string"?L.code:"",U=x(L)&&typeof L.message=="string"&&L.message?L.message:`Transcription failed (${P.status})`;throw new Be(Q==="request_too_large"?"request_too_large":Q==="rate_limited"?"rate_limited":"unavailable",U)}async function R(){let A=e.navigator.mediaDevices;if(t.voice.deviceId)try{return await A.getUserMedia({audio:{deviceId:{exact:t.voice.deviceId}}})}catch(P){let L=P.name;if(L==="NotAllowedError"||L==="SecurityError")throw P}return A.getUserMedia({audio:!0})}function I(A){w.textContent=A}function C(A){o.hidden=!1,o.dataset.state="starting",o.dataset.purpose=A,l.textContent="0:00",a.disabled=!0,a.hidden=!1,k.hidden=!0,c.disabled=!1,I("Starting the microphone\\u2026");try{o.focus({preventScroll:!0})}catch{}}function B(){o.hidden=!0,o.dataset.state="",I(""),i.getContext?.("2d")?.clearRect(0,0,i.width,i.height),s.restoreFocus()}function ee(A,P){return u||s.questionOpen()?Promise.resolve({ok:!1,code:"unavailable",message:sn}):A.gesture.mode==="refuse"?Promise.resolve({ok:!1,code:"unavailable",message:A.gesture.reason}):(u=!0,b().then(L=>L||s.questionOpen()?(u=!1,{ok:!1,code:"unavailable",message:L??sn}):W(A,P)))}function W(A,P){return new Promise(L=>{let Q=null,U=null,Z=null,te=0,ne=null,re=null,Le=[],le="",oe=0,q=0,V=null,H=!1,K=!1,Te=null;function ye(){ne!==null&&clearInterval(ne),re!==null&&clearTimeout(re),ne=null,re=null,te&&e.cancelAnimationFrame?.(te),te=0;try{U&&U.state!=="inactive"&&U.stop()}catch{}for(let D of Q?.getTracks()??[])D.stop();Q=null,Z?.close().catch(()=>{}),Z=null}function z(D){H||(H=!0,ye(),e.removeEventListener("keydown",be,!0),e.removeEventListener("pagehide",ce),c.removeEventListener("click",ce),a.removeEventListener("click",Re),Te?.(),k.hidden=!0,a.hidden=!1,u=!1,m=null,B(),s.onClosed?.(),!D.ok&&D.code!=="cancelled"&&s.setStatus(`Voice: ${D.message}`),L(D))}function ce(){K||z({ok:!1,code:"cancelled",message:"The reader cancelled the recording; nothing was sent."})}function be(D){D.key==="Escape"&&(D.preventDefault(),ce())}function Ve(D){let $=new Uint8Array(new ArrayBuffer(D.fftSize)),G=i.getContext?.("2d"),O=()=>{if(H||q||!G)return;D.getByteTimeDomainData($);let{width:se,height:he}=i;G.clearRect(0,0,se,he),G.fillStyle="currentColor";let Ne=Math.max(8,Math.floor(se/5)),ke=Math.floor($.length/Ne)||1;for(let de=0;de<Ne;de+=1){let ie=0;for(let ae=0;ae<ke;ae+=1)ie=Math.max(ie,Math.abs(($[de*ke+ae]??128)-128));let ue=Math.max(2,Math.min(he,ie/128*he*1.8));G.fillRect(de*5,(he-ue)/2,3,ue)}te=e.requestAnimationFrame(O)};te=e.requestAnimationFrame(O)}function ge(){if(V)return V;q=q||Date.now(),ne!==null&&clearInterval(ne),ne=null,re!==null&&clearTimeout(re),re=null,V=new Promise(D=>{if(!U||U.state==="inactive"){D();return}U.addEventListener("stop",()=>D(),{once:!0});try{U.stop()}catch{D()}});for(let D of Q?.getTracks()??[])D.stop();return V}async function me(){if(K||!oe)return;let D=(q||Date.now())-oe;if(D<v.voiceMinMs){K=!0,a.disabled=!0,c.disabled=!0,o.dataset.state="short",I("Too short"),ye(),setTimeout(()=>{K=!1,z({ok:!1,code:"cancelled",message:`The recording was shorter than ${v.voiceMinMs/1e3} s, so nothing was sent.`})},yr);return}K=!0,a.disabled=!0,c.disabled=!0,await ge();let $=le||U?.mimeType||"audio/webm",G=new Blob(Le,{type:$});if(G.size===0){K=!1,z({ok:!1,code:"unavailable",message:"Nothing was recorded. Check the microphone and try again."});return}o.dataset.state="working",I(A.purpose==="audio"?"Saving the recording\\u2026":"Transcribing\\u2026");try{let O=await P({blob:G,type:$,durationMs:D});K=!1,z({ok:!0,value:O})}catch(O){K=!1,z({ok:!1,code:O instanceof Be?O.code:"unavailable",message:O instanceof Error&&O.message?O.message:"The recording could not be transcribed."})}}function Re(){me()}m=ce,C(A.purpose),e.addEventListener("keydown",be,!0),e.addEventListener("pagehide",ce),c.addEventListener("click",ce),a.addEventListener("click",Re);function Ae(){R().then(D=>{if(H){for(let O of D.getTracks())O.stop();return}Q=D;let $=br(e);try{U=$?new e.MediaRecorder(D,{mimeType:$}):new e.MediaRecorder(D)}catch{z({ok:!1,code:"unavailable",message:"This browser cannot record here."});return}U.addEventListener("dataavailable",O=>{O.data&&O.data.size>0&&(Le.push(O.data),!le&&O.data.type&&(le=O.data.type))}),U.addEventListener("error",()=>z({ok:!1,code:"unavailable",message:"The recording failed."}));try{U.start(v.recorderSliceMs)}catch{z({ok:!1,code:"unavailable",message:"The recording could not start."});return}oe=Date.now(),o.dataset.state="recording",a.disabled=!1,I("Recording. Press Done to send it, Cancel or Escape to discard it.");let G=A.maxDurationSeconds*1e3;ne=setInterval(()=>{l.textContent=ft(Date.now()-oe)},v.recorderSliceMs),re=setTimeout(()=>{ge().then(()=>{H||(l.textContent=ft(G),o.dataset.state="limit",I(`Reached ${ft(G)}, the most for this recording. Done sends it; Cancel discards it.`))})},G);try{let O=e.AudioContext??e.webkitAudioContext;if(O){Z=new O,Z.resume?.().catch(()=>{});let se=Z.createAnalyser();se.fftSize=512,Z.createMediaStreamSource(D).connect(se),Ve(se)}}catch{}},D=>{let $=D.name;if($==="NotAllowedError"||$==="SecurityError"){g=!0,h(),z({ok:!1,code:"unavailable",message:"The microphone was not allowed. Reload the page to try again."});return}z({ok:!1,code:"unavailable",message:$==="NotFoundError"?"No microphone was found.":"The microphone could not be started."})})}if(A.gesture.mode==="arm"){let D=Date.now();o.dataset.state="armed",a.hidden=!0,k.hidden=!1,I("Press Record to start recording, or Cancel.");let $=G=>{!G.isTrusted||H||Date.now()-D<v.confirmArmMs||(k.removeEventListener("click",$),k.hidden=!0,a.hidden=!1,o.dataset.state="starting",I("Starting the microphone\\u2026"),Ae())};k.addEventListener("click",$),Te=()=>k.removeEventListener("click",$)}else Ae()})}return{async usable(){let A=await b();return{available:A===null,reason:A}},onChange(A){d.push(A)},isOpen:()=>u,capture:ee,cancel(){m?.()},transcribe:T}}var kr=new Set(["sessions.start","sessions.send","session.reply"]),dn=new Set(["session.reply","pages.answer","session.respond","sessions.respond"]),un="voice.captureAndTranscribe";function wr(e){if(!x(e)||e.kind!=="page"&&e.kind!=="host"&&e.kind!=="external"||typeof e.url!="string")return null;let t=e.url.startsWith("/"),r=/^https?:\\/\\//i.test(e.url);return e.kind==="page"&&!t||e.kind==="external"&&!r||e.kind==="host"&&!t&&!r?null:{kind:e.kind,url:e.url}}function Sr(e,t){return e==="context.get"||t.includes(e)}function fn(e){let{config:t,confirmer:r,navigator:s}=e;async function d(i,l,w){let c={actionToken:i,request:l,...w?{confirmation:w}:{}};return(await e.fetchImpl(t.routes.bridge,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(c)})).json().catch(()=>null)}async function g(i,l,w){let c={actionToken:i.token(),action:"declined",requestId:l,target:w};try{await e.fetchImpl(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(c)})}catch{}}function u(i,l,w){if(!x(w)||!Ot(w.response,l.id)){s.release(),i.post(Y(l.id,"invalid_response","The bridge returned an invalid response"));return}let c=w.response,a=w.navigate===void 0?null:wr(w.navigate);if(i.post(c),c.ok&&a){a.kind==="external"?s.external(a.url)||e.onBlockedOpen(a.url):s.inPlace(a.url);return}s.release()}async function f(i,l,w){let c=l.files??[],a=l;if(l.files!==void 0){if(!kr.has(l.method)||!x(l.params)||"files"in l.params){i.post(Y(l.id,"invalid_params",`${l.method} does not take files this way`));return}let h=on(c);if(h){i.post(Y(l.id,h.code,h.message));return}a={v:l.v,id:l.id,method:l.method,params:{...l.params,files:c.map(rn)},pageRevision:l.pageRevision,...l.scope!==void 0?{scope:l.scope}:{}}}let k=h=>{let{files:b,...T}=a.params;return{...a,params:{...T,attachments:h}}};try{if(c.length>0&&a.method==="session.reply"){let b=await ut(e.fetchImpl,{...t,actionToken:i.token()},{requestId:a.id,method:a.method},c,e.onStatus);if(!b.ok){i.post(Y(a.id,b.code,b.message));return}a=k(b.attachmentIds)}let h=await d(i.token(),a);if(x(h)&&x(h.record)){await m(i,a,h.record,w);return}if(x(h)&&x(h.confirm)){let b=h.confirm;if(typeof b.challenge!="string"||typeof b.summary!="string"||b.requestId!==a.id){i.post(Y(a.id,"invalid_response","The bridge returned an invalid confirmation"));return}let T=b.kind==="grant"&&x(b.grant)&&typeof b.grant.sessionId=="string"&&typeof b.grant.title=="string"?{sessionId:b.grant.sessionId,title:b.grant.title}:null,R=b.kind==="decision",I=a.method==="navigation.openExternal";if(!await r.confirm(b.summary,{...T?{wording:Nt,grant:T}:R?{wording:Ft}:{},...I?{onConfirmGesture:()=>s.reserveWindow()}:{}})){s.release(),i.post(Y(a.id,"cancelled",T?"You did not allow it, so the answer was not sent":"You declined this action"));let W=x(a.params)?a.params:{};T?g(i,a.id,{kind:"grant",session:T.sessionId}):R&&typeof W.id=="string"&&g(i,a.id,{kind:"decision",session:typeof W.sessionId=="string"?W.sessionId:t.session,waitId:W.id});return}if(c.length>0&&a.method!=="session.reply"){let W=await ut(e.fetchImpl,{...t,actionToken:i.token()},{requestId:a.id,method:a.method,challenge:b.challenge},c,e.onStatus);if(!W.ok){s.release(),i.post(Y(a.id,W.code,W.message));return}a=k(W.attachmentIds)}let B=await d(i.token(),a,b.challenge),ee=x(B)&&x(B.response)&&x(B.response.error)&&B.response.error.code==="confirmation_invalid";T&&x(B)&&x(B.response)&&!ee&&e.onGranted(T),dn.has(a.method)&&x(B)&&x(B.response)&&B.response.ok===!0&&e.onAnswered(),u(i,a,B);return}dn.has(a.method)&&x(h)&&x(h.response)&&h.response.ok===!0&&e.onAnswered(),u(i,a,h)}catch(h){s.release(),i.post(Y(a.id,"unavailable",h instanceof Error&&h.message?h.message:"The bridge is unavailable"))}}async function m(i,l,w,c){let a=x(w.params)?w.params:{};if(w.requestId!==l.id||!e.voice){i.post(Y(l.id,e.voice?"invalid_response":"unavailable",e.voice?"The bridge returned an invalid answer":"This page cannot record here."));return}let k=e.voice,h=typeof a.maxDurationSeconds=="number"?a.maxDurationSeconds:v.voiceDefaultSeconds,b=typeof a.prompt=="string"?a.prompt:void 0,T=typeof a.language=="string"?a.language:void 0,R=await k.capture({maxDurationSeconds:h,gesture:c,purpose:"capability"},async C=>({text:await k.transcribe({blob:C.blob,type:C.type,...b?{prompt:b}:{},...T?{language:T}:{}}),recording:C}));if(!R.ok){i.post(Y(l.id,R.code,R.message));return}let I=a.keepAudio===!0?{text:R.value.text,audio:R.value.recording.blob}:{text:R.value.text};i.post({v:1,id:l.id,ok:!0,result:I})}async function o(i,l,w){let c=l.id;if(!e.voice){i.post({kind:"thread-page:recorded",id:c,ok:!1,code:"unavailable",message:"This page cannot record here."});return}let a=e.voice,k=(l.prompt??"").slice(-v.voicePromptChars),h;if(l.purpose==="audio"?h=await a.capture({maxDurationSeconds:l.maxDurationSeconds??v.voiceDefaultSeconds,gesture:w,purpose:"audio"},async b=>{let T=new Date().toISOString().replace(/[-:]/g,"").replace(/\\..+$/,"").replace("T","-");return{file:new File([b.blob],`recording-${T}.${an(b.type)}`,{type:b.type})}}):h=await a.capture({maxDurationSeconds:l.maxDurationSeconds??v.voiceDefaultSeconds,gesture:w,purpose:"dictate"},async b=>({text:await a.transcribe({blob:b.blob,type:b.type,...k?{prompt:k}:{},...l.language?{language:l.language}:{}})})),!h.ok){i.post({kind:"thread-page:recorded",id:c,ok:!1,code:h.code,message:h.message});return}i.post({kind:"thread-page:recorded",id:c,ok:!0,...h.value})}return{bridge(i,l){if(i.isShown()||Sr(l.method,i.readMethods())){f(i,l,l.method===un?e.readerGesture():He);return}i.whenShown(()=>{f(i,l,l.method===un?e.readerGesture():He)})},record(i,l){if(l.purpose==="capability"){i.post({kind:"thread-page:recorded",id:l.id,ok:!1,code:"unavailable",message:"Recording for a capability is confirmed by the bridge, not asked for directly."});return}let w=()=>{o(i,l,e.readerGesture({control:l.purpose==="dictate"&&l.control===!0}))};i.isShown()?w():i.whenShown(w)}}}var je="The new version is still loading\\u2026",pn="This page keeps reloading itself and was stopped; reload this tab to try again.",gn="This session is archived \\u2014 read-only",mn="This session was deleted.",hn="Session expiring \\u2014 reload when ready",yn="Session expired \\u2014 reload this page",pt="Cannot reach the host",bn="Drafts survive updates but not a reload in this browser.",kn="The browser blocked the new tab.";function wn(e){let t=e.ownerDocument,r=t.createElement("span");r.setAttribute("data-tp","notice-text");let s=t.createElement("a");s.setAttribute("data-tp","notice-link"),s.target="_blank",s.rel="noopener noreferrer",s.hidden=!0,e.replaceChildren(r,s);let d=null,g=null;function u(){r.textContent=d?.text??"";let m=d?.link;s.hidden=!m,s.href=m?m.href:"",s.textContent=m?m.label:"",d&&d.text?e.setAttribute("data-visible","true"):e.removeAttribute("data-visible")}function f(){g!==null&&clearTimeout(g),g=null}return u(),{element:e,set(m){f(),d={text:m},u()},clear(){f(),d=null,u()},link(m,o,i){f(),d={text:m,link:{href:o,label:i}},u()},notice(m,o=6e3){f(),d={text:m},u(),g=setTimeout(()=>{g=null,d=null,u()},o)},text:()=>d?.text??""}}var Sn=" \\u2026 (transcript shortened)";function xn(e){return e.length<=v.transcriptChars?e:`${e.slice(0,v.transcriptChars-Sn.length)}${Sn}`}async function xr(e,t){let r=t.file,s=r.name||"file";if(r.size<=0)throw new Error(`\\u201C${s}\\u201D is empty`);if(r.size>e.config.maxUploadBytes)throw new Error(`\\u201C${s}\\u201D is larger than ${Math.round(e.config.maxUploadBytes/(1024*1024))} MiB`);let d={actionToken:e.token(),field:String(t.field||"file").slice(0,128),name:s.slice(0,255),type:r.type||"application/octet-stream",bytes:await ve(r)},g=await e.fetchImpl(e.config.routes.upload,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(d)}),u=await g.json().catch(()=>null);if(!g.ok||!x(u)||u.ok!==!0||typeof u.name!="string"||typeof u.path!="string"||typeof u.sizeBytes!="number")throw new Error(x(u)&&typeof u.message=="string"&&u.message||`Upload failed (${g.status})`);return{field:d.field,name:u.name,path:u.path,sizeBytes:u.sizeBytes}}async function En(e,t,r){let{submissionId:s}=r;try{let d=r.files;if(d.length>e.config.maxUploads)throw new Error(`This form has ${d.length} files; at most ${e.config.maxUploads} can be sent at once`);let g=[];for(let l=0;l<d.length;l+=1)t({kind:"thread-page:submit-progress",submissionId:s,message:`Uploading ${l+1} of ${d.length}\\u2026`}),g.push(await xr(e,d[l]));let u=d.map((l,w)=>({entry:l,index:w})).filter(({entry:l})=>l.transcribe===!0&&/^audio\\//i.test(l.file.type??""));for(let l=0;l<u.length;l+=1){let{entry:w,index:c}=u[l];t({kind:"thread-page:submit-progress",submissionId:s,message:`Transcribing ${l+1} of ${u.length}\\u2026`});let a=e.voice&&e.config.voice.available?await e.voice.transcribe({blob:w.file,type:w.file.type}).catch(()=>null):null;g[c].transcript=a===null?null:xn(a)}g.length>0&&t({kind:"thread-page:submit-progress",submissionId:s,message:"Sending\\u2026"});let f={actionToken:e.token(),submissionId:s,writtenAgainst:r.writtenAgainst,formId:r.formId,formTitle:r.formTitle,title:r.title,action:r.action,answers:r.answers,files:g},m=await e.fetchImpl(e.config.routes.submit,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(f)}),o=await m.json().catch(()=>null);if(m.ok&&x(o)&&o.ok===!0){e.onAnswered();let l=o.delivery==="queued"||o.delivery==="steered"?o.delivery:"started";t({kind:"thread-page:submit-result",submissionId:s,ok:!0,delivery:l,...typeof o.matchedRevision=="string"?{matchedRevision:o.matchedRevision}:{},revisionChanged:o.revisionChanged===!0});return}let i=x(o)&&wt(o.code)?o.code:"unavailable";t({kind:"thread-page:submit-result",submissionId:s,ok:!1,error:i,message:(x(o)&&typeof o.message=="string"&&o.message||`Request failed (${m.status})`).slice(0,512)})}catch(d){t({kind:"thread-page:submit-result",submissionId:s,ok:!1,error:"unavailable",message:(d instanceof Error&&d.message?d.message:"Request failed").slice(0,512)})}}var Er=["allow-scripts","allow-forms","allow-popups","allow-downloads"],gt=Er.join(" ");var vn="fullscreen *",Vo=[`sandbox ${gt}`,"default-src * data: blob: \'unsafe-inline\' \'unsafe-eval\'","frame-src https: blob: data:","frame-ancestors \'self\'"].join("; ");var vr={opacity:"0","pointer-events":"none","z-index":"0"},Tr={opacity:"1","pointer-events":"","z-index":"1"};function Rr(e,t,r){let s=e.createElement("iframe");return s.setAttribute("sandbox",gt),s.setAttribute("allow",vn),s.setAttribute("referrerpolicy","no-referrer"),s.setAttribute("title","Page"),s.setAttribute("data-tp-frame",r?"incoming":"shown"),r?Ar(s):mt(s),s.setAttribute("src",t.documentUrl+t.fragment),s}function Ar(e){for(let[t,r]of Object.entries(vr))e.style.setProperty(t,r);e.setAttribute("aria-hidden","true"),e.setAttribute("inert","")}function mt(e){for(let[t,r]of Object.entries(Tr))r===""?e.style.removeProperty(t):e.style.setProperty(t,r);e.removeAttribute("aria-hidden"),e.removeAttribute("inert"),e.setAttribute("data-tp-frame","shown")}function ht(e,t,r){return{element:Rr(e,t,r),target:t,port:null,connected:!1,restored:!1,shown:!1,dirty:!1,embedDirty:!1,typing:!1,pending:0,toldUpdate:!1,scroll:null,queue:[],handed:new Map,nonce:0,answered:0,pinged:0,loadStartedAt:Date.now(),timers:[],cancelled:!1}}function _(e,t){if(!e.port)return!1;try{return e.port.postMessage(t),!0}catch{return!1}}function yt(e){for(let t of e.timers)clearTimeout(t);e.timers=[]}function bt(e){e.cancelled=!0,yt(e),e.queue=[];try{e.port?.close()}catch{}e.port=null,e.element.remove()}var kt="pagesDocument",Tn="pagesFragment",Rn="pagesQuery";function An(e,t,r,s={}){let d=e.document,g=s.fetchImpl??e.fetch.bind(e),u=s.now??(()=>Date.now()),f=wn(r.notice),m="LOADING",o=null,i=null,l="revision",w=null,c=t.navigable?Me(e.location.hash):"",a=0,k=null,h=new Map,b=0,T={retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes},R=Pe(e,{session:t.session,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:u,onFallback:()=>f.notice(bn)}),I=Jt(e),C=Kt(e),B=null,ee=Ut(r.dialog,{otherQuestionOpen:()=>B?.isOpen()??!1,onClosed:()=>{C.closed(),q()}});r.recorder&&(B=cn(e,t,ln(r.recorder),{questionOpen:()=>ee.isOpen(),restoreFocus:()=>{try{o?.element.focus({preventScroll:!0})}catch{}},setStatus:n=>f.notice(n),onClosed:()=>{C.closed(),q()},fetchImpl:g}),B.onChange(()=>{te(),q()}));let W=Yt(e,t,g,ee),A=fn({config:t,confirmer:ee,navigator:I,voice:B,readerGesture:n=>C.decide(n),onGranted:()=>{P.pollNow()},onAnswered:()=>P.expectChange(),onStatus:n=>n?f.set(n):f.clear(),onBlockedOpen:n=>f.link(kn,n,"Open it"),fetchImpl:g}),P=nn(e,t,{onBody:n=>ne(n),onWorking:n=>Z(n),onSource:n=>L(n),onDeleted:()=>{m="DELETED",R.clearSession(),i&&me(),f.set(mn)},onUnauthorized:()=>f.set(yn),onUnreachable:()=>f.set(pt),onReachable:()=>{f.text()===pt&&f.clear()},onExpiring:()=>f.set(hn)},g);function L(n){t.source=n;for(let p of[o,i])p&&_(p,Q())}function Q(){return{kind:"thread-page:source-state",stale:t.source==="offline",archived:t.source==="archived",reason:t.source==="archived"?gn:null}}function U(){return{kind:"thread-page:session-state",working:t.working,label:t.workingLabel}}function Z(n){if(n!==t.working){t.working=n;for(let p of[o,i])p&&_(p,U())}}async function te(){let n=B?await B.usable():{available:!1,reason:t.voice.reason};for(let p of[o,i])p&&_(p,{kind:"thread-page:voice",available:n.available,reason:n.reason})}function ne(n){t.actionToken=n.actionToken,t.expiresAt=n.expiresAt,t.readMethods=n.readMethods,t.empty=n.empty,JSON.stringify(n.grants)!==JSON.stringify(t.grants)&&(t.grants=n.grants,he()),(n.voice.available!==t.voice.available||n.voice.reason!==t.voice.reason)&&(t.voice={...t.voice,available:n.voice.available,reason:n.voice.reason},te());for(let y of[o,i])y&&y.target.path===t.documentPath&&(y.target.token=n.actionToken);if(m==="DELETED"||m==="STOPPED")return;let p=o?.target.revision??t.pageRevision;if(n.revision===p){i&&l==="revision"&&i.target.revision!==n.revision&&i.target.path===t.documentPath&&me(),w&&(w=null,o&&(o.toldUpdate=!1,_(o,{kind:"thread-page:update",available:!1})),m==="DEFERRED"&&(m="SHOWN"));return}Le(n)}function re(n){return{documentUrl:n.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:c,token:n.actionToken,revision:n.revision,expiresAt:n.expiresAt,source:n.source,empty:n.empty,deferredFiles:n.deferredFiles}}function Le(n){w=n,!(i&&i.target.revision===n.revision)&&(i&&l==="revision"&&me(),q())}function le(){o&&(i&&l==="revision"&&me(),(m==="SHOWN"||m==="INCOMING")&&(m="DEFERRED"),o.toldUpdate||(o.toldUpdate=!0,_(o,{kind:"thread-page:update",available:!0})))}function oe(n){let p=ee.isOpen()||(B?.isOpen()??!1);return n.pending>0||p?!0:d.visibilityState==="hidden"?!1:n.typing||n.dirty||n.embedDirty}function q(){if(!(!o||!w||m==="DELETED"||m==="STOPPED"||m==="RELOAD")){if(oe(o)){le();return}i||ge(re(w),"revision")}}function V(n){return{token:()=>n.target.token,readMethods:()=>t.readMethods,isShown:()=>n.shown,whenShown:p=>{n.shown?p():n.queue.push(p)},post:p=>{_(n,p)}}}function H(n,p,y){let S=setTimeout(()=>{n.cancelled||y()},p);n.timers.push(S)}function K(n){let p=++n.pinged;_(n,{kind:"thread-page:ping",nonce:p}),H(n,t.reload.pingMs,()=>{n.answered<p&&_(n,{kind:"thread-page:ping",nonce:++n.pinged})}),H(n,t.reload.waitMs,()=>{n.answered>=p||ie()})}function Te(n){return n.port?new Promise(p=>{let y=++n.nonce,S=!1,E=()=>{S||(S=!0,p())};ye.set(n,{nonce:y,finish:E}),setTimeout(E,t.drafts.flushMs),_(n,{kind:"thread-page:flush",nonce:y})}):Promise.resolve()}let ye=new Map;function z(n,p){let y=R.forDocument(n.target.path);n.handed=new Map(y.map(M=>[M.form.key,M]));let S=[...h.entries()].filter(([M])=>M.startsWith(`${n.target.path}:`)).map(([M,j])=>({form:{key:M.slice(n.target.path.length+1)},fields:j}));h.clear();let E={kind:"thread-page:restore",nonce:++n.nonce,scroll:p?o?.scroll??null:null,drafts:y,clearedNotice:S};return t.builtinHome&&(E.leftovers=dt(e,t.drafts.retentionMs,u())),E}function ce(n,p){n.port=p,n.connected=!0,p.onmessage=S=>D(n,S.data),p.start?.(),_(n,Q()),_(n,U()),te(),t.builtinHome&&_(n,{kind:"thread-page:grants",grants:t.grants});let y=n!==o&&o!==null&&o.target.path===n.target.path;_(n,z(n,y||n===o)),K(n),n===o&&(m="CONNECTING",H(n,t.refreshSwapMs,()=>{n.shown||be(n)}))}function be(n){if(n.shown)return;n.shown=!0,m="SHOWN",_(n,{kind:"thread-page:shown"});let p=n.queue;n.queue=[];for(let y of p)y();try{n.element.focus({preventScroll:!0})}catch{}O(n),Ve(n),q()}function Ve(n){k!==null&&clearTimeout(k),k=setTimeout(()=>{k=null,o===n&&n.answered>0&&(a=0)},t.reload.clearMs)}function ge(n,p){i&&me();let y=o,S=++b,E=()=>{if(S!==b||m==="DELETED")return;if(p==="revision"&&o&&oe(o)){le();return}let M=ht(d,n,!0);i=M,l=p,m="INCOMING",r.frameHost.appendChild(M.element),H(M,t.refreshSwapMs,()=>{if(i===M){if(p==="revision"&&o&&oe(o)){le();return}Ae(M,!0)}}),H(M,t.reload.waitMs,()=>{i===M&&!M.connected&&ie()}),p!=="revision"&&(Re(n),p==="document"&&f.clear())};y?.port?Te(y).then(E):E()}function me(){let n=i;n&&(i=null,bt(n),m==="INCOMING"&&(m=o?"SHOWN":"LOADING"))}function Re(n){t.actionToken=n.token,t.pageRevision=n.revision,t.expiresAt=n.expiresAt,t.documentUrl=n.documentUrl,t.documentPath=n.path,t.documentQuery=n.query,t.source=n.source,t.empty=n.empty,t.deferredFiles=n.deferredFiles,c=n.fragment}function Ae(n,p){if(i!==n)return;i=null,yt(n);let y=o;mt(n.element),y&&bt(y),o=n,Re(n.target),w&&w.revision===n.target.revision&&(w=null),p&&!n.restored&&d.visibilityState!=="hidden"?f.set(je):f.text()===je&&f.clear(),be(n),P.retarget(),n.connected?K(n):H(n,t.reload.waitMs,()=>{n.connected||ie()})}function D(n,p){if(n.cancelled||!_t(p))return;if(!("kind"in p)){A.bridge(V(n),p);return}let y=p;switch(y.kind){case"thread-page:pong":n.answered=Math.max(n.answered,y.nonce);return;case"thread-page:restored":n.restored=!0,i===n?l==="revision"&&o&&oe(o)?le():Ae(n,!1):o===n&&(n.shown?f.text()===je&&f.clear():be(n));return;case"thread-page:flushed":{let S=ye.get(n);S&&S.nonce===y.nonce&&(ye.delete(n),S.finish());return}case"thread-page:scroll":n.scroll=y.state;return;case"thread-page:draft":$(n,y);return;case"thread-page:dirty":n.dirty=y.custom,n===o&&q();return;case"thread-page:clean":n.dirty=!1,n===o&&q();return;case"thread-page:typing":n.typing=y.active,n===o&&q();return;case"thread-page:embed-dirty":n.embedDirty=y.dirty,n===o&&q();return;case"thread-page:submit":V(n).whenShown(()=>{n.pending+=1,En({config:t,token:()=>n.target.token,fetchImpl:g,voice:B,onAnswered:()=>P.expectChange()},S=>{if("kind"in S&&S.kind==="thread-page:submit-result"){n.pending=Math.max(0,n.pending-1),_(n,S),n===o&&q();return}_(n,S)},y)});return;case"thread-page:open-document":V(n).whenShown(()=>{let S=Ze(y.query);if(!S.ok){f.notice(`That link cannot be opened: ${S.message}.`);return}Ke(y.path,!0,Me(y.fragment),S.query)});return;case"thread-page:open-file":V(n).whenShown(()=>W.open(y.path,y.download,y.name));return;case"thread-page:file-request":W.fetchFor(S=>{_(n,S)},y);return;case"thread-page:fragment":n===o&&Cn(Me(y.fragment),y.step===!0);return;case"thread-page:record":A.record(V(n),y);return;case"thread-page:escape":B?.cancel();return;case"thread-page:draft-discard":if(!t.builtinHome)return;Vt(e,y,T),se();return;case"thread-page:grant-revoke":if(!t.builtinHome)return;V(n).whenShown(()=>{Ne(y.from,y.to)});return;default:return}}function $(n,p){let y=p.embed?p.embed.documentPath:n.target.path,S=p.embed?p.embed.sessionId:t.session,E={form:p.form,fields:p.fields,focus:p.focus,savedAtMs:u(),revision:n.target.revision};if(p.cleared.length>0&&!p.embed&&h.set(`${y}:${p.form.key}`,p.cleared),p.embed){let j=Pe(e,{session:S,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:u});for(let we of j.put(y,E))_(n,{kind:"thread-page:draft-notice",text:we});return}let M=n.handed.get(p.form.key);if(M){n.handed.delete(p.form.key);for(let[j,we]of Object.entries(M.fields)){let Pn=p.fields[j];if(JSON.stringify(Pn)!==JSON.stringify(we)&&typeof we=="string"&&we!==""&&!t.builtinHome)for(let On of Ht(e,{session:t.session,documentPath:y,key:p.form.key,label:ct(p.form.key),field:j,value:we,reason:"field-filled",atMs:u()},T))_(n,{kind:"thread-page:draft-notice",text:On})}O(n)}for(let j of R.put(y,E))_(n,{kind:"thread-page:draft-notice",text:j})}function G(n){let p=new Map(R.forDocument(n.target.path).map(S=>[S.form.key,S])),y=[];for(let S of n.handed.keys()){let E=p.get(S);if(E)for(let[M,j]of Object.entries(E.fields))typeof j=="string"&&j!==""&&y.push({session:t.session,documentPath:n.target.path,key:S,label:ct(S),field:M,value:j,reason:"not-on-this-version",atMs:E.savedAtMs})}return y}function O(n){if(!t.builtinHome)for(let p of jt(e,t.session,n.target.path,G(n),T))_(n,{kind:"thread-page:draft-notice",text:p})}function se(){o&&_(o,{kind:"thread-page:drafts",leftovers:dt(e,t.drafts.retentionMs,u())})}function he(){if(t.builtinHome)for(let n of[o,i])n&&_(n,{kind:"thread-page:grants",grants:t.grants})}async function Ne(n,p){let y={actionToken:t.actionToken,action:"revokeGrant",target:p,from:n};try{let S=await g(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(y)}),E=await S.json().catch(()=>null);if(!S.ok||!x(E)||E.ok!==!0)throw new Error(x(E)&&typeof E.message=="string"&&E.message||`Request failed (${S.status})`);t.grants=t.grants.filter(M=>!(M.from===n&&M.sessionId===p)),he(),P.pollNow()}catch(S){f.notice(S instanceof Error?S.message:"Could not revoke")}}e.addEventListener("message",n=>{let p=n.data;if(!Pt(p))return;let y=o&&n.source===o.element.contentWindow?o:i&&n.source===i.element.contentWindow?i:null;if(!y)return;if(y.connected){y===o&&ie();return}let S=n.ports.length===1?n.ports[0]:void 0;S&&(ce(y,S),y===o&&p.pageRevision!==y.target.revision&&P.pollNow())});async function ke(n,p){let y={actionToken:t.actionToken,path:n,query:p};try{let S=await g(t.routes.documentSession,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(y)}),E=await S.json().catch(()=>null);if(!S.ok||!x(E)||E.ok!==!0||typeof E.actionToken!="string"||typeof E.pageRevision!="string"||typeof E.documentUrl!="string"||typeof E.path!="string"||typeof E.expiresAt!="number")return x(E)&&typeof E.message=="string"&&E.message||"That page could not be opened";let M=E.source==="offline"||E.source==="archived"?E.source:"live";return{documentUrl:E.documentUrl,path:E.path,query:typeof E.query=="string"?E.query:"",fragment:"",token:E.actionToken,revision:E.pageRevision,expiresAt:E.expiresAt,source:M,empty:E.empty===!0,deferredFiles:Array.isArray(E.deferredFiles)?E.deferredFiles.filter(j=>typeof j=="string"):[]}}catch{return"The host could not be reached"}}let de=!1;async function ie(){if(!(de||m==="DELETED")){if(a>=t.reload.loopCount){if(m="STOPPED",o){try{o.port?.close()}catch{}o.port=null}f.set(pn);return}a+=1,de=!0;try{if(!t.navigable){e.location.reload();return}m="RELOAD";let n=await ke(t.documentPath,t.documentQuery);if(typeof n=="string"){e.location.reload();return}n.fragment=c,ge(n,"reload")}finally{de=!1}}}function ue(n,p){let y=new URL(e.location.href);for(let E of[...y.searchParams.keys()])E!=="session"&&y.searchParams.delete(E);let S=n===St&&!p?"":`${n}${p}`;return S&&y.searchParams.set("path",S),`${y.pathname}${y.search}${c}`}function ae(){return{[kt]:t.documentPath,[Tn]:c,[Rn]:t.documentQuery}}function Cn(n,p){if(!(!t.navigable||n===c)){c=n;try{p?e.history.pushState(ae(),"",ue(t.documentPath,t.documentQuery)):e.history.replaceState(ae(),"",ue(t.documentPath,t.documentQuery))}catch{}}}async function Ke(n,p=!0,y="",S=""){if(!t.navigable||!X(n))return!1;if(n===t.documentPath&&S===t.documentQuery){if(y!==c){let M=await ke(n,S);return typeof M=="string"?!1:(M.fragment=y,c=y,ge(M,"document"),p&&e.history.pushState(ae(),"",ue(n,S)),!0)}return!1}let E=await ke(n,S);if(typeof E=="string")return f.notice(E),!1;if(E.fragment=y,c=y,w=null,ge(E,p?"document":"history"),p)try{e.history.pushState(ae(),"",ue(n,S))}catch{}return!0}if(t.navigable){try{e.history.replaceState(ae(),"",ue(t.documentPath,t.documentQuery))}catch{}e.addEventListener("popstate",n=>{let p=n.state;if(!x(p)||typeof p[kt]!="string")return;let y=Ze(p[Rn]);Ke(p[kt],!1,Me(p[Tn]),y.ok?y.query:"")})}d.addEventListener("visibilitychange",()=>{d.visibilityState==="hidden"&&o&&Te(o),q()}),e.addEventListener("storage",n=>{n.key!==null&&!n.key.startsWith(Oe)&&!n.key.startsWith("up:draft")||(t.builtinHome?se():o&&o.shown&&zt(e,t.session,o.target.path,T))});let Fe=ht(d,{documentUrl:t.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:c,token:t.actionToken,revision:t.pageRevision,expiresAt:t.expiresAt,source:t.source,empty:t.empty,deferredFiles:t.deferredFiles},!1);return o=Fe,r.frameHost.appendChild(Fe.element),H(Fe,t.reload.waitMs,()=>{Fe.connected||ie()}),P.start(),{state:()=>m,shownFrame:()=>o?.element??null,incomingFrame:()=>i?.element??null,poller:P,notice:f,store:R,confirmer:ee,voice:B,openDocument:Ke}}var Dr=Bt(document.currentScript),ze=e=>document.getElementById(e),Dn=ze("tp-notice"),Mn=ze("tp-frame-host"),In=ze("tp-dialog");if(!Dn||!Mn||!In)throw new Error("The shell\'s document is incomplete");An(window,Dr,{notice:Dn,frameHost:Mn,dialog:In,recorder:ze("tp-recorder")});})();';
+var SHELL_RUNTIME = '"use strict";(()=>{var _n=Object.defineProperty;var Bn=(e,t,r)=>t in e?_n(e,t,{enumerable:!0,configurable:!0,writable:!0,value:r}):e[t]=r;var Je=(e,t,r)=>Bn(e,typeof t!="symbol"?t+"":t,r);var v=Object.freeze({entryDocumentBytes:5242880,uploadFileBytes:25165824,uploadsPerForm:8,submissionBodyBytes:65536,transcriptChars:16e3,answersPerSubmission:64,answerValueChars:8e3,answerListItems:64,capabilityPayloadBytes:65536,capabilityJsonDepth:16,capabilityJsonNodes:1e4,contributedPayloadMaxBytes:1048576,contributedCallMs:3e4,contributionsTtlMs:1e4,contributorInstructionBytes:2048,contributorGuideBytes:16384,contributorMethods:64,declarationBytes:262144,declarationDepth:32,declarationNodes:5e4,methodDescriptionChars:240,scopeChars:1024,scopeSegments:64,fragmentChars:2048,documentQueryChars:2048,questionChars:1024,decisionSummaryChars:16384,promptChars:32768,resultTextBytes:65536,messagesDefault:50,messagesMax:200,messagesResponseBytes:262144,messageTextChars:16e3,toolInputBytes:2048,toolResultBytes:8192,voiceDefaultSeconds:120,voiceMaxSeconds:600,voicePromptChars:1e3,voiceMinMs:1e3,transcriptionBytes:26214400,promptFiles:8,promptFileBytes:25165824,attachGrantMs:18e5,titleChars:240,storageValueBytes:262144,storagePageBytes:4194304,storageSetManyEntries:32,storageKeyChars:128,draftRetentionMs:6048e5,draftsPerSessionBytes:1048576,snapshotDefault:100,snapshotMax:200,activityDefault:8,activityMax:20,actionTokenMs:72e5,confirmationMs:12e4,redeemedConfirmations:4096,selectionTokenMs:6e5,selectionTokens:32,idempotencyRecords:512,idempotencyMs:3e5,ratePerMinute:120,rateConcurrent:8,sessionRatePerMinute:600,sessionRateConcurrent:32,shellPollMs:1e4,shellPollWorkingMs:2e3,shellPollAfterAnswerMs:6e4,refreshSwapMs:4e3,swapIdleMs:3e3,reloadLoopCount:3,reloadLoopClearMs:1e4,reloadPingMs:7500,reloadWaitMs:15e3,includePatternStars:4,includeParts:200,includeElements:400,includeReports:100,includePartBytes:2097152,includeDepth:3,pagesReadEntries:16,pagesReadBytes:8388608,pagesAnswerBytes:98304,embedsPerPage:32,embedPollWorkingMs:3e3,embedPollMs:1e4,embedPollAfterAnswerMs:6e4,embedCallsPerMinute:30,answerTokenMs:72e5,grantsPerPage:64,grantPages:512,watchDefaultMs:8e3,watchMinMs:2e3,watchMaxMs:3e5,inlineFileBytes:2097152,inlineTotalBytes:3145728,inlineCssDepth:3,shellFetchBytes:26214400,shellFetchImageBytes:10485760,offlineCopyBytes:204800,offlineCacheEntries:32,offlineCacheBytes:8388608,requestIdChars:96,methodNameChars:96,tokenChars:8192,errorMessageChars:512,summaryChars:1024,workspacesMax:200,providersMax:64,modelsPerProvider:64,environmentsPerWorkspace:64,declinedCooldownMs:1e4,confirmArmMs:400,recorderSliceMs:250,textareaIconPx:16,draftFlushMs:200,draftDebounceMs:250,ledgerWindowMs:6e4,ledgerEntries:256,uploadBodyBytes:Math.ceil(34952533333333336e-9)+4096});function De(e){return`${Math.round(e/(1024*1024)*100)/100} MiB`}var Qe=["invalid_json","invalid_request","invalid_params","invalid_response","request_too_large","response_too_large","unsupported_version","unknown_method","stale_page","confirmation_required","confirmation_invalid","cancelled","not_found","conflict","unavailable","rate_limited","handler_error","invalid_result","settings_unsupported"],Ln=new Set(Qe);function St(e){return typeof e=="string"&&Ln.has(e)}var Pr=Object.freeze({invalid_json:400,invalid_request:400,invalid_params:400,unsupported_version:400,cancelled:400,settings_unsupported:400,confirmation_required:401,unauthenticated:401,confirmation_invalid:403,forbidden:403,ineligible:404,no_page:404,page_too_large:413,unknown_method:404,not_found:404,stale_page:409,conflict:409,request_too_large:413,rate_limited:429,handler_error:500,invalid_result:500,response_too_large:500,invalid_response:502,unavailable:503});var Ye=Object.freeze({unauthenticated:"Sign in to read pages.",noPage:"This session has no page yet.",ineligible:"Only visible root sessions have pages.",deleted:"This session was deleted.",pageTooLarge:`The page\'s entry document is larger than ${v.entryDocumentBytes/(1024*1024)} MiB and was not served.`,unreachable:"The page\'s source is unreachable. Reconnect its host and try again.",staleCopy:"The source host is offline; this cached page is read-only.",archived:"This session is archived; its page is read-only.",stalePage:"This page changed; reload it before responding.",handler:"Could not execute the page action.",rateLimited:"Too many requests from this page; try again shortly.",invalidSession:"A valid session id is required.",tokenInvalid:"This page session is invalid or expired; reload the page.",confirmationRequired:"This action needs the reader\'s confirmation.",confirmationInvalid:"This confirmation is not valid for this request.",cancelled:"The reader declined.",notFound:"Not found.",conflict:"The request conflicts with the current state.",unavailable:"This cannot be served right now.",tooLarge:"The request is too large.",invalidJson:"The body is not valid JSON.",summaryTooLong:"The decision\'s summary is too long to show; decide in the host\'s own interface.",homeNoSession:"The built-in home page has no session.",settingsUnsupported:"This session cannot take those settings here; send the reply without them."}),Or=Object.freeze({archived:Ye.archived,offline:Ye.staleCopy,summary_too_long:Ye.summaryTooLong});var xt="index.html",Et="uploads";function vt(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")||e.startsWith(`${Et}/`)||!e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")?!1:/\\.html?$/i.test(e)}function Nn(e){return vt(e)&&e.split("/").some(t=>t.startsWith("_"))}function ee(e){return vt(e)&&!Nn(e)}function Me(e){return typeof e=="string"&&e.length>1&&e.length<=v.fragmentChars&&e.startsWith("#")?e:""}var Fn=["session","path","render"];function Ze(e){if(e==null||e===""||e==="?")return{ok:!0,query:""};if(typeof e!="string"||!e.startsWith("?"))return{ok:!1,message:"A document\'s query starts with ?"};if(e.length>v.documentQueryChars)return{ok:!1,message:`A document\'s query is at most ${v.documentQueryChars} characters`};if(/[#\\s\\u0000-\\u001f\\u007f-\\u009f]/.test(e))return{ok:!1,message:"A document\'s query has no #, spaces or control characters"};let t=new URLSearchParams(e),r=Fn.find(s=>t.has(s));return r?{ok:!1,message:`"${r}" is the host\'s own parameter; name yours differently`}:{ok:!0,query:e}}var $n="~home",Un=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;function Xe(e){return typeof e=="string"&&Un.test(e)}function Ie(e){return e===$n||Xe(e)}function Se(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")?!1:e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")}function Tt(e){let t=e.slice(e.lastIndexOf("/")+1),r=t.lastIndexOf(".");return r<0?"":t.slice(r+1).toLowerCase()}var et=new Set(["png","jpg","jpeg","gif","webp","avif","bmp","ico","heic","heif","tif","tiff"]);function Rt(e){return et.has(Tt(e))?v.shellFetchImageBytes:v.shellFetchBytes}var qn=new Set([...et,"pdf","mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus","txt","md","csv","tsv","json","log","vtt","srt"]);function At(e){return qn.has(Tt(e))}var Ur=new Set([...et,"mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus"]);function Dt(e){let r=((e??"").split(/[\\\\/]/).pop()??"").replace(/[\\u0000-\\u001f\\u007f"<>:|?*]/g,"_").trim().slice(0,200);return r.length>0&&r!=="."&&r!==".."?r:null}function tt(e){return e.slice(e.lastIndexOf("/")+1)||"download"}function Mt(e){return e.split("/").map(encodeURIComponent).join("/")}var Gn=/[\\u0000-\\u001f\\u007f-\\u009f]/;function Wn(e){if(e==null||e==="")return{ok:!0,scope:null};if(typeof e!="string")return{ok:!1,message:"A scope is a folder path as text, or null"};if(e.length>v.scopeChars)return{ok:!1,message:`A scope is at most ${v.scopeChars} characters`};let t=e.endsWith("/")?e.slice(0,-1):e;if(t.startsWith("/")||/^[A-Za-z]:/.test(t))return{ok:!1,message:"A scope is relative to the session\'s folder, not absolute"};if(t.includes("\\\\"))return{ok:!1,message:"A scope separates folders with /, not \\\\"};if(Gn.test(t))return{ok:!1,message:"A scope cannot contain control characters"};let r=t.split("/");if(r.length>v.scopeSegments)return{ok:!1,message:`A scope is at most ${v.scopeSegments} folders deep`};for(let s of r){if(s===""||s===".")return{ok:!1,message:"A scope has no empty or . folder names"};if(s==="..")return{ok:!1,message:"A scope cannot climb out with .."}}return r[0]==="~"?{ok:!1,message:"A scope is relative to the session\'s folder, not the home folder"}:{ok:!0,scope:t}}function It(e){if(typeof e!="string"||e==="")return!1;let t=Wn(e);return t.ok&&t.scope===e}var Hn="up:draft:",jn="up:drafts:";function Ce(e,t,r){return`${Hn}${e}:${t}:${r}`}function nt(e){return`${jn}${e}`}function zn(e){return typeof e=="string"||typeof e=="boolean"||Array.isArray(e)&&e.every(t=>typeof t=="string")}function rt(e){return typeof e=="object"&&e!==null&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024}function Vn(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.name=="string"&&Number.isSafeInteger(t.selectionStart)&&Number.isSafeInteger(t.selectionEnd)&&t.selectionStart>=0&&t.selectionEnd>=0}function ot(e){return typeof e!="object"||e===null||Array.isArray(e)?!1:Object.entries(e).every(([t,r])=>t.length<=512&&zn(r))}function st(e){if(typeof e!="object"||e===null)return!1;let t=e;return rt(t.form)&&ot(t.fields)&&(t.focus===null||Vn(t.focus))&&Number.isSafeInteger(t.savedAtMs)&&typeof t.revision=="string"&&/^[a-f0-9]{64}$/.test(t.revision)}function $e(e){return typeof e=="number"&&Number.isFinite(e)&&e>=0}function Ct(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.window!="object"||t.window===null||!$e(t.window.x)||!$e(t.window.y)||!Array.isArray(t.elements)||t.elements.length>64?!1:t.elements.every(r=>typeof r=="object"&&r!==null&&typeof r.key=="string"&&r.key.length>0&&r.key.length<=1024&&$e(r.top)&&$e(r.left))}var Kn=2,it=1;var Jn=new Set(Qe),Yn=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/,Qn=/^[a-z][a-zA-Z0-9-]*(?:\\.[a-z][a-zA-Z0-9]*)+$/,Zn=/^[a-z][a-z0-9_]{0,63}$/,at=/^[a-f0-9]{64}$/,Xn=/^[A-Za-z0-9._-]{1,128}$/;function x(e){return typeof e=="object"&&e!==null&&!Array.isArray(e)}function F(e,t){return Object.keys(e).length===t.length&&t.every(s=>Object.prototype.hasOwnProperty.call(e,s))}function fe(e,t,r=[]){let s=Object.keys(e);return t.every(d=>s.includes(d))&&s.every(d=>t.includes(d)||r.includes(d))}function Ue(e){return typeof e=="string"&&Yn.test(e)}var xe=e=>typeof e=="number"&&Number.isSafeInteger(e),L=(e,t)=>typeof e=="string"&&e.length<=t,Y=(e,t)=>e===void 0||t(e);function Pt(e){return typeof e=="object"&&e!==null&&typeof e.size=="number"&&typeof e.name=="string"&&typeof e.arrayBuffer=="function"}function lt(e){return x(e)&&F(e,["session","documentPath","key","label","field","value","reason","atMs"])&&Ie(e.session)&&ee(e.documentPath)&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024&&L(e.label,512)&&L(e.field,512)&&typeof e.value=="string"&&(e.reason==="not-on-this-version"||e.reason==="field-filled")&&xe(e.atMs)}function Ot(e){return x(e)&&F(e,["kind","v","pageRevision","documentPath","embedded"])&&e.kind==="thread-page:ready"&&e.v===Kn&&typeof e.pageRevision=="string"&&at.test(e.pageRevision)&&ee(e.documentPath)&&typeof e.embedded=="boolean"}function er(e){return x(e)&&F(e,["name","label","value"])&&L(e.name,128)&&L(e.label,300)&&(typeof e.value=="boolean"||L(e.value,v.answerValueChars)||Array.isArray(e.value)&&e.value.length<=v.answerListItems&&e.value.every(t=>L(t,2e3)))}function tr(e){return x(e)&&fe(e,["field","file"],["transcribe"])&&L(e.field,128)&&Pt(e.file)&&Y(e.transcribe,t=>typeof t=="boolean")}function nr(e,t){return!x(e)||!fe(e,["v","id","method","params","pageRevision"],["scope","files"])||"scope"in e&&!It(e.scope)||"files"in e&&!(Array.isArray(e.files)&&e.files.every(Pt))?!1:e.v===it&&Ue(e.id)&&typeof e.method=="string"&&e.method.length>=3&&e.method.length<=v.methodNameChars&&Qn.test(e.method)&&typeof e.pageRevision=="string"&&at.test(e.pageRevision)&&(t===void 0||e.pageRevision===t)}function _t(e,t){if(!x(e)||e.v!==it||typeof e.id!="string"||typeof e.ok!="boolean"||t!==void 0&&e.id!==t)return!1;if(e.ok===!0)return F(e,["v","id","ok","result"]);if(!F(e,["v","id","ok","error"])||!x(e.error))return!1;let r=e.error;return!fe(r,["code","message"],["reason","detail"])||"reason"in r&&(typeof r.reason!="string"||!Zn.test(r.reason))||"detail"in r&&!("reason"in r)?!1:typeof r.code=="string"&&Jn.has(r.code)&&typeof r.message=="string"&&r.message.length>0&&r.message.length<=v.errorMessageChars}function Bt(e){if(!x(e))return!1;if(!("kind"in e))return nr(e);switch(e.kind){case"thread-page:dirty":return F(e,["kind","custom"])&&typeof e.custom=="boolean";case"thread-page:typing":return F(e,["kind","active"])&&typeof e.active=="boolean";case"thread-page:clean":case"thread-page:escape":return F(e,["kind"]);case"thread-page:draft-discard":return F(e,["kind","session","documentPath","key","field"])&&Ie(e.session)&&ee(e.documentPath)&&L(e.key,1024)&&typeof e.key=="string"&&e.key.length>0&&L(e.field,512);case"thread-page:grant-revoke":return F(e,["kind","from","to"])&&Ie(e.from)&&Ie(e.to);case"thread-page:submit":return F(e,["kind","submissionId","title","writtenAgainst","formId","formTitle","action","answers","files"])&&(e.action===null||L(e.action,v.answerValueChars))&&typeof e.submissionId=="string"&&Xn.test(e.submissionId)&&L(e.title,300)&&typeof e.writtenAgainst=="string"&&at.test(e.writtenAgainst)&&(e.formId===null||L(e.formId,300))&&(e.formTitle===null||L(e.formTitle,300))&&Array.isArray(e.answers)&&e.answers.length<=v.answersPerSubmission&&e.answers.every(er)&&Array.isArray(e.files)&&e.files.length<=v.uploadsPerForm&&e.files.every(tr);case"thread-page:open-document":return fe(e,["kind","path"],["fragment","query"])&&ee(e.path)&&Y(e.fragment,t=>L(t,v.fragmentChars))&&Y(e.query,t=>L(t,v.documentQueryChars));case"thread-page:open-file":return F(e,["kind","path","download","name"])&&Se(e.path)&&typeof e.download=="boolean"&&(e.name===null||L(e.name,255));case"thread-page:file-request":return fe(e,["kind","id","path","purpose"],["init"])&&Ue(e.id)&&Se(e.path)&&(e.purpose==="media"||e.purpose==="fetch")&&Y(e.init,t=>x(t)&&F(t,["method"])&&(t.method==="GET"||t.method==="HEAD"));case"thread-page:fragment":return fe(e,["kind","fragment"],["step"])&&L(e.fragment,v.fragmentChars)&&Y(e.step,t=>t===!0);case"thread-page:scroll":return F(e,["kind","state"])&&Ct(e.state);case"thread-page:draft":return fe(e,["kind","form","fields","focus","cleared"],["embed"])&&rt(e.form)&&ot(e.fields)&&(e.focus===null||x(e.focus)&&F(e.focus,["name","selectionStart","selectionEnd"])&&L(e.focus.name,512)&&xe(e.focus.selectionStart)&&xe(e.focus.selectionEnd))&&Array.isArray(e.cleared)&&e.cleared.every(t=>L(t,512))&&Y(e.embed,t=>x(t)&&F(t,["sessionId","documentPath"])&&Xe(t.sessionId)&&ee(t.documentPath));case"thread-page:flushed":case"thread-page:pong":return F(e,["kind","nonce"])&&xe(e.nonce);case"thread-page:restored":return F(e,["kind","nonce","firstPaintToRestoreMs"])&&xe(e.nonce)&&(e.firstPaintToRestoreMs===null||typeof e.firstPaintToRestoreMs=="number"&&Number.isFinite(e.firstPaintToRestoreMs));case"thread-page:record":return fe(e,["kind","id","purpose"],["prompt","language","maxDurationSeconds","keepAudio","control"])&&Ue(e.id)&&(e.purpose==="dictate"||e.purpose==="audio"||e.purpose==="capability")&&Y(e.prompt,t=>L(t,v.voicePromptChars))&&Y(e.language,t=>L(t,35))&&Y(e.maxDurationSeconds,t=>xe(t)&&t>=1&&t<=v.voiceMaxSeconds)&&Y(e.keepAudio,t=>typeof t=="boolean")&&Y(e.control,t=>t===!0);case"thread-page:embed-dirty":return F(e,["kind","dirty"])&&typeof e.dirty=="boolean";case"thread-page:gesture":return F(e,["kind","atMs"])&&typeof e.atMs=="number"&&Number.isFinite(e.atMs);default:return!1}}function Q(e,t,r,s,d){let g={code:t,message:r.slice(0,v.errorMessageChars)||"Request failed",...s?{reason:s,...d!==void 0?{detail:d}:{}}:{}};return{v:it,id:Ue(e)?e:"invalid",ok:!1,error:g}}function Lt(e){let t=e?.getAttribute("data-config");if(!t)throw new Error("The page runtime\'s configuration is missing");return JSON.parse(t)}var rr={heading:"Confirm this action",confirmLabel:"Confirm",cancelLabel:"Cancel"},Ft={heading:"Allow answers from this page?",confirmLabel:"Allow",cancelLabel:"Don\\u2019t allow"},$t={heading:"Decide for the agent",confirmLabel:"Confirm",cancelLabel:"Cancel"},Ut={heading:"Open this file?",confirmLabel:"Open",cancelLabel:"Cancel"};function Nt(e){return e.replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"").slice(0,200)}function qt(e,t={}){let r=t.armMs??v.confirmArmMs,s=t.otherQuestionOpen??(()=>!1),d=t.onClosed??(()=>{}),g=e.ownerDocument,u=g.createElement("h2"),f=g.createElement("p");f.setAttribute("data-tp","confirm-summary");let m=g.createElement("p");m.setAttribute("data-tp","confirm-detail"),m.hidden=!0;let o=g.createElement("div"),i=g.createElement("button");i.type="button",i.value="cancel";let l=g.createElement("button");l.type="button",l.value="confirm",o.append(i,l),e.replaceChildren(u,f,m,o);let w=null,c=0,a;function k(b){let h=w;if(w=null,b&&a)try{a()}catch{}a=void 0,e.open&&e.close(),h&&d(),h?.(b)}return i.addEventListener("click",b=>{b.preventDefault(),k(!1)}),l.addEventListener("click",b=>{b.preventDefault(),!(Date.now()<c)&&k(!0)}),e.addEventListener("cancel",b=>{b.preventDefault(),k(!1)}),e.addEventListener("close",()=>{w&&k(!1)}),{confirm(b,h={}){return new Promise(T=>{if(w||s()){T(!1);return}let R=h.wording??rr;if(c=Date.now()+r,f.textContent=b,h.grant?(m.hidden=!1,m.textContent=`Target: \\u201C${Nt(h.grant.title)}\\u201D (${Nt(h.grant.sessionId)}). You can revoke this later from the home page or the grants command.`):m.hidden=!0,u.textContent=R.heading,l.textContent=R.confirmLabel,i.textContent=R.cancelLabel,w=T,a=h.onConfirmGesture,typeof e.showModal=="function")try{e.showModal()}catch{k(!1)}else k(!1)})},isOpen:()=>w!==null}}var Ht="A draft was dropped to make room",or="A draft was shortened to fit";function Gt(){let e=new Map;return{get:t=>e.get(t)??null,set:(t,r)=>{e.set(t,r)},remove:t=>{e.delete(t)}}}function sr(e){return{get:t=>e.getItem(t),set:(t,r)=>e.setItem(t,r),remove:t=>e.removeItem(t)}}function pe(e){return new TextEncoder().encode(e).length}function Pe(e,t){let r=t.now??(()=>Date.now()),s=nt(t.session),d,g=!1;try{let c=e.localStorage;c.getItem(s),d=sr(c)}catch{d=Gt(),g=!0,t.onFallback?.()}function u(c,a){try{return c()}catch{if(!g){let k=Gt();for(let b of f().keys){let h=d.get(b);h!==null&&k.set(b,h)}k.set(s,d.get(s)??""),d=k,g=!0,t.onFallback?.();try{return c()}catch{return a}}return a}}function f(){try{let c=d.get(s),a=c?JSON.parse(c):null;return{keys:Array.isArray(a?.keys)?a.keys.filter(k=>typeof k=="string"):[]}}catch{return{keys:[]}}}function m(c){let a=0;for(let k of c)a+=pe(d.get(k)??"");d.set(s,JSON.stringify({keys:c,bytes:a}))}function o(c){try{let a=d.get(c),k=a?JSON.parse(a):null;return st(k)?k:null}catch{return null}}function i(c){let a=Ce(t.session,"",""),k=c.slice(a.length-1);return k.slice(0,k.indexOf(":"))}function l(){let c=f().keys,a=[],k=!1;for(let b of c){let h=o(b);if(!h||r()-h.savedAtMs>t.retentionMs){d.remove(b),k=!0;continue}a.push(b)}return k&&m(a),a}function w(c,a){let k={...c.fields},b=pe(JSON.stringify({...c,fields:k}));for(let[h,T]of Object.entries(k)){if(b<=a)break;if(typeof T!="string")continue;let R=Math.max(0,T.length-(b-a));k[h]=T.slice(0,R),b=pe(JSON.stringify({...c,fields:k}))}return b<=a?{...c,fields:k}:null}return{put(c,a){return u(()=>{let k=[],b=Ce(t.session,c,a.form.key),h=l().filter(M=>M!==b);if(Object.keys(a.fields).length===0)return d.remove(b),m(h),k;let T=a,R=pe(JSON.stringify(T));if(R>t.perSessionBytes){if(T=w(a,t.perSessionBytes),!T)return k;R=pe(JSON.stringify(T)),k.push(or)}let N=R;for(let M of h)N+=pe(d.get(M)??"");for(;N>t.perSessionBytes&&h.length>0;){let M=h.shift();N-=pe(d.get(M)??""),d.remove(M),k.push(Ht)}return d.set(b,JSON.stringify(T)),m([...h,b]),k},[])},delete(c,a){u(()=>{let k=Ce(t.session,c,a);d.remove(k),m(f().keys.filter(b=>b!==k))},void 0)},list(){return u(()=>l().map(c=>({key:c,documentPath:i(c),record:o(c)})).filter(c=>c.record!==null),[])},forDocument(c){return u(()=>l().filter(a=>a.startsWith(Ce(t.session,c,""))).map(a=>o(a)).filter(a=>a!==null),[])},clearSession(){u(()=>{for(let c of f().keys)d.remove(c);d.remove(s),d.remove(qe(t.session))},void 0)},isFallback:()=>g}}var Oe="up:leftovers:",ir="A draft could not be kept for the home page: the browser refused to store it.";function qe(e){return`${Oe}${e}`}function Ee(e){return[e.session,e.documentPath,e.key,e.field].join("|")}function ct(e){return e.startsWith("id:")?`#${e.slice(3)}`:e.startsWith("title:")?e.slice(6):e.startsWith("ctl:name:")?e.slice(9):e.startsWith("ctl:")?`#${e.slice(4)}`:"a form"}function _e(e){try{let t=e.localStorage;return t.getItem(Oe),t}catch{return null}}function Ge(e,t){try{let r=JSON.parse(e.getItem(qe(t))??"[]");return Array.isArray(r)?r.filter(lt):[]}catch{return[]}}var Wt=!1;function We(e,t,r,s){let d=[],g=[...r].sort((f,m)=>f.atMs-m.atMs),u=0;try{let f=JSON.parse(e.getItem(nt(t))??"{}");u=typeof f.bytes=="number"?f.bytes:0}catch{u=0}for(;g.length>0&&u+pe(JSON.stringify(g))>s.perSessionBytes;)g.shift(),d.push(Ht);try{g.length===0?e.removeItem(qe(t)):e.setItem(qe(t),JSON.stringify(g))}catch(f){Wt||(Wt=!0,console.warn("the browser refused to store a draft for the home page",f)),d.push(ir)}return d}function jt(e,t,r){let s=_e(e);if(!s)return[];let d=Ge(s,t.session).filter(g=>Ee(g)!==Ee(t));return We(s,t.session,[...d,t],r)}function zt(e,t,r,s,d){let g=_e(e);if(!g)return[];let u=Ge(g,t).filter(m=>!(m.documentPath===r&&m.reason==="not-on-this-version")),f=new Set(u.map(Ee));return We(g,t,[...u,...s.filter(m=>!f.has(Ee(m)))],d)}function Vt(e,t,r,s){let d=_e(e);if(!d)return;let g=Ge(d,t),u=Pe(e,{session:t,retentionMs:s.retentionMs,perSessionBytes:s.perSessionBytes}),f=new Map(u.forDocument(r).map(o=>[o.form.key,o])),m=g.filter(o=>{if(o.documentPath!==r||o.reason!=="not-on-this-version")return!0;let i=f.get(o.key)?.fields[o.field];return typeof i=="string"&&i!==""});m.length!==g.length&&We(d,t,m,s)}function dt(e,t,r=Date.now()){let s=_e(e);if(!s)return[];let d=[],g=[];for(let u=0;u<s.length;u+=1){let f=s.key(u);f&&f.startsWith(Oe)&&g.push(f)}for(let u of g)try{let f=JSON.parse(s.getItem(u)??"[]");if(!Array.isArray(f))continue;let m=f.filter(lt).filter(o=>r-o.atMs<=t);m.length!==f.length&&(m.length===0?s.removeItem(u):s.setItem(u,JSON.stringify(m))),d.push(...m)}catch{}return d.sort((u,f)=>u.atMs-f.atMs)}function Kt(e,t,r){let s=_e(e);if(!s)return;let d=Ee(t);We(s,t.session,Ge(s,t.session).filter(o=>Ee(o)!==d),r);let g=Pe(e,{session:t.session,retentionMs:r.retentionMs,perSessionBytes:r.perSessionBytes}),u=g.forDocument(t.documentPath).find(o=>o.form.key===t.key);if(!u||!(t.field in u.fields))return;let f={...u.fields};delete f[t.field],Object.values(f).every(o=>o===""||o===!1||Array.isArray(o)&&o.length===0)?g.delete(t.documentPath,t.key):g.put(t.documentPath,{...u,fields:f,focus:u.focus&&u.focus.name===t.field?null:u.focus})}var ar="The recording bar opens only when the reader presses something in the page.",He={mode:"refuse",reason:ar},lr=["pointerdown","pointerup","mousedown","touchend","click","keydown","keyup"];function Jt(e,t={}){let r=t.cooldownMs??2e3,s=t.pollMs??100,d=()=>e.navigator.userActivation,g=!1,u=null,f=Number.NEGATIVE_INFINITY;function m(){u!==null&&clearInterval(u),u=setInterval(()=>{let o=d();(!o||!o.isActive)&&(g=!1,u!==null&&clearInterval(u),u=null)},s)}for(let o of lr)e.addEventListener(o,i=>{i.isTrusted&&(g=!0,m())},!0);return{decide(o={}){let i=d();return i?i.isActive?o.control===!0?{mode:"record"}:g?{mode:"arm",reason:"the last press was in the host\'s chrome"}:Date.now()-f<r?{mode:"arm",reason:"a bar or question just closed"}:{mode:"record"}:He:{mode:"arm",reason:"this browser cannot tell who pressed"}},closed(){f=Date.now()}}}function Yt(e){let t=null;return{inPlace(r){e.location.assign(r)},reserveWindow(){try{if(t=e.open("","_blank"),t)try{t.opener=null}catch{}}catch{t=null}},external(r){let s=t;if(t=null,s&&!s.closed)try{return s.location.href=r,!0}catch{try{s.close()}catch{}}try{return e.open(r,"_blank","noopener,noreferrer")!==null}catch{return!1}},release(){let r=t;t=null;try{r?.close()}catch{}}}}function cr(e){let t=tt(e).replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"");return t.length<=60?t:`${t.slice(0,59)}\\u2026`}var dr=400;function ur(e,t){if(e.filesUrl)return`${e.filesUrl}${Mt(t)}`;let r=e.documentUrl.indexOf("?");if(r<0)return null;let s=new URLSearchParams(e.documentUrl.slice(r+1)).get("session");return s===null?null:`${e.documentUrl.slice(0,r)}?session=${encodeURIComponent(s)}&file=${encodeURIComponent(t)}`}function Qt(e,t,r,s,d=dr){function g(i){let l=null;try{l=e.open(i,"_blank")}catch{l=null}if(l)try{l.opener=null}catch{}return l}function u(){let i=e.document;return i.visibilityState==="visible"&&(typeof i.hasFocus!="function"||i.hasFocus())}function f(i,l){g(i)||e.setTimeout(()=>{if(!u())return;let w=!1;s.confirm(`Open \\u201C${cr(l)}\\u201D in a new tab?`,{wording:Ut,onConfirmGesture:()=>{w=g(i)!==null}}).then(c=>{c&&!w&&e.setTimeout(()=>{u()&&e.location.assign(i)},d)})},d)}function m(i,l){let w=e.document,c=w.createElement("a");c.href=i,c.download=l,c.rel="noopener",c.style.display="none",w.body.appendChild(c);try{c.click()}finally{c.remove()}}let o=i=>ur(t,i);return{urlOf:o,open(i,l,w){if(!Se(i)||ee(i)&&!l)return;let c=o(i);if(c){if(l||!At(i)){m(c,(w?Dt(w):null)??tt(i));return}f(c,i)}},async fetchFor(i,l){let{id:w,path:c}=l,a=(h,T)=>i({kind:"thread-page:file",id:w,ok:!1,status:h,error:T});if(!Se(c))return a(400,"Not a file of this page");if(l.purpose==="media"&&!t.deferredFiles.includes(c))return a(400,"Not a file this document defers");let k=o(c);if(!k)return a(404,"This page has no files of its own");let b=Rt(c);try{let h=await r(k,{method:l.init?.method??"GET",credentials:"same-origin",cache:"no-store"});if(!h.ok)return a(h.status,h.status===404?"The file does not exist":`The host answered ${h.status}`);let T=Number(h.headers.get("content-length")??"");if(Number.isFinite(T)&&T>b)return a(413,`Larger than ${De(b)}, the most the host reads`);let R=await h.blob();if(R.size>b)return a(413,`Larger than ${De(b)}, the most the host reads`);i({kind:"thread-page:file",id:w,ok:!0,status:h.status,contentType:h.headers.get("content-type")??R.type??"",blob:R})}catch(h){a(502,h instanceof Error&&h.message?h.message.slice(0,200):"The file could not be fetched")}}}}var ut="X-Pages-Poll",Zt="X-Pages-Working",Xt="X-Pages-Source",en="X-Pages-Session";var fr=3e4,tn=3e4;function pr(e){let t=e.indexOf("?");if(t<0)return e;let r=new URLSearchParams(e.slice(t+1));r.delete("render");let s=r.toString();return s?`${e.slice(0,t)}?${s}`:e.slice(0,t)}function nn(e,t,r,s){let d=`"${t.pageRevision}"`,g=!1,u=!1,f=null,m=0,o=null,i=t.working,l=0,w=!1,c=t.source,a=!1,k=()=>e.document.visibilityState==="hidden";function b(){return k()?tn:i||Date.now()<l?t.pollWorkingMs:t.pollMs}function h(R){f!==null&&clearTimeout(f),f=null,!g&&(m=Date.now()+R,f=setTimeout(()=>{f=null,T()},R))}async function T(){if(g||u)return;Date.now()>=t.expiresAt-fr&&r.onExpiring(),u=!0,o=new AbortController;let R=t.documentUrl,N=a?{[ut]:"1"}:{"if-none-match":d,[ut]:"1"};a=!1;try{let M=await s(pr(R),{method:"GET",credentials:"same-origin",cache:"no-store",headers:N,signal:o.signal});if(R!==t.documentUrl)return;if(w&&(w=!1,r.onReachable()),M.status===401||M.status===403){g=!0,r.onUnauthorized();return}if(M.status===404){g=!0,r.onDeleted();return}if(!M.ok&&M.status!==304){r.onUnreachable(),w=!0;return}if(M.headers.get(en)==="deleted"){g=!0,r.onDeleted();return}if(M.status===304){i=M.headers.get(Zt)==="1",r.onWorking(i);let q=M.headers.get(Xt);(q==="live"||q==="offline"||q==="archived")&&q!==c&&(c=q,r.onSource(q));return}let I=await M.json().catch(()=>null);if(!gr(I))return;d=`"${I.revision}"`,i=I.working,r.onWorking(i),I.source!==c&&(c=I.source,r.onSource(I.source)),r.onBody(I)}catch(M){M instanceof DOMException&&M.name==="AbortError"||(w=!0,r.onUnreachable())}finally{o=null,u=!1,h(a?0:b())}}return e.document.addEventListener("visibilitychange",()=>{g||(k()?h(tn):h(0))}),{start:()=>h(b()),stop(){g=!0,f!==null&&clearTimeout(f),f=null,o?.abort()},expectChange(){l=Date.now()+t.pollAfterAnswerMs,!u&&!k()&&(f===null||m-Date.now()>t.pollWorkingMs)&&h(t.pollWorkingMs)},retarget(){f!==null&&clearTimeout(f),f=null,o?.abort(),o=null,d=`"${t.pageRevision}"`,c=t.source,i=t.working,g=!1,u=!1,h(b())},pollNow(R){return R&&R.fresh&&(a=!0),T()},isStopped:()=>g}}function gr(e){return x(e)?typeof e.revision=="string"&&/^[a-f0-9]{64}$/.test(e.revision)&&typeof e.actionToken=="string"&&typeof e.expiresAt=="number"&&typeof e.documentUrl=="string"&&typeof e.working=="boolean"&&(e.source==="live"||e.source==="offline"||e.source==="archived")&&typeof e.empty=="boolean"&&Array.isArray(e.deferredFiles)&&Array.isArray(e.grants)&&x(e.voice)&&typeof e.voice.available=="boolean"&&Array.isArray(e.readMethods):!1}async function ve(e){return mr(new Uint8Array(await e.arrayBuffer()))}function mr(e){let t="";for(let s=0;s<e.length;s+=32768)t+=String.fromCharCode.apply(null,Array.from(e.subarray(s,s+32768)));return btoa(t)}function rn(e){return{name:e.name||"file",size:e.size,type:e.type||""}}function on(e){if(e.length>v.promptFiles)return{code:"request_too_large",message:`At most ${v.promptFiles} files per call; this one has ${e.length}`};let t=e.find(s=>s.size>v.promptFileBytes);if(t)return{code:"request_too_large",message:`\\u201C${t.name}\\u201D is larger than ${De(v.promptFileBytes)}, the most one file may be`};let r=e.find(s=>s.size===0);return r?{code:"invalid_params",message:`\\u201C${r.name}\\u201D is empty`}:null}async function ft(e,t,r,s,d){let g=[];for(let u=0;u<s.length;u+=1){let f=s[u];d(`Attaching ${u+1} of ${s.length}\\u2026`);let m=null;try{let o={actionToken:t.actionToken,requestId:r.requestId,method:r.method,...r.challenge?{challenge:r.challenge}:{},index:u,name:f.name||"file",type:f.type||"",bytes:await ve(f)},i=await e(t.routes.attach,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(o)}),l=await i.json().catch(()=>null);!i.ok||!x(l)||l.ok!==!0||typeof l.attachmentId!="string"?m={code:x(l)&&typeof l.code=="string"?l.code:"",message:x(l)&&typeof l.message=="string"&&l.message?l.message:`Upload failed (${i.status})`}:g.push(l.attachmentId)}catch(o){m={code:"",message:o instanceof Error&&o.message?o.message:"Upload failed"}}if(m)return d(""),{ok:!1,code:m.code==="request_too_large"?"request_too_large":m.code==="unavailable"?"unavailable":"handler_error",message:`Could not attach \\u201C${f.name}\\u201D: ${m.message.replace(/\\.$/,"")}. Nothing was started or sent.`}}return d(""),{ok:!0,attachmentIds:g}}var hr=["audio/webm","audio/mp4","audio/ogg"],yr=900,sn="Another question is open; answer it first.",Be=class extends Error{constructor(r,s){super(s);Je(this,"code",r);this.name="VoiceFailure"}};function br(e){let t=e.MediaRecorder;return hr.find(r=>{try{return t?.isTypeSupported?.(r)===!0}catch{return!1}})}function an(e){let t=e.split(";")[0]?.trim().toLowerCase()??"";return t==="audio/mp4"?"m4a":t==="audio/ogg"?"ogg":"webm"}function pt(e){let t=Math.max(0,Math.floor(e/1e3));return`${Math.floor(t/60)}:${String(t%60).padStart(2,"0")}`}function ln(e){let t=e.ownerDocument,r=t.createElement("canvas");r.width=160,r.height=28;let s=t.createElement("span");s.setAttribute("data-tp","rec-time");let d=t.createElement("span");d.setAttribute("data-tp","rec-status"),d.setAttribute("role","status");let g=t.createElement("button");g.type="button",g.textContent="Cancel",g.setAttribute("data-tp","rec-cancel");let u=t.createElement("button");u.type="button",u.textContent="Record",u.setAttribute("data-tp","rec-record");let f=t.createElement("button");return f.type="button",f.textContent="Done",f.setAttribute("data-tp","rec-done"),e.replaceChildren(r,s,d,g,u,f),e.hidden=!0,e.tabIndex=-1,{bar:e,wave:r,time:s,status:d,cancel:g,done:f,record:u}}function cn(e,t,r,s){let d=[],g=!1,u=!1,f=!1,m=null,{bar:o,wave:i,time:l,status:w,cancel:c,done:a,record:k}=r;function b(){for(let A of d)try{A()}catch{}}async function h(){if(!t.voice.available)return t.voice.reason??"This host cannot transcribe voice.";if(g)return"The microphone was not allowed. Reload the page to try again.";if(!e.isSecureContext)return"Recording needs a secure connection to this host.";let A=e.navigator.mediaDevices;if(!A||typeof A.getUserMedia!="function"||typeof e.MediaRecorder!="function")return"This browser cannot record here.";try{let P=await e.navigator.permissions?.query({name:"microphone"});if(P&&!f&&(f=!0,P.onchange=()=>b()),P?.state==="denied")return"The microphone is blocked for this page."}catch{}return null}async function T(A){let P;try{let X={actionToken:t.actionToken,type:A.type||"audio/webm",bytes:await ve(A.blob),...A.prompt?{prompt:A.prompt.slice(-v.voicePromptChars)}:{},...A.language?{language:A.language}:{}};P=await s.fetchImpl(t.routes.transcribe,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(X)})}catch{throw new Be("unavailable","The host could not be reached to transcribe the recording")}let B=await P.json().catch(()=>null);if(P.ok&&x(B)&&B.ok===!0&&typeof B.text=="string")return B.text;let Z=x(B)&&typeof B.code=="string"?B.code:"",U=x(B)&&typeof B.message=="string"&&B.message?B.message:`Transcription failed (${P.status})`;throw new Be(Z==="request_too_large"?"request_too_large":Z==="rate_limited"?"rate_limited":"unavailable",U)}async function R(){let A=e.navigator.mediaDevices;if(t.voice.deviceId)try{return await A.getUserMedia({audio:{deviceId:{exact:t.voice.deviceId}}})}catch(P){let B=P.name;if(B==="NotAllowedError"||B==="SecurityError")throw P}return A.getUserMedia({audio:!0})}function N(A){w.textContent=A}function M(A){o.hidden=!1,o.dataset.state="starting",o.dataset.purpose=A,l.textContent="0:00",a.disabled=!0,a.hidden=!1,k.hidden=!0,c.disabled=!1,N("Starting the microphone\\u2026");try{o.focus({preventScroll:!0})}catch{}}function I(){o.hidden=!0,o.dataset.state="",N(""),i.getContext?.("2d")?.clearRect(0,0,i.width,i.height),s.restoreFocus()}function q(A,P){return u||s.questionOpen()?Promise.resolve({ok:!1,code:"unavailable",message:sn}):A.gesture.mode==="refuse"?Promise.resolve({ok:!1,code:"unavailable",message:A.gesture.reason}):(u=!0,h().then(B=>B||s.questionOpen()?(u=!1,{ok:!1,code:"unavailable",message:B??sn}):H(A,P)))}function H(A,P){return new Promise(B=>{let Z=null,U=null,X=null,te=0,ne=null,re=null,Le=[],le="",oe=0,G=0,K=null,j=!1,J=!1,Te=null;function ye(){ne!==null&&clearInterval(ne),re!==null&&clearTimeout(re),ne=null,re=null,te&&e.cancelAnimationFrame?.(te),te=0;try{U&&U.state!=="inactive"&&U.stop()}catch{}for(let D of Z?.getTracks()??[])D.stop();Z=null,X?.close().catch(()=>{}),X=null}function V(D){j||(j=!0,ye(),e.removeEventListener("keydown",be,!0),e.removeEventListener("pagehide",ce),c.removeEventListener("click",ce),a.removeEventListener("click",Re),Te?.(),k.hidden=!0,a.hidden=!1,u=!1,m=null,I(),s.onClosed?.(),!D.ok&&D.code!=="cancelled"&&s.setStatus(`Voice: ${D.message}`),B(D))}function ce(){J||V({ok:!1,code:"cancelled",message:"The reader cancelled the recording; nothing was sent."})}function be(D){D.key==="Escape"&&(D.preventDefault(),ce())}function Ve(D){let $=new Uint8Array(new ArrayBuffer(D.fftSize)),W=i.getContext?.("2d"),O=()=>{if(j||G||!W)return;D.getByteTimeDomainData($);let{width:se,height:he}=i;W.clearRect(0,0,se,he),W.fillStyle="currentColor";let Ne=Math.max(8,Math.floor(se/5)),ke=Math.floor($.length/Ne)||1;for(let de=0;de<Ne;de+=1){let ie=0;for(let ae=0;ae<ke;ae+=1)ie=Math.max(ie,Math.abs(($[de*ke+ae]??128)-128));let ue=Math.max(2,Math.min(he,ie/128*he*1.8));W.fillRect(de*5,(he-ue)/2,3,ue)}te=e.requestAnimationFrame(O)};te=e.requestAnimationFrame(O)}function ge(){if(K)return K;G=G||Date.now(),ne!==null&&clearInterval(ne),ne=null,re!==null&&clearTimeout(re),re=null,K=new Promise(D=>{if(!U||U.state==="inactive"){D();return}U.addEventListener("stop",()=>D(),{once:!0});try{U.stop()}catch{D()}});for(let D of Z?.getTracks()??[])D.stop();return K}async function me(){if(J||!oe)return;let D=(G||Date.now())-oe;if(D<v.voiceMinMs){J=!0,a.disabled=!0,c.disabled=!0,o.dataset.state="short",N("Too short"),ye(),setTimeout(()=>{J=!1,V({ok:!1,code:"cancelled",message:`The recording was shorter than ${v.voiceMinMs/1e3} s, so nothing was sent.`})},yr);return}J=!0,a.disabled=!0,c.disabled=!0,await ge();let $=le||U?.mimeType||"audio/webm",W=new Blob(Le,{type:$});if(W.size===0){J=!1,V({ok:!1,code:"unavailable",message:"Nothing was recorded. Check the microphone and try again."});return}o.dataset.state="working",N(A.purpose==="audio"?"Saving the recording\\u2026":"Transcribing\\u2026");try{let O=await P({blob:W,type:$,durationMs:D});J=!1,V({ok:!0,value:O})}catch(O){J=!1,V({ok:!1,code:O instanceof Be?O.code:"unavailable",message:O instanceof Error&&O.message?O.message:"The recording could not be transcribed."})}}function Re(){me()}m=ce,M(A.purpose),e.addEventListener("keydown",be,!0),e.addEventListener("pagehide",ce),c.addEventListener("click",ce),a.addEventListener("click",Re);function Ae(){R().then(D=>{if(j){for(let O of D.getTracks())O.stop();return}Z=D;let $=br(e);try{U=$?new e.MediaRecorder(D,{mimeType:$}):new e.MediaRecorder(D)}catch{V({ok:!1,code:"unavailable",message:"This browser cannot record here."});return}U.addEventListener("dataavailable",O=>{O.data&&O.data.size>0&&(Le.push(O.data),!le&&O.data.type&&(le=O.data.type))}),U.addEventListener("error",()=>V({ok:!1,code:"unavailable",message:"The recording failed."}));try{U.start(v.recorderSliceMs)}catch{V({ok:!1,code:"unavailable",message:"The recording could not start."});return}oe=Date.now(),o.dataset.state="recording",a.disabled=!1,N("Recording. Press Done to send it, Cancel or Escape to discard it.");let W=A.maxDurationSeconds*1e3;ne=setInterval(()=>{l.textContent=pt(Date.now()-oe)},v.recorderSliceMs),re=setTimeout(()=>{ge().then(()=>{j||(l.textContent=pt(W),o.dataset.state="limit",N(`Reached ${pt(W)}, the most for this recording. Done sends it; Cancel discards it.`))})},W);try{let O=e.AudioContext??e.webkitAudioContext;if(O){X=new O,X.resume?.().catch(()=>{});let se=X.createAnalyser();se.fftSize=512,X.createMediaStreamSource(D).connect(se),Ve(se)}}catch{}},D=>{let $=D.name;if($==="NotAllowedError"||$==="SecurityError"){g=!0,b(),V({ok:!1,code:"unavailable",message:"The microphone was not allowed. Reload the page to try again."});return}V({ok:!1,code:"unavailable",message:$==="NotFoundError"?"No microphone was found.":"The microphone could not be started."})})}if(A.gesture.mode==="arm"){let D=Date.now();o.dataset.state="armed",a.hidden=!0,k.hidden=!1,N("Press Record to start recording, or Cancel.");let $=W=>{!W.isTrusted||j||Date.now()-D<v.confirmArmMs||(k.removeEventListener("click",$),k.hidden=!0,a.hidden=!1,o.dataset.state="starting",N("Starting the microphone\\u2026"),Ae())};k.addEventListener("click",$),Te=()=>k.removeEventListener("click",$)}else Ae()})}return{async usable(){let A=await h();return{available:A===null,reason:A}},onChange(A){d.push(A)},isOpen:()=>u,capture:q,cancel(){m?.()},transcribe:T}}var kr=new Set(["sessions.start","sessions.send","session.reply"]),dn=new Set(["session.reply","pages.answer","session.respond","sessions.respond"]),un="voice.captureAndTranscribe";function wr(e){if(!x(e)||e.kind!=="page"&&e.kind!=="host"&&e.kind!=="external"||typeof e.url!="string")return null;let t=e.url.startsWith("/"),r=/^https?:\\/\\//i.test(e.url);return e.kind==="page"&&!t||e.kind==="external"&&!r||e.kind==="host"&&!t&&!r?null:{kind:e.kind,url:e.url}}function Sr(e,t){return e==="context.get"||t.includes(e)}function fn(e){let{config:t,confirmer:r,navigator:s}=e;async function d(i,l,w){let c={actionToken:i,request:l,...w?{confirmation:w}:{}};return(await e.fetchImpl(t.routes.bridge,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(c)})).json().catch(()=>null)}async function g(i,l,w){let c={actionToken:i.token(),action:"declined",requestId:l,target:w};try{await e.fetchImpl(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(c)})}catch{}}function u(i,l,w){if(!x(w)||!_t(w.response,l.id)){s.release(),i.post(Q(l.id,"invalid_response","The bridge returned an invalid response"));return}let c=w.response,a=w.navigate===void 0?null:wr(w.navigate);if(i.post(c),c.ok&&a){a.kind==="external"?s.external(a.url)||e.onBlockedOpen(a.url):s.inPlace(a.url);return}s.release()}async function f(i,l,w){let c=l.files??[],a=l;if(l.files!==void 0){if(!kr.has(l.method)||!x(l.params)||"files"in l.params){i.post(Q(l.id,"invalid_params",`${l.method} does not take files this way`));return}let b=on(c);if(b){i.post(Q(l.id,b.code,b.message));return}a={v:l.v,id:l.id,method:l.method,params:{...l.params,files:c.map(rn)},pageRevision:l.pageRevision,...l.scope!==void 0?{scope:l.scope}:{}}}let k=b=>{let{files:h,...T}=a.params;return{...a,params:{...T,attachments:b}}};try{if(c.length>0&&a.method==="session.reply"){let h=await ft(e.fetchImpl,{...t,actionToken:i.token()},{requestId:a.id,method:a.method},c,e.onStatus);if(!h.ok){i.post(Q(a.id,h.code,h.message));return}a=k(h.attachmentIds)}let b=await d(i.token(),a);if(x(b)&&x(b.record)){await m(i,a,b.record,w);return}if(x(b)&&x(b.confirm)){let h=b.confirm;if(typeof h.challenge!="string"||typeof h.summary!="string"||h.requestId!==a.id){i.post(Q(a.id,"invalid_response","The bridge returned an invalid confirmation"));return}let T=h.kind==="grant"&&x(h.grant)&&typeof h.grant.sessionId=="string"&&typeof h.grant.title=="string"?{sessionId:h.grant.sessionId,title:h.grant.title}:null,R=h.kind==="decision",N=a.method==="navigation.openExternal";if(!await r.confirm(h.summary,{...T?{wording:Ft,grant:T}:R?{wording:$t}:{},...N?{onConfirmGesture:()=>s.reserveWindow()}:{}})){s.release(),i.post(Q(a.id,"cancelled",T?"You did not allow it, so the answer was not sent":"You declined this action"));let H=x(a.params)?a.params:{};T?g(i,a.id,{kind:"grant",session:T.sessionId}):R&&typeof H.id=="string"&&g(i,a.id,{kind:"decision",session:typeof H.sessionId=="string"?H.sessionId:t.session,waitId:H.id});return}if(c.length>0&&a.method!=="session.reply"){let H=await ft(e.fetchImpl,{...t,actionToken:i.token()},{requestId:a.id,method:a.method,challenge:h.challenge},c,e.onStatus);if(!H.ok){s.release(),i.post(Q(a.id,H.code,H.message));return}a=k(H.attachmentIds)}let I=await d(i.token(),a,h.challenge),q=x(I)&&x(I.response)&&x(I.response.error)&&I.response.error.code==="confirmation_invalid";T&&x(I)&&x(I.response)&&!q&&e.onGranted(T),dn.has(a.method)&&x(I)&&x(I.response)&&I.response.ok===!0&&e.onAnswered(),u(i,a,I);return}dn.has(a.method)&&x(b)&&x(b.response)&&b.response.ok===!0&&e.onAnswered(),u(i,a,b)}catch(b){s.release(),i.post(Q(a.id,"unavailable",b instanceof Error&&b.message?b.message:"The bridge is unavailable"))}}async function m(i,l,w,c){let a=x(w.params)?w.params:{};if(w.requestId!==l.id||!e.voice){i.post(Q(l.id,e.voice?"invalid_response":"unavailable",e.voice?"The bridge returned an invalid answer":"This page cannot record here."));return}let k=e.voice,b=typeof a.maxDurationSeconds=="number"?a.maxDurationSeconds:v.voiceDefaultSeconds,h=typeof a.prompt=="string"?a.prompt:void 0,T=typeof a.language=="string"?a.language:void 0,R=await k.capture({maxDurationSeconds:b,gesture:c,purpose:"capability"},async M=>({text:await k.transcribe({blob:M.blob,type:M.type,...h?{prompt:h}:{},...T?{language:T}:{}}),recording:M}));if(!R.ok){i.post(Q(l.id,R.code,R.message));return}let N=a.keepAudio===!0?{text:R.value.text,audio:R.value.recording.blob}:{text:R.value.text};i.post({v:1,id:l.id,ok:!0,result:N})}async function o(i,l,w){let c=l.id;if(!e.voice){i.post({kind:"thread-page:recorded",id:c,ok:!1,code:"unavailable",message:"This page cannot record here."});return}let a=e.voice,k=(l.prompt??"").slice(-v.voicePromptChars),b;if(l.purpose==="audio"?b=await a.capture({maxDurationSeconds:l.maxDurationSeconds??v.voiceDefaultSeconds,gesture:w,purpose:"audio"},async h=>{let T=new Date().toISOString().replace(/[-:]/g,"").replace(/\\..+$/,"").replace("T","-");return{file:new File([h.blob],`recording-${T}.${an(h.type)}`,{type:h.type})}}):b=await a.capture({maxDurationSeconds:l.maxDurationSeconds??v.voiceDefaultSeconds,gesture:w,purpose:"dictate"},async h=>({text:await a.transcribe({blob:h.blob,type:h.type,...k?{prompt:k}:{},...l.language?{language:l.language}:{}})})),!b.ok){i.post({kind:"thread-page:recorded",id:c,ok:!1,code:b.code,message:b.message});return}i.post({kind:"thread-page:recorded",id:c,ok:!0,...b.value})}return{bridge(i,l){if(i.isShown()||Sr(l.method,i.readMethods())){f(i,l,l.method===un?e.readerGesture():He);return}i.whenShown(()=>{f(i,l,l.method===un?e.readerGesture():He)})},record(i,l){if(l.purpose==="capability"){i.post({kind:"thread-page:recorded",id:l.id,ok:!1,code:"unavailable",message:"Recording for a capability is confirmed by the bridge, not asked for directly."});return}let w=()=>{o(i,l,e.readerGesture({control:l.purpose==="dictate"&&l.control===!0}))};i.isShown()?w():i.whenShown(w)}}}var je="The new version is still loading\\u2026",pn="This page keeps reloading itself and was stopped; reload this tab to try again.",gn="This session is archived \\u2014 read-only",mn="This session was deleted.",hn="Session expiring \\u2014 reload when ready",yn="Session expired \\u2014 reload this page",gt="Cannot reach the host",bn="Drafts survive updates but not a reload in this browser.",kn="The browser blocked the new tab.";function wn(e){let t=e.ownerDocument,r=t.createElement("span");r.setAttribute("data-tp","notice-text");let s=t.createElement("a");s.setAttribute("data-tp","notice-link"),s.target="_blank",s.rel="noopener noreferrer",s.hidden=!0,e.replaceChildren(r,s);let d=null,g=null;function u(){r.textContent=d?.text??"";let m=d?.link;s.hidden=!m,s.href=m?m.href:"",s.textContent=m?m.label:"",d&&d.text?e.setAttribute("data-visible","true"):e.removeAttribute("data-visible")}function f(){g!==null&&clearTimeout(g),g=null}return u(),{element:e,set(m){f(),d={text:m},u()},clear(){f(),d=null,u()},link(m,o,i){f(),d={text:m,link:{href:o,label:i}},u()},notice(m,o=6e3){f(),d={text:m},u(),g=setTimeout(()=>{g=null,d=null,u()},o)},text:()=>d?.text??""}}var Sn=" \\u2026 (transcript shortened)";function xn(e){return e.length<=v.transcriptChars?e:`${e.slice(0,v.transcriptChars-Sn.length)}${Sn}`}async function xr(e,t){let r=t.file,s=r.name||"file";if(r.size<=0)throw new Error(`\\u201C${s}\\u201D is empty`);if(r.size>e.config.maxUploadBytes)throw new Error(`\\u201C${s}\\u201D is larger than ${Math.round(e.config.maxUploadBytes/(1024*1024))} MiB`);let d={actionToken:e.token(),field:String(t.field||"file").slice(0,128),name:s.slice(0,255),type:r.type||"application/octet-stream",bytes:await ve(r)},g=await e.fetchImpl(e.config.routes.upload,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(d)}),u=await g.json().catch(()=>null);if(!g.ok||!x(u)||u.ok!==!0||typeof u.name!="string"||typeof u.path!="string"||typeof u.sizeBytes!="number")throw new Error(x(u)&&typeof u.message=="string"&&u.message||`Upload failed (${g.status})`);return{field:d.field,name:u.name,path:u.path,sizeBytes:u.sizeBytes}}async function En(e,t,r){let{submissionId:s}=r;try{let d=r.files;if(d.length>e.config.maxUploads)throw new Error(`This form has ${d.length} files; at most ${e.config.maxUploads} can be sent at once`);let g=[];for(let l=0;l<d.length;l+=1)t({kind:"thread-page:submit-progress",submissionId:s,message:`Uploading ${l+1} of ${d.length}\\u2026`}),g.push(await xr(e,d[l]));let u=d.map((l,w)=>({entry:l,index:w})).filter(({entry:l})=>l.transcribe===!0&&/^audio\\//i.test(l.file.type??""));for(let l=0;l<u.length;l+=1){let{entry:w,index:c}=u[l];t({kind:"thread-page:submit-progress",submissionId:s,message:`Transcribing ${l+1} of ${u.length}\\u2026`});let a=e.voice&&e.config.voice.available?await e.voice.transcribe({blob:w.file,type:w.file.type}).catch(()=>null):null;g[c].transcript=a===null?null:xn(a)}g.length>0&&t({kind:"thread-page:submit-progress",submissionId:s,message:"Sending\\u2026"});let f={actionToken:e.token(),submissionId:s,writtenAgainst:r.writtenAgainst,formId:r.formId,formTitle:r.formTitle,title:r.title,action:r.action,answers:r.answers,files:g},m=await e.fetchImpl(e.config.routes.submit,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(f)}),o=await m.json().catch(()=>null);if(m.ok&&x(o)&&o.ok===!0){e.onAnswered();let l=o.delivery==="queued"||o.delivery==="steered"?o.delivery:"started";t({kind:"thread-page:submit-result",submissionId:s,ok:!0,delivery:l,...typeof o.matchedRevision=="string"?{matchedRevision:o.matchedRevision}:{},revisionChanged:o.revisionChanged===!0});return}let i=x(o)&&St(o.code)?o.code:"unavailable";t({kind:"thread-page:submit-result",submissionId:s,ok:!1,error:i,message:(x(o)&&typeof o.message=="string"&&o.message||`Request failed (${m.status})`).slice(0,512)})}catch(d){t({kind:"thread-page:submit-result",submissionId:s,ok:!1,error:"unavailable",message:(d instanceof Error&&d.message?d.message:"Request failed").slice(0,512)})}}var Er=["allow-scripts","allow-forms","allow-popups","allow-downloads"],mt=Er.join(" ");var vn="fullscreen *",Vo=[`sandbox ${mt}`,"default-src * data: blob: \'unsafe-inline\' \'unsafe-eval\'","frame-src https: blob: data:","frame-ancestors \'self\'"].join("; ");var vr={opacity:"0","pointer-events":"none","z-index":"0"},Tr={opacity:"1","pointer-events":"","z-index":"1"};function Rr(e,t,r){let s=e.createElement("iframe");return s.setAttribute("sandbox",mt),s.setAttribute("allow",vn),s.setAttribute("referrerpolicy","no-referrer"),s.setAttribute("title","Page"),s.setAttribute("data-tp-frame",r?"incoming":"shown"),r?Ar(s):ht(s),s.setAttribute("src",t.documentUrl+t.fragment),s}function Ar(e){for(let[t,r]of Object.entries(vr))e.style.setProperty(t,r);e.setAttribute("aria-hidden","true"),e.setAttribute("inert","")}function ht(e){for(let[t,r]of Object.entries(Tr))r===""?e.style.removeProperty(t):e.style.setProperty(t,r);e.removeAttribute("aria-hidden"),e.removeAttribute("inert"),e.setAttribute("data-tp-frame","shown")}function yt(e,t,r){return{element:Rr(e,t,r),target:t,port:null,connected:!1,restored:!1,shown:!1,dirty:!1,embedDirty:!1,typing:!1,pending:0,toldUpdate:!1,scroll:null,queue:[],handed:new Map,nonce:0,answered:0,pinged:0,loadStartedAt:Date.now(),timers:[],cancelled:!1}}function _(e,t){if(!e.port)return!1;try{return e.port.postMessage(t),!0}catch{return!1}}function bt(e){for(let t of e.timers)clearTimeout(t);e.timers=[]}function kt(e){e.cancelled=!0,bt(e),e.queue=[];try{e.port?.close()}catch{}e.port=null,e.element.remove()}var wt="pagesDocument",Tn="pagesFragment",Rn="pagesQuery";function An(e,t,r,s={}){let d=e.document,g=s.fetchImpl??e.fetch.bind(e),u=s.now??(()=>Date.now()),f=wn(r.notice),m="LOADING",o=null,i=null,l="revision",w=null,c=t.navigable?Me(e.location.hash):"",a=0,k=null,b=new Map,h=0,T={retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes},R=Pe(e,{session:t.session,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:u,onFallback:()=>f.notice(bn)}),N=Yt(e),M=Jt(e),I=null,q=qt(r.dialog,{otherQuestionOpen:()=>I?.isOpen()??!1,onClosed:()=>{M.closed(),G()}});r.recorder&&(I=cn(e,t,ln(r.recorder),{questionOpen:()=>q.isOpen(),restoreFocus:()=>{try{o?.element.focus({preventScroll:!0})}catch{}},setStatus:n=>f.notice(n),onClosed:()=>{M.closed(),G()},fetchImpl:g}),I.onChange(()=>{te(),G()}));let H=Qt(e,t,g,q),A=fn({config:t,confirmer:q,navigator:N,voice:I,readerGesture:n=>M.decide(n),onGranted:()=>{P.pollNow({fresh:!0})},onAnswered:()=>P.expectChange(),onStatus:n=>n?f.set(n):f.clear(),onBlockedOpen:n=>f.link(kn,n,"Open it"),fetchImpl:g}),P=nn(e,t,{onBody:n=>ne(n),onWorking:n=>X(n),onSource:n=>B(n),onDeleted:()=>{m="DELETED",R.clearSession(),i&&me(),f.set(mn)},onUnauthorized:()=>f.set(yn),onUnreachable:()=>f.set(gt),onReachable:()=>{f.text()===gt&&f.clear()},onExpiring:()=>f.set(hn)},g);function B(n){t.source=n;for(let p of[o,i])p&&_(p,Z())}function Z(){return{kind:"thread-page:source-state",stale:t.source==="offline",archived:t.source==="archived",reason:t.source==="archived"?gn:null}}function U(){return{kind:"thread-page:session-state",working:t.working,label:t.workingLabel}}function X(n){if(n!==t.working){t.working=n;for(let p of[o,i])p&&_(p,U())}}async function te(){let n=I?await I.usable():{available:!1,reason:t.voice.reason};for(let p of[o,i])p&&_(p,{kind:"thread-page:voice",available:n.available,reason:n.reason})}function ne(n){t.actionToken=n.actionToken,t.expiresAt=n.expiresAt,t.readMethods=n.readMethods,t.empty=n.empty,JSON.stringify(n.grants)!==JSON.stringify(t.grants)&&(t.grants=n.grants,he()),(n.voice.available!==t.voice.available||n.voice.reason!==t.voice.reason)&&(t.voice={...t.voice,available:n.voice.available,reason:n.voice.reason},te());for(let y of[o,i])y&&y.target.path===t.documentPath&&(y.target.token=n.actionToken);if(m==="DELETED"||m==="STOPPED")return;let p=o?.target.revision??t.pageRevision;if(n.revision===p){i&&l==="revision"&&i.target.revision!==n.revision&&i.target.path===t.documentPath&&me(),w&&(w=null,o&&(o.toldUpdate=!1,_(o,{kind:"thread-page:update",available:!1})),m==="DEFERRED"&&(m="SHOWN"));return}Le(n)}function re(n){return{documentUrl:n.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:c,token:n.actionToken,revision:n.revision,expiresAt:n.expiresAt,source:n.source,empty:n.empty,deferredFiles:n.deferredFiles}}function Le(n){w=n,!(i&&i.target.revision===n.revision)&&(i&&l==="revision"&&me(),G())}function le(){o&&(i&&l==="revision"&&me(),(m==="SHOWN"||m==="INCOMING")&&(m="DEFERRED"),o.toldUpdate||(o.toldUpdate=!0,_(o,{kind:"thread-page:update",available:!0})))}function oe(n){let p=q.isOpen()||(I?.isOpen()??!1);return n.pending>0||p?!0:d.visibilityState==="hidden"?!1:n.typing||n.dirty||n.embedDirty}function G(){if(!(!o||!w||m==="DELETED"||m==="STOPPED"||m==="RELOAD")){if(oe(o)){le();return}i||ge(re(w),"revision")}}function K(n){return{token:()=>n.target.token,readMethods:()=>t.readMethods,isShown:()=>n.shown,whenShown:p=>{n.shown?p():n.queue.push(p)},post:p=>{_(n,p)}}}function j(n,p,y){let S=setTimeout(()=>{n.cancelled||y()},p);n.timers.push(S)}function J(n){let p=++n.pinged;_(n,{kind:"thread-page:ping",nonce:p}),j(n,t.reload.pingMs,()=>{n.answered<p&&_(n,{kind:"thread-page:ping",nonce:++n.pinged})}),j(n,t.reload.waitMs,()=>{n.answered>=p||ie()})}function Te(n){return n.port?new Promise(p=>{let y=++n.nonce,S=!1,E=()=>{S||(S=!0,p())};ye.set(n,{nonce:y,finish:E}),setTimeout(E,t.drafts.flushMs),_(n,{kind:"thread-page:flush",nonce:y})}):Promise.resolve()}let ye=new Map;function V(n,p){let y=R.forDocument(n.target.path);n.handed=new Map(y.map(C=>[C.form.key,C]));let S=[...b.entries()].filter(([C])=>C.startsWith(`${n.target.path}:`)).map(([C,z])=>({form:{key:C.slice(n.target.path.length+1)},fields:z}));b.clear();let E={kind:"thread-page:restore",nonce:++n.nonce,scroll:p?o?.scroll??null:null,drafts:y,clearedNotice:S};return t.builtinHome&&(E.leftovers=dt(e,t.drafts.retentionMs,u())),E}function ce(n,p){n.port=p,n.connected=!0,p.onmessage=S=>D(n,S.data),p.start?.(),_(n,Z()),_(n,U()),te(),t.builtinHome&&_(n,{kind:"thread-page:grants",grants:t.grants});let y=n!==o&&o!==null&&o.target.path===n.target.path;_(n,V(n,y||n===o)),J(n),n===o&&(m="CONNECTING",j(n,t.refreshSwapMs,()=>{n.shown||be(n)}))}function be(n){if(n.shown)return;n.shown=!0,m="SHOWN",_(n,{kind:"thread-page:shown"});let p=n.queue;n.queue=[];for(let y of p)y();try{n.element.focus({preventScroll:!0})}catch{}O(n),Ve(n),G()}function Ve(n){k!==null&&clearTimeout(k),k=setTimeout(()=>{k=null,o===n&&n.answered>0&&(a=0)},t.reload.clearMs)}function ge(n,p){i&&me();let y=o,S=++h,E=()=>{if(S!==h||m==="DELETED")return;if(p==="revision"&&o&&oe(o)){le();return}let C=yt(d,n,!0);i=C,l=p,m="INCOMING",r.frameHost.appendChild(C.element),j(C,t.refreshSwapMs,()=>{if(i===C){if(p==="revision"&&o&&oe(o)){le();return}Ae(C,!0)}}),j(C,t.reload.waitMs,()=>{i===C&&!C.connected&&ie()}),p!=="revision"&&(Re(n),p==="document"&&f.clear())};y?.port?Te(y).then(E):E()}function me(){let n=i;n&&(i=null,kt(n),m==="INCOMING"&&(m=o?"SHOWN":"LOADING"))}function Re(n){t.actionToken=n.token,t.pageRevision=n.revision,t.expiresAt=n.expiresAt,t.documentUrl=n.documentUrl,t.documentPath=n.path,t.documentQuery=n.query,t.source=n.source,t.empty=n.empty,t.deferredFiles=n.deferredFiles,c=n.fragment}function Ae(n,p){if(i!==n)return;i=null,bt(n);let y=o;ht(n.element),y&&kt(y),o=n,Re(n.target),w&&w.revision===n.target.revision&&(w=null),p&&!n.restored&&d.visibilityState!=="hidden"?f.set(je):f.text()===je&&f.clear(),be(n),P.retarget(),n.connected?J(n):j(n,t.reload.waitMs,()=>{n.connected||ie()})}function D(n,p){if(n.cancelled||!Bt(p))return;if(!("kind"in p)){A.bridge(K(n),p);return}let y=p;switch(y.kind){case"thread-page:pong":n.answered=Math.max(n.answered,y.nonce);return;case"thread-page:restored":n.restored=!0,i===n?l==="revision"&&o&&oe(o)?le():Ae(n,!1):o===n&&(n.shown?f.text()===je&&f.clear():be(n));return;case"thread-page:flushed":{let S=ye.get(n);S&&S.nonce===y.nonce&&(ye.delete(n),S.finish());return}case"thread-page:scroll":n.scroll=y.state;return;case"thread-page:draft":$(n,y);return;case"thread-page:dirty":n.dirty=y.custom,n===o&&G();return;case"thread-page:clean":n.dirty=!1,n===o&&G();return;case"thread-page:typing":n.typing=y.active,n===o&&G();return;case"thread-page:embed-dirty":n.embedDirty=y.dirty,n===o&&G();return;case"thread-page:submit":K(n).whenShown(()=>{n.pending+=1,En({config:t,token:()=>n.target.token,fetchImpl:g,voice:I,onAnswered:()=>P.expectChange()},S=>{if("kind"in S&&S.kind==="thread-page:submit-result"){n.pending=Math.max(0,n.pending-1),_(n,S),n===o&&G();return}_(n,S)},y)});return;case"thread-page:open-document":K(n).whenShown(()=>{let S=Ze(y.query);if(!S.ok){f.notice(`That link cannot be opened: ${S.message}.`);return}Ke(y.path,!0,Me(y.fragment),S.query)});return;case"thread-page:open-file":K(n).whenShown(()=>H.open(y.path,y.download,y.name));return;case"thread-page:file-request":H.fetchFor(S=>{_(n,S)},y);return;case"thread-page:fragment":n===o&&Cn(Me(y.fragment),y.step===!0);return;case"thread-page:record":A.record(K(n),y);return;case"thread-page:escape":I?.cancel();return;case"thread-page:draft-discard":if(!t.builtinHome)return;Kt(e,y,T),se();return;case"thread-page:grant-revoke":if(!t.builtinHome)return;K(n).whenShown(()=>{Ne(y.from,y.to)});return;default:return}}function $(n,p){let y=p.embed?p.embed.documentPath:n.target.path,S=p.embed?p.embed.sessionId:t.session,E={form:p.form,fields:p.fields,focus:p.focus,savedAtMs:u(),revision:n.target.revision};if(p.cleared.length>0&&!p.embed&&b.set(`${y}:${p.form.key}`,p.cleared),p.embed){let z=Pe(e,{session:S,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:u});for(let we of z.put(y,E))_(n,{kind:"thread-page:draft-notice",text:we});return}let C=n.handed.get(p.form.key);if(C){n.handed.delete(p.form.key);for(let[z,we]of Object.entries(C.fields)){let Pn=p.fields[z];if(JSON.stringify(Pn)!==JSON.stringify(we)&&typeof we=="string"&&we!==""&&!t.builtinHome)for(let On of jt(e,{session:t.session,documentPath:y,key:p.form.key,label:ct(p.form.key),field:z,value:we,reason:"field-filled",atMs:u()},T))_(n,{kind:"thread-page:draft-notice",text:On})}O(n)}for(let z of R.put(y,E))_(n,{kind:"thread-page:draft-notice",text:z})}function W(n){let p=new Map(R.forDocument(n.target.path).map(S=>[S.form.key,S])),y=[];for(let S of n.handed.keys()){let E=p.get(S);if(E)for(let[C,z]of Object.entries(E.fields))typeof z=="string"&&z!==""&&y.push({session:t.session,documentPath:n.target.path,key:S,label:ct(S),field:C,value:z,reason:"not-on-this-version",atMs:E.savedAtMs})}return y}function O(n){if(!t.builtinHome)for(let p of zt(e,t.session,n.target.path,W(n),T))_(n,{kind:"thread-page:draft-notice",text:p})}function se(){o&&_(o,{kind:"thread-page:drafts",leftovers:dt(e,t.drafts.retentionMs,u())})}function he(){if(t.builtinHome)for(let n of[o,i])n&&_(n,{kind:"thread-page:grants",grants:t.grants})}async function Ne(n,p){let y={actionToken:t.actionToken,action:"revokeGrant",target:p,from:n};try{let S=await g(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(y)}),E=await S.json().catch(()=>null);if(!S.ok||!x(E)||E.ok!==!0)throw new Error(x(E)&&typeof E.message=="string"&&E.message||`Request failed (${S.status})`);t.grants=t.grants.filter(C=>!(C.from===n&&C.sessionId===p)),he(),P.pollNow()}catch(S){f.notice(S instanceof Error?S.message:"Could not revoke")}}e.addEventListener("message",n=>{let p=n.data;if(!Ot(p))return;let y=o&&n.source===o.element.contentWindow?o:i&&n.source===i.element.contentWindow?i:null;if(!y)return;if(y.connected){y===o&&ie();return}let S=n.ports.length===1?n.ports[0]:void 0;S&&(ce(y,S),y===o&&p.pageRevision!==y.target.revision&&P.pollNow())});async function ke(n,p){let y={actionToken:t.actionToken,path:n,query:p};try{let S=await g(t.routes.documentSession,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(y)}),E=await S.json().catch(()=>null);if(!S.ok||!x(E)||E.ok!==!0||typeof E.actionToken!="string"||typeof E.pageRevision!="string"||typeof E.documentUrl!="string"||typeof E.path!="string"||typeof E.expiresAt!="number")return x(E)&&typeof E.message=="string"&&E.message||"That page could not be opened";let C=E.source==="offline"||E.source==="archived"?E.source:"live";return{documentUrl:E.documentUrl,path:E.path,query:typeof E.query=="string"?E.query:"",fragment:"",token:E.actionToken,revision:E.pageRevision,expiresAt:E.expiresAt,source:C,empty:E.empty===!0,deferredFiles:Array.isArray(E.deferredFiles)?E.deferredFiles.filter(z=>typeof z=="string"):[]}}catch{return"The host could not be reached"}}let de=!1;async function ie(){if(!(de||m==="DELETED")){if(a>=t.reload.loopCount){if(m="STOPPED",o){try{o.port?.close()}catch{}o.port=null}f.set(pn);return}a+=1,de=!0;try{if(!t.navigable){e.location.reload();return}m="RELOAD";let n=await ke(t.documentPath,t.documentQuery);if(typeof n=="string"){e.location.reload();return}n.fragment=c,ge(n,"reload")}finally{de=!1}}}function ue(n,p){let y=new URL(e.location.href);for(let E of[...y.searchParams.keys()])E!=="session"&&y.searchParams.delete(E);let S=n===xt&&!p?"":`${n}${p}`;return S&&y.searchParams.set("path",S),`${y.pathname}${y.search}${c}`}function ae(){return{[wt]:t.documentPath,[Tn]:c,[Rn]:t.documentQuery}}function Cn(n,p){if(!(!t.navigable||n===c)){c=n;try{p?e.history.pushState(ae(),"",ue(t.documentPath,t.documentQuery)):e.history.replaceState(ae(),"",ue(t.documentPath,t.documentQuery))}catch{}}}async function Ke(n,p=!0,y="",S=""){if(!t.navigable||!ee(n))return!1;if(n===t.documentPath&&S===t.documentQuery){if(y!==c){let C=await ke(n,S);return typeof C=="string"?!1:(C.fragment=y,c=y,ge(C,"document"),p&&e.history.pushState(ae(),"",ue(n,S)),!0)}return!1}let E=await ke(n,S);if(typeof E=="string")return f.notice(E),!1;if(E.fragment=y,c=y,w=null,ge(E,p?"document":"history"),p)try{e.history.pushState(ae(),"",ue(n,S))}catch{}return!0}if(t.navigable){try{e.history.replaceState(ae(),"",ue(t.documentPath,t.documentQuery))}catch{}e.addEventListener("popstate",n=>{let p=n.state;if(!x(p)||typeof p[wt]!="string")return;let y=Ze(p[Rn]);Ke(p[wt],!1,Me(p[Tn]),y.ok?y.query:"")})}d.addEventListener("visibilitychange",()=>{d.visibilityState==="hidden"&&o&&Te(o),G()}),e.addEventListener("storage",n=>{n.key!==null&&!n.key.startsWith(Oe)&&!n.key.startsWith("up:draft")||(t.builtinHome?se():o&&o.shown&&Vt(e,t.session,o.target.path,T))});let Fe=yt(d,{documentUrl:t.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:c,token:t.actionToken,revision:t.pageRevision,expiresAt:t.expiresAt,source:t.source,empty:t.empty,deferredFiles:t.deferredFiles},!1);return o=Fe,r.frameHost.appendChild(Fe.element),j(Fe,t.reload.waitMs,()=>{Fe.connected||ie()}),P.start(),{state:()=>m,shownFrame:()=>o?.element??null,incomingFrame:()=>i?.element??null,poller:P,notice:f,store:R,confirmer:q,voice:I,openDocument:Ke}}var Dr=Lt(document.currentScript),ze=e=>document.getElementById(e),Dn=ze("tp-notice"),Mn=ze("tp-frame-host"),In=ze("tp-dialog");if(!Dn||!Mn||!In)throw new Error("The shell\'s document is incomplete");An(window,Dr,{notice:Dn,frameHost:Mn,dialog:In,recorder:ze("tp-recorder")});})();';
 
 // ../pages-core/src/serving/shell-html.ts
 var SHELL_CSS = `:root{color-scheme:light dark;font:14px/1.4 system-ui,sans-serif;--bg:#f7f7f5;--surface:#fff;--ink:#17181b;--muted:#676c75;--line:#dfe0e3;--accent:#315fc5;--warn:#a54312}
