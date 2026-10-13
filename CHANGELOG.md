@@ -1,8 +1,27 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` c7bce47): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 94fb54a): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.2.3 — 2026-10-13
+
+A Claude Code host fix (B-0001). No protocol change, no pages-core change (`@unifedev/pages-core` stays 0.2.2), no
+bb host change (no bb release from this tag).
+
+### Fixed
+
+- **claude-pages CLI: output read through a pipe is whole.** `unife-pages guide` (and every other role) exited
+  right after writing its answer; on a pipe, as an agent's shell tool reads it, the write is asynchronous and the
+  exit dropped all but the first 64 KiB: the guide stopped inside "Capabilities from contributors", so the
+  contributors' methods, the errors, what a page cannot do and the limits never reached the agent (98,300 bytes into
+  a file, 65,536 through a pipe, 3 of 3 runs on Claude Code 2.1.296). The CLI now exits once stdout and stderr have
+  drained. Test: `packages/claude-pages/test/cli/pipe.test.ts` runs the built CLI's `guide`, `status` and `init`
+  into a file and through a pipe and compares the byte counts (fails on 0.2.2: 65,536 against 71,332).
+
+### `@unifedev/claude-pages`
+
+- `package.json` and `plugin.json` version 0.2.3.
 
 ## 1.10.2 (bb plugin) — 2026-10-11
 

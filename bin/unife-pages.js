@@ -238,10 +238,11 @@ async function main(argv, io) {
 if (process.env.UNIFE_PAGES_CLI_LIB !== "1") {
   const here = path3.dirname(new URL(import.meta.url).pathname);
   const pluginRoot = process.env.UNIFE_PAGES_PLUGIN_ROOT ?? path3.resolve(here, "..");
-  main(process.argv.slice(2), { out: (t) => process.stdout.write(t + "\n"), err: (t) => process.stderr.write(t + "\n"), env: process.env, pluginRoot }).then((code) => process.exit(code), (e) => {
+  const exit = (code) => process.stdout.write("", () => process.stderr.write("", () => process.exit(code)));
+  main(process.argv.slice(2), { out: (t) => process.stdout.write(t + "\n"), err: (t) => process.stderr.write(t + "\n"), env: process.env, pluginRoot }).then(exit, (e) => {
     process.stderr.write(`unife-pages: ${e.message}
 `);
-    process.exit(1);
+    exit(1);
   });
 }
 export {
