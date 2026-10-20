@@ -1,6 +1,6 @@
 {
   "name": "unife-pages",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Unife Pages for Claude Code: each session gets a web page it writes; forms on the page answer the session.",
   "author": { "name": "Bartosz" },
   "types": "./.claude-plugin/types/index.d.ts"
