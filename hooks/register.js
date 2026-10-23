@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.2.4",
+  pluginVersion: "0.3.0",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -346,10 +346,10 @@ async function post2($, namespace, declaration) {
 }
 function pagesNoun($) {
   return {
-    async contribute(declaration, handler) {
+    async contribute(declaration, handler, pageScript) {
       const { namespace: ns, ...rest } = declaration ?? {};
       if (typeof ns !== "string") return { ok: false, error: "declaration.namespace required" };
-      state.contributors.set(ns, { declaration: rest, handler });
+      state.contributors.set(ns, { declaration: rest, handler, ...pageScript ? { pageScript } : {} });
       if (!state.token) return { ok: true };
       return post2($, ns, rest);
     }
@@ -458,6 +458,12 @@ function handle($, line) {
     case "contrib.invoke": {
       const h = state.contributors.get(m.namespace)?.handler;
       const answer = h ? h({ method: m.method, params: m.params, caller: m.context, requestId: m.requestId }).then((result) => ({ result }), (e) => ({ failure: e.message })) : Promise.resolve({ failure: "no such contributor in this session" });
+      void answer.then((a) => call($, "POST", `/v1/calls/${encodeURIComponent(m.callId)}`, a)).catch(() => null);
+      return;
+    }
+    case "contrib.pageScript": {
+      const ask = state.contributors.get(m.namespace)?.pageScript;
+      const answer = ask ? ask({ caller: m.caller, documentPath: m.documentPath, have: m.have }).then((result) => ({ result }), (e) => ({ failure: e.message })) : Promise.resolve({ failure: "no page script for this contributor in this session" });
       void answer.then((a) => call($, "POST", `/v1/calls/${encodeURIComponent(m.callId)}`, a)).catch(() => null);
       return;
     }
@@ -609,7 +615,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.2.4";
+var PLUGIN_VERSION = "0.3.0";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
