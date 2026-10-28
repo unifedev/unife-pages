@@ -1927,28 +1927,43 @@ function parseOrigin(value) {
   if (url.protocol !== "http:" && url.protocol !== "https:" || !url.hostname) return null;
   return { protocol: url.protocol, host: foldHost(url.hostname), port: url.port || defaultPort(url.protocol) };
 }
-function externalUrlProblem(value, ownOrigins2 = []) {
-  if (typeof value !== "string" || value.length === 0 || value.length > 2048 || !/^[^\u0000- \u007f]+$/.test(value)) return "Expected an absolute http or https URL";
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return "Expected an absolute http or https URL";
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password) {
-    return "Expected an absolute http or https URL without credentials";
-  }
+function isOwnOrigin(parsed, ownOrigins2) {
   const target = { host: foldHost(parsed.hostname), port: parsed.port || defaultPort(parsed.protocol) };
   const targetLoopback = isLoopbackHost(target.host);
   for (const raw of ownOrigins2) {
     const own2 = parseOrigin(raw);
     if (!own2) continue;
     const ownLoopback = isLoopbackHost(own2.host);
-    if (own2.port === target.port && (own2.host === target.host || ownLoopback && targetLoopback)) return "This is the host's own address; use pages.open or sessions.openHost";
-    if (ownLoopback && own2.port === target.port) return "This is the host's own address; use pages.open or sessions.openHost";
-    if (!ownLoopback && own2.host === target.host) return "This is the host's own address; use pages.open or sessions.openHost";
+    if (own2.port === target.port && (own2.host === target.host || ownLoopback && targetLoopback)) return true;
+    if (ownLoopback && own2.port === target.port) return true;
+    if (!ownLoopback && own2.host === target.host) return true;
   }
+  return false;
+}
+function httpUrl(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 2048 || !/^[^\u0000- \u007f]+$/.test(value)) return null;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || !parsed.hostname || parsed.username || parsed.password) return null;
+  return parsed;
+}
+function externalUrlProblem(value, ownOrigins2 = []) {
+  const parsed = httpUrl(value);
+  if (!parsed) return "Expected an absolute http or https URL without credentials";
+  if (isOwnOrigin(parsed, ownOrigins2)) return "This is the host's own address; use pages.open or sessions.openHost";
   return null;
+}
+function hostPageTarget(value, ownOrigins2, base) {
+  const parsed = httpUrl(value);
+  if (!parsed || !isOwnOrigin(parsed, ownOrigins2)) return null;
+  if (parsed.pathname === `${base}/home`) return { home: true };
+  if (parsed.pathname !== `${base}/page`) return null;
+  const sessions = parsed.searchParams.getAll("session");
+  return sessions.length === 1 && sessions[0] ? { sessionId: sessions[0] } : null;
 }
 
 // ../pages-core/src/domain/json/strict-json.ts
@@ -2743,7 +2758,7 @@ var navigationOpenExternal = spec({
   validateResult: result(openedResult),
   doc: {
     params: "`{ url, label? }` \u2014 http or https only.",
-    result: '`{ opened: true }`. The confirmation names the destination origin and says it opens in a new tab; the page stays. An ordinary `<a href="https://\u2026">` in your page goes through this automatically. The host\'s own origins are refused with `invalid_params` before any dialog: use `pages.open` or `sessions.openHost`.'
+    result: '`{ opened: true }`. The confirmation names the destination origin and says it opens in a new tab; the page stays. An ordinary `<a href="https://\u2026">` in your page goes through this automatically. A URL that is the host\'s own page address (`\u2026/page?session=<id>`, or `\u2026/home`) opens that page at its entry, in place, with no dialog, as `pages.open` (other parameters and a fragment are not carried); any other address of the host is refused with `invalid_params` before any dialog: use `pages.open` or `sessions.openHost`.'
   }
 });
 var respondShape = { id: waitId, answers: optional(answersSchema), decision: optional(decisionSchema) };
@@ -13767,11 +13782,15 @@ On the reader's click:
   site in a **new tab** as itself, signed in as the reader is. Your page is
   never replaced. Call \`navigation.openExternal\` yourself from script for the
   same thing.
-- **This host's own addresses are not "another site".** \`navigation.openExternal\`
-  refuses them with \`invalid_params\`, before any dialog, and so does a link to
-  one. Open another page with \`pages.open\`, the host's home with
-  \`pages.open({ home: true })\`, a session with \`sessions.openHost\` where the
-  host has it; link your own files relatively.
+- **This host's own addresses are not "another site".** A link to another
+  session's page at its address on this host (\`\u2026/page?session=<id>\`) or to the
+  host's home (\`\u2026/home\`) opens it **in place** with no dialog, as
+  \`pages.open\` does, at the page's entry (a \`path\` or \`#part\` in the
+  link is not carried). Any other address of this host is refused with
+  \`invalid_params\`, before any dialog. From script, open another page with
+  \`pages.open\`, the host's home with \`pages.open({ home: true })\`, a session
+  with \`sessions.openHost\` where the host has it; link your own files
+  relatively.
 - **\`window.open(url)\`** from a click handler opens a window with no dialog \u2014
   but that window **stays sandboxed**: the site in it has no cookies and no
   storage, as in a frame. Fine for a plain page or a document you built; use
@@ -15374,6 +15393,9 @@ async function ownOrigins(context) {
   own2.push(...declared);
   return own2;
 }
+async function hostPageParams(url, serving, request2) {
+  return hostPageTarget(url, await ownOrigins({ requestOrigins: requestOrigins(request2.headers), serving }), serving.serving.base());
+}
 var navigationOpenExternal2 = handler({
   method: "navigation.openExternal",
   async refuse(params2, context) {
@@ -16647,7 +16669,11 @@ function createDispatcher(ctx, handlers = ALL_HANDLERS) {
         if (relayed && !whole && !(relayed.contributor && relayed.effect === "read")) throw new PageError("unavailable", PUBLIC_MESSAGES.embedReadsOnly);
       }
       const page2 = await loadPageState(ctx, caller.session, caller.path);
-      const invocation = resolveParams(bridgeRequest, lookup, page2.revision);
+      let invocation = resolveParams(bridgeRequest, lookup, page2.revision);
+      if (invocation.spec.method === "navigation.openExternal") {
+        const target = await hostPageParams(invocation.params.url, ctx, request2);
+        if (target) invocation = resolveParams({ ...bridgeRequest, method: "pages.open", params: target }, lookup, page2.revision);
+      }
       const spec2 = invocation.spec;
       const contributed2 = spec2.contributor ? spec2 : null;
       const entry = contributed2 ? null : byMethod.get(spec2.method);
