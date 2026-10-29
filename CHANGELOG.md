@@ -1,8 +1,23 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 00d44b4): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` a9818c4): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.17 — 2026-10-29
+
+On Claude Code, a page answer that runs after you type `/resume` or `/branch` now reads "delivered" on the page it came
+from, and runs only once (B-0229). `@unifedev/claude-pages` 0.6.17; `@unifedev/pages-core` stays 0.6.8 and the bb
+plugin `@unifedev/thread-pages` 1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: an answer sent just before a `/resume` or `/branch` runs once and reads "delivered".** If a page
+  answer was waiting in Claude Code's queue when you typed `/resume <another session>` or `/branch`, Claude Code ran it
+  in the conversation you switched to, but its page kept it as "queued". The next time you opened the session you had
+  left, the answer ran a second time. Unife Pages now reports it done for the session it came from, as it already did
+  after a `/clear`, and only when it saw that session end at the switch. Where the answer runs does not change. Tests:
+  `packages/claude-pages/test/daemon/control.test.ts`, `test/mod/mod.test.ts`, `test/bridge/ended.test.ts`.
 
 ## 0.6.16 — 2026-10-29
 

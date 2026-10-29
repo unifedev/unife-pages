@@ -21575,7 +21575,7 @@ ${this.hostStatus(sessionId)}`;
     res.flushHeaders();
     const a = this.d.bridges.attach(id, res, { pluginVersion: String(body.pluginVersion ?? ""), pluginRoot: String(body.pluginRoot ?? "") });
     const pluginDirs = Array.isArray(body.pluginDirs) ? body.pluginDirs.filter((d) => typeof d === "string" && d.startsWith("/")) : [];
-    const { backfill } = this.d.onAttach({ sessionId: id, cwd: String(body.cwd ?? ""), pluginRoot: String(body.pluginRoot ?? ""), ...body.clearedFrom ? { clearedFrom: String(body.clearedFrom) } : {}, ...body.forkOf ? { forkOf: String(body.forkOf) } : {}, ...body.underHost === "bb" ? { underHost: "bb", ...typeof body.underHostId === "string" ? { underHostId: body.underHostId.slice(0, 128) } : {} } : {}, pluginDirs });
+    const { backfill } = this.d.onAttach({ sessionId: id, cwd: String(body.cwd ?? ""), pluginRoot: String(body.pluginRoot ?? ""), ...body.clearedFrom ? { clearedFrom: String(body.clearedFrom) } : {}, ...body.forkOf ? { forkOf: String(body.forkOf) } : {}, ...body.resumedFrom ? { resumedFrom: String(body.resumedFrom) } : {}, ...body.underHost === "bb" ? { underHost: "bb", ...typeof body.underHostId === "string" ? { underHostId: body.underHostId.slice(0, 128) } : {} } : {}, pluginDirs });
     this.d.bridges.write(a, { type: "hello", sessionToken: a.token, daemon: { version: this.d.version, pid: process.pid }, page: { root: this.d.pageRoot(id), url: this.d.pageUrl(id) }, backfill });
     this.d.drainQueue(id);
   }
@@ -21602,7 +21602,7 @@ ${this.hostStatus(sessionId)}`;
     const failed2 = body.failed && typeof body.failed === "object" ? { fields: (Array.isArray(body.failed.fields) ? body.failed.fields : []).filter((f) => typeof f === "string").slice(0, 3), reason: String(body.failed.reason ?? "the command failed").slice(0, 512) } : void 0;
     const owner = this.d.ackOwner(ctx.session, did);
     const ok = this.d.queue.ack(owner, did, failed2);
-    if (owner !== ctx.session && ok) this.d.log.info(`session ${owner}: delivery ${did} acked by ${ctx.session}, cleared from it`);
+    if (owner !== ctx.session && ok) this.d.log.info(`session ${owner}: delivery ${did} acked by ${ctx.session}, switched to from it`);
     if (ok && failed2) {
       this.d.registry.upsert(owner, { lastDeliveryError: { deliveryId: did, fields: failed2.fields, reason: failed2.reason, atMs: Date.now() } });
       this.d.events.add(owner, "delivery", true, `not delivered: ${failed2.fields.join(", ")} could not be set`, failed2.reason);
@@ -21756,7 +21756,7 @@ function releaseLock(home3) {
 
 // src/daemon/daemon.ts
 var ROOT_WORDS = "the folder init prints as `Root`";
-var ACK_CLEARED_DEPTH = 8;
+var ACK_SWITCH_DEPTH = 8;
 var Daemon = class {
   constructor(opts) {
     this.opts = opts;
@@ -21985,13 +21985,16 @@ var Daemon = class {
     if (!prev) patch.kind = "interactive";
     if (a.clearedFrom) patch.clearedFromId = a.clearedFrom;
     if (a.forkOf) patch.forkOfId = a.forkOf;
+    if (a.resumedFrom) patch.resumedFromId = a.resumedFrom;
     if (a.underHost) {
       patch.underHost = a.underHost;
       if (a.underHostId) patch.underHostId = a.underHostId;
     }
     const entry = this.registry.upsert(a.sessionId, patch);
-    if (entry.ended) {
+    const stale = entry.resumedFromId && !a.resumedFrom;
+    if (entry.ended || stale) {
       const { ended: _e, ...rest } = entry;
+      if (stale) delete rest.resumedFromId;
       this.registry.replace(rest);
     }
     this.events.add(a.sessionId, "attach", true, "bridge attached");
@@ -22000,18 +22003,28 @@ var Daemon = class {
     return { backfill: !this.rows.hasRows(a.sessionId) };
   }
   /**
-   * The session whose queue holds `deliveryId`, for an ack from `sessionId`: its own, else the nearest session it was
-   * cleared from (`clearedFromId`, followed back through repeated `/clear`s) that holds it. Only that line, and only to
-   * a session this daemon saw end by `clear`: a session acks no delivery of one it only says it was cleared from (B-0217,
-   * B-0224). Falls back to `sessionId`, whose queue then misses.
+   * The session whose queue holds `deliveryId`, for an ack from `sessionId`: its own, else the nearest session this
+   * Claude Code left for it, followed back through repeated switches: `clearedFromId` (`/clear`), `resumedFromId`
+   * (`/resume`) or `forkOfId` (`/branch`). Each hop goes only to a session this daemon saw end at that switch (reason
+   * `clear` for the first, `resume` for the other two): a session acks no delivery of one it only says it came from
+   * (B-0217, B-0224, B-0229). Falls back to `sessionId`, whose queue then misses.
    */
   ackOwner(sessionId, deliveryId) {
-    const seen = /* @__PURE__ */ new Set();
-    for (let id = sessionId; id && !seen.has(id) && seen.size < ACK_CLEARED_DEPTH; ) {
-      seen.add(id);
-      if (this.queue.owner(deliveryId, [id])) return id;
-      const from = this.registry.get(id)?.clearedFromId;
-      id = from && this.registry.get(from)?.ended?.reason === "clear" ? from : void 0;
+    const seen = /* @__PURE__ */ new Set([sessionId]);
+    for (let level = [sessionId]; level.length && seen.size <= ACK_SWITCH_DEPTH; ) {
+      const hit = this.queue.owner(deliveryId, level);
+      if (hit) return hit;
+      const nextLevel = [];
+      for (const id of level) {
+        const e = this.registry.get(id);
+        for (const [from, reason] of [[e?.clearedFromId, "clear"], [e?.resumedFromId, "resume"], [e?.forkOfId, "resume"]]) {
+          if (from && !seen.has(from) && seen.size <= ACK_SWITCH_DEPTH && this.registry.get(from)?.ended?.reason === reason) {
+            seen.add(from);
+            nextLevel.push(from);
+          }
+        }
+      }
+      level = nextLevel;
     }
     return sessionId;
   }

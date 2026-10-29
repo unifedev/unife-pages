@@ -139,6 +139,7 @@ var pluginRoot = argOf("plugin-root") ?? path4.resolve(path4.dirname(fileURLToPa
 var parentPid = Number(argOf("parent-pid")) || process.ppid;
 var clearedFrom = argOf("cleared-from");
 var forkOf = argOf("fork-of");
+var resumedFrom = argOf("resumed-from");
 if (!sid) {
   process.stderr.write("bridge: --session required\n");
   process.exit(2);
@@ -203,7 +204,7 @@ function connect() {
   return new Promise((resolve) => {
     const pluginDirs = (process.env.CLAUDE_CODE_PLUGIN_DIRS ?? "").split(path4.delimiter).map((d) => d.trim()).filter(Boolean);
     const own = pluginVersion();
-    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
+    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
     const text = JSON.stringify(body);
     const req = http.request({
       socketPath: sock,

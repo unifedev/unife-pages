@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.16",
+  pluginVersion: "0.6.17",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -386,7 +386,8 @@ function runBridge($, extra = {}) {
         "--parent-pid",
         "0",
         ...extra.clearedFrom ? ["--cleared-from", extra.clearedFrom] : [],
-        ...extra.forkOf ? ["--fork-of", extra.forkOf] : []
+        ...extra.forkOf ? ["--fork-of", extra.forkOf] : [],
+        ...extra.resumedFrom ? ["--resumed-from", extra.resumedFrom] : []
       ];
       child = $.process.spawn({ argv });
       state.bridge = child;
@@ -716,7 +717,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.16";
+var PLUGIN_VERSION = "0.6.17";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -749,7 +750,7 @@ function register(on) {
       } catch {
       }
       state.bridgeAlive = false;
-      runBridge($, e.source === "clear" ? { clearedFrom: previous } : e.source === "fork" ? { forkOf: previous } : {});
+      runBridge($, e.source === "clear" ? { clearedFrom: previous } : e.source === "fork" ? { forkOf: previous } : e.source === "resume" && previous !== id ? { resumedFrom: previous } : {});
     } else if (!state.sessionId) {
       await ids($);
       runBridge($);
