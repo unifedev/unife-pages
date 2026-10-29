@@ -1,8 +1,23 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 4f03cb7): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` cfa4a1a): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.14 — 2026-10-29
+
+On Claude Code, a page that sent answers just before you typed `/clear` now reads them as delivered (B-0217).
+`@unifedev/claude-pages` 0.6.14; `@unifedev/pages-core` stays 0.6.7 and the bb plugin `@unifedev/thread-pages`
+1.14.7: neither changes.
+
+### Fixed
+
+- **Claude Code: answers sent from a page just before a `/clear` no longer stay "waiting" on that page.** When you
+  type `/clear` while Claude Code works, it runs the clear as soon as the turn ends, before the page answers that were
+  already waiting, and then runs those answers once in the new, cleared session. That is Claude Code's own queue, and
+  it stays so: the answers still run there, in the order you sent them. But the old page never heard that they went
+  through: its activity showed no "delivered", and the answers stayed in its queue. Now each one is reported to the
+  page it came from. Tests: `packages/claude-pages/test/daemon/control.test.ts`, `packages/claude-pages/test/mod/mod.test.ts`.
 
 ## 1.14.7 (bb plugin) — 2026-10-29
 

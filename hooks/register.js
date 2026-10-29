@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.13",
+  pluginVersion: "0.6.14",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -451,7 +451,7 @@ function handle($, line) {
       return;
     }
     case "steer":
-      void $.session.append({ message: { type: "user", role: "user", content: [{ type: "text", text: m.text }] } }).then((r) => call($, "POST", `/v1/deliveries/${encodeURIComponent(m.deliveryId)}/ack`, "uuid" in r ? { messageId: r.uuid } : {})).catch((e) => $.ui.log(`unife-pages: steer failed: ${e.message}`, { to: "debug" }));
+      void $.session.append({ message: { type: "user", role: "user", content: [{ type: "text", text: m.text }] } }).then((r) => ack($, m.deliveryId, "uuid" in r ? { messageId: r.uuid } : {})).catch((e) => $.ui.log(`unife-pages: steer failed: ${e.message}`, { to: "debug" }));
       return;
     case "turn.abort":
       if (state.turnId) void $.turn.abort({ turnId: state.turnId }).catch((e) => $.ui.log(`unife-pages: abort failed: ${e.message}`, { to: "debug" }));
@@ -484,9 +484,14 @@ function handle($, line) {
 function hasSettings(settings) {
   return !!settings && (settings.model !== void 0 || settings.reasoningLevel !== void 0);
 }
+async function ack($, deliveryId, body) {
+  await waitForToken($);
+  const r = await call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, body);
+  if (r.status >= 300) $.ui.log(`unife-pages: ack of ${deliveryId} refused: ${r.status}`, { to: "debug" });
+}
 function submitPlain($, deliveryId, text) {
   $.ui.toast("Answer from your page");
-  void submitTaken($, text).then(() => call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, {})).catch((e) => $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" })).finally(() => state.deliveries.delete(deliveryId));
+  void submitTaken($, text).then(() => ack($, deliveryId, {})).catch((e) => $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" })).finally(() => state.deliveries.delete(deliveryId));
 }
 async function postSettings($) {
   const body = {};
@@ -607,7 +612,7 @@ async function submitWithSettings($, delivery) {
       $.ui.log(`a reply from your page was not delivered \u2014 ${reason}`);
       $.ui.log(`unife-pages: delivery ${deliveryId} not submitted: ${reason}`, { to: "debug" });
       try {
-        await call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, { failed: { fields: [field], reason } });
+        await ack($, deliveryId, { failed: { fields: [field], reason } });
       } catch (e) {
         $.ui.log(`unife-pages: failed ack failed: ${e.message}`, { to: "debug" });
       } finally {
@@ -623,7 +628,7 @@ async function submitWithSettings($, delivery) {
     const taken = submitTaken($, text);
     state.waiting--;
     await taken;
-    await call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, {});
+    await ack($, deliveryId, {});
   } catch (e) {
     $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
   } finally {
@@ -678,7 +683,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.13";
+var PLUGIN_VERSION = "0.6.14";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();

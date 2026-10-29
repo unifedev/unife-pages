@@ -21566,13 +21566,15 @@ ${this.hostStatus(sessionId)}`;
     const body = await ctx.body() ?? {};
     if (typeof body.messageId === "string") this.d.steerIds.set(did, body.messageId);
     const failed2 = body.failed && typeof body.failed === "object" ? { fields: (Array.isArray(body.failed.fields) ? body.failed.fields : []).filter((f) => typeof f === "string").slice(0, 3), reason: String(body.failed.reason ?? "the command failed").slice(0, 512) } : void 0;
-    const ok = this.d.queue.ack(ctx.session, did, failed2);
+    const owner = this.d.ackOwner(ctx.session, did);
+    const ok = this.d.queue.ack(owner, did, failed2);
+    if (owner !== ctx.session && ok) this.d.log.info(`session ${owner}: delivery ${did} acked by ${ctx.session}, cleared from it`);
     if (ok && failed2) {
-      this.d.registry.upsert(ctx.session, { lastDeliveryError: { deliveryId: did, fields: failed2.fields, reason: failed2.reason, atMs: Date.now() } });
-      this.d.events.add(ctx.session, "delivery", true, `not delivered: ${failed2.fields.join(", ")} could not be set`, failed2.reason);
-      this.d.log.warn(`session ${ctx.session}: delivery ${did} not submitted \u2014 ${failed2.fields.join(", ")} could not be set: ${failed2.reason}`);
+      this.d.registry.upsert(owner, { lastDeliveryError: { deliveryId: did, fields: failed2.fields, reason: failed2.reason, atMs: Date.now() } });
+      this.d.events.add(owner, "delivery", true, `not delivered: ${failed2.fields.join(", ")} could not be set`, failed2.reason);
+      this.d.log.warn(`session ${owner}: delivery ${did} not submitted \u2014 ${failed2.fields.join(", ")} could not be set: ${failed2.reason}`);
     } else {
-      this.d.events.add(ctx.session, "delivery", true, ok ? "delivered" : "ack for an unknown delivery");
+      this.d.events.add(owner, "delivery", true, ok ? "delivered" : "ack for an unknown delivery");
     }
     json3(ctx.res, ok ? 200 : 404, { ok });
   }
@@ -21718,6 +21720,7 @@ function releaseLock(home3) {
 
 // src/daemon/daemon.ts
 var ROOT_WORDS = "the folder init prints as `Root`";
+var ACK_CLEARED_DEPTH = 8;
 var Daemon = class {
   constructor(opts) {
     this.opts = opts;
@@ -21959,6 +21962,19 @@ var Daemon = class {
     this.log.info(`session ${a.sessionId}: bridge attached`);
     this.waits.restore(a.sessionId);
     return { backfill: !this.rows.hasRows(a.sessionId) };
+  }
+  /**
+   * The session whose queue holds `deliveryId`, for an ack from `sessionId`: its own, else the nearest session it was
+   * cleared from (`clearedFromId`, followed back through repeated `/clear`s) that holds it. Only that line: a session
+   * acks no delivery of a session it was not cleared from (B-0217). Falls back to `sessionId`, whose queue then misses.
+   */
+  ackOwner(sessionId, deliveryId) {
+    const seen = /* @__PURE__ */ new Set();
+    for (let id = sessionId; id && !seen.has(id) && seen.size < ACK_CLEARED_DEPTH; id = this.registry.get(id)?.clearedFromId) {
+      seen.add(id);
+      if (this.queue.owner(deliveryId, [id])) return id;
+    }
+    return sessionId;
   }
   /** The last open wait of a session closed: a hold runs inside a turn, so the state the hold replaced is `working`; `turn.complete` makes it idle (CP-2). */
   onWaitsClosed(sid) {
