@@ -2,7 +2,8 @@
 
 // src/cli/main.ts
 import fs2 from "node:fs";
-import path3 from "node:path";
+import path4 from "node:path";
+import { fileURLToPath } from "node:url";
 
 // src/shared/paths.ts
 import os from "node:os";
@@ -16,14 +17,44 @@ var logPath = (home) => path.join(home, "daemon.log");
 
 // src/shared/daemon-start.ts
 import fs from "node:fs";
-import path2 from "node:path";
+import path3 from "node:path";
 import { spawnSync } from "node:child_process";
 
 // src/shared/env.ts
-var SESSION_HOST_VAR = /^BB_/;
-function withoutSessionEnv(env = process.env) {
+import path2 from "node:path";
+var MACHINE_VARS = /* @__PURE__ */ new Set([
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "PATH",
+  "TMPDIR",
+  "CLAUDE_CONFIG_DIR",
+  "LANG",
+  "TZ",
+  "UNIFE_PAGES_HOME",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "all_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "SSH_AUTH_SOCK",
+  "DISPLAY",
+  "WAYLAND_DISPLAY",
+  "DBUS_SESSION_BUS_ADDRESS",
+  "XAUTHORITY"
+]);
+var MACHINE_VAR_FAMILY = /^(LC_|XDG_)/;
+function daemonEnv(env = process.env) {
   const out = {};
-  for (const [k, v] of Object.entries(env)) if (!SESSION_HOST_VAR.test(k)) out[k] = v;
+  for (const [k, v] of Object.entries(env)) if (MACHINE_VARS.has(k) || MACHINE_VAR_FAMILY.test(k)) out[k] = v;
+  if (out.CLAUDE_CONFIG_DIR !== void 0 && !path2.isAbsolute(out.CLAUDE_CONFIG_DIR)) delete out.CLAUDE_CONFIG_DIR;
   return out;
 }
 
@@ -69,7 +100,7 @@ function releaseLock(home) {
 }
 function spawnDaemon(home, pluginRoot, env = process.env) {
   if (!takeLock(home)) return null;
-  const daemonJs = path2.join(pluginRoot, "bin", "daemon.js");
+  const daemonJs = path3.join(pluginRoot, "bin", "daemon.js");
   const script = [
     'const { spawn } = require("node:child_process"); const fs = require("node:fs");',
     'const fd = fs.openSync(process.env.UNIFE_PAGES_LOG, "a", 0o600);',
@@ -77,7 +108,7 @@ function spawnDaemon(home, pluginRoot, env = process.env) {
     "c.unref(); process.stdout.write(String(c.pid ?? 0));"
   ].join(" ");
   const r = spawnSync(process.execPath, ["-e", script], {
-    env: { ...withoutSessionEnv(env), UNIFE_PAGES_HOME: home, UNIFE_PAGES_PLUGIN_ROOT: pluginRoot, UNIFE_PAGES_LOCK_HELD: "1", UNIFE_PAGES_LOG: logPath(home), UNIFE_PAGES_DAEMON_JS: daemonJs },
+    env: { ...daemonEnv(env), UNIFE_PAGES_HOME: home, UNIFE_PAGES_PLUGIN_ROOT: pluginRoot, UNIFE_PAGES_LOCK_HELD: "1", UNIFE_PAGES_LOG: logPath(home), UNIFE_PAGES_DAEMON_JS: daemonJs },
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1e4
   });
@@ -236,8 +267,8 @@ async function main(argv, io) {
   return 1;
 }
 if (process.env.UNIFE_PAGES_CLI_LIB !== "1") {
-  const here = path3.dirname(new URL(import.meta.url).pathname);
-  const pluginRoot = process.env.UNIFE_PAGES_PLUGIN_ROOT ?? path3.resolve(here, "..");
+  const here = path4.dirname(fileURLToPath(import.meta.url));
+  const pluginRoot = process.env.UNIFE_PAGES_PLUGIN_ROOT ?? path4.resolve(here, "..");
   const exit = (code) => process.stdout.write("", () => process.stderr.write("", () => process.exit(code)));
   main(process.argv.slice(2), { out: (t) => process.stdout.write(t + "\n"), err: (t) => process.stderr.write(t + "\n"), env: process.env, pluginRoot }).then(exit, (e) => {
     process.stderr.write(`unife-pages: ${e.message}

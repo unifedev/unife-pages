@@ -1,8 +1,229 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 8f676d5): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` e3f3a9d): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.14.5 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.9 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.5`): an `html` frame given no folder starts fresh
+again on each `embed`, and a restored scroll survives a frame's late viewport, from pages-core.
+
+## 0.6.9 — 2026-10-29
+
+Only an `html` frame its page gave a folder is a new version of one document; one without starts fresh on each
+`embed`, as in 0.5.2. A restored scroll is applied again only once a frame has a height. In pages-core, so both hosts
+carry it (B-0159, B-0158): spec 02 R4.42a, R4.48a; 08 A207; fixture 15.
+
+`@unifedev/pages-core` 0.6.5, `@unifedev/claude-pages` 0.6.9, the bb plugin `@unifedev/thread-pages` 1.14.5.
+
+### Changed
+
+- **An `html` frame given no folder starts fresh on each `embed`, as in 0.5.2.** `threadPage.embed(iframe, { html })`
+  without `scope` (or with `null`) on an `<iframe>` that shows an `html` frame now shows a fresh frame: no drafts and
+  no scroll carried from the earlier document, and the frame's `setDirty(true)`, typing or answer in flight does not
+  hold the switch. 0.5.3 counted two calls without a `scope` as versions of one document, so a page switching one
+  frame between different snippets carried a form's text from one into the other and waited while the reader typed.
+  This holds also where the frame is bound to the page's own folder only because it was given none (0.5.4), and where
+  one of the two calls gives a `scope` and the other does not. A frame given the same `scope` in both calls keeps
+  0.5.3's behaviour: a new version that keeps the reader's typing and scroll and waits while they type. Tests:
+  `packages/pages-core/test/runtime/kernel/embed.test.ts`.
+
+### Fixed
+
+- **A restored scroll survives a resize that leaves the frame without a height.** A frame that gets its viewport late
+  (Firefox) has its scroll applied again on the first resize; a resize that changed only the width, with the height
+  still 0, used that up and the frame stayed at the top. Now the scroll is applied again on the first resize that
+  gives the frame a height. Test: `packages/pages-core/test/runtime/kernel/restore.test.ts`.
+
+## 0.6.8 — 2026-10-29
+
+On Claude Code, page answers that reach a session together are each delivered once (B-0185). `@unifedev/claude-pages`
+0.6.8; `@unifedev/pages-core` stays 0.6.4 and the bb plugin `@unifedev/thread-pages` 1.14.4: neither changes.
+
+### Fixed
+
+- **Claude Code: page answers that reach a session together are each delivered once.** When two or more answers
+  reached a Claude Code session at once (sent while a turn ran, or while the session was idle or away), Claude Code
+  ran them in one turn but confirmed only the last of them, so the others stayed queued: a session started fresh for
+  each turn (`claude -p`, or a resumed one) was handed the same answers again at every later turn, and the page kept
+  showing Queued where it should say Started. Every answer in such a turn is now marked started, and an answer that
+  changes the model or effort no longer holds up the answers after it. Answers already waiting in a queue from an
+  earlier version are delivered once more after the update, then marked started. Test:
+  `packages/claude-pages/test/mod/mod.test.ts`.
+
+## 1.14.4 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.7 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.4`): a page opened in the home shows its own
+frames as on its own address, from pages-core.
+
+## 0.6.7 — 2026-10-29
+
+A page opened in the home shows its own frames, as on its own address (B-0189). `@unifedev/pages-core` 0.6.4,
+`@unifedev/claude-pages` 0.6.7 and the bb plugin `@unifedev/thread-pages` 1.14.4: the same change on both hosts.
+Spec 02 R4.48b, R4.52; 03 R5.59a, R5.61a; 05 R3.9; 07 R5.93; 08 A213. No agent text changed.
+
+### Fixed
+
+- **A page opened in the home shows its own frames.** The home's view of a session's page had no `threadPage.embed`,
+  so a page that shows itself through frames of its own showed blank there: a Syns workspace opened from the home
+  without the agent's page inside it (or, with Syns 0.12, did not open at all). Now `embed` works in the home's view
+  as on the page's own address: `{ html }` frames and the session's own documents, their storage and plugin calls as
+  that page's, an app frame held to its folder with its plugin told the call came from it, their forms delivered as
+  from that frame, and inside them another session's page as it shows inside that page, answered under that page's
+  grant and framing line. Uploads, files in forms and large media stay out of the home's view and its frames.
+  Tests: `packages/pages-core/test/serving/home-view.test.ts`, `test/runtime/kernel/embed.test.ts`.
+
+## 1.14.3 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.6 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.3`): a form's *Sent* stands until the agent's turn
+ends, on the page and inside another page's embed of it.
+
+## 0.6.6 — 2026-10-29
+
+A form's delivery word (*Sent*, *Queued*, *Steered*) stands until the session is next idle (B-0186).
+`@unifedev/pages-core` 0.6.3, `@unifedev/claude-pages` 0.6.6 and the bb plugin `@unifedev/thread-pages` 1.14.3: the
+same change on both hosts. Spec 05 R2.24; 08 A212.
+
+### Fixed
+
+- **A form's *Sent* stays until the agent's turn ends.** Any change of the session's working state cleared a form's
+  delivery word, so the turn the answer started replaced *Sent* with the working text at once: inside another page's
+  `embed` of the page within one round trip, so the reader never saw *Sent*, and on the page itself after about 2 s.
+  When the turn ended the line went blank and nothing said the answer had arrived. Now *Sent*, *Queued* or *Steered*
+  stands through the turn it started or waits behind and goes when the session is next idle, or when the reader
+  types in that form again; the page's other forms show the working text as before, and an error still stands until
+  the reader types in its form. Test: `packages/pages-core/test/runtime/kernel/session-state.test.ts`.
+
+## 1.14.2 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.5 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.2`): an app's answer from a frame of the page no
+longer says it was given on an earlier version when only the page around it changed.
+
+## 0.6.5 — 2026-10-29
+
+An answer sent from an app shown in a frame of the agent's page no longer says it was given on an earlier version
+when only the page around it changed (B-0181). `@unifedev/pages-core` 0.6.2, `@unifedev/claude-pages` 0.6.5 and the
+bb plugin `@unifedev/thread-pages` 1.14.2: the same change on both hosts.
+
+### Fixed
+
+- **An app's answer no longer reads "Answered on an earlier version of the page" when the app did not change.** A
+  page can show an app in a frame (a Syns workspace app, or any frame the page gives its own HTML). When the agent
+  rewrote only its own page while the app stayed open, the app's next answer reached the agent with that line, as
+  if the reader had typed into an outdated form. The page holds that app's document and the answer is always sent
+  from what is on screen, so the line is now never added to it. Answers from the page's own forms and from a frame
+  showing another file of the page keep the line as before. Test: `packages/pages-core/test/serving/submit.test.ts`.
+
+## 0.6.4 — 2026-10-29
+
+On Claude Code, the page server uses the Claude Code config folder its sessions use, and keeps its own internal
+settings to itself (B-0179, B-0182). `@unifedev/claude-pages` 0.6.4; `@unifedev/pages-core` stays 0.6.1 and the bb
+plugin `@unifedev/thread-pages` 1.14.1: neither changes.
+
+### Fixed
+
+- **Claude Code: with `CLAUDE_CONFIG_DIR` set, the page server starts the extensions installed in that folder.**
+  Claude Code can keep its config somewhere other than `~/.claude` (a second account, for example). The page server
+  still looked for installed extensions in `~/.claude`, while the sessions a page starts used the other folder, so
+  extensions and sessions came from two configs. Now the page server and the session hooks find the config folder
+  the same way: `CLAUDE_CONFIG_DIR` when it is set to a full path, else `~/.claude` (Claude Code reads a relative
+  or `~` path from whatever folder it runs in, so the page server leaves such a value out and its sessions use
+  `~/.claude` as well). Nothing changes if you do not set it. Tests:
+  `packages/claude-pages/test/daemon/supervisor.test.ts`, `packages/claude-pages/test/daemon/env.test.ts`.
+- **Claude Code: sessions and extensions the page server starts no longer get its internal settings.** One of them
+  said which copy of the plugin the page server runs from, and the `unife-pages` command in a page-started session
+  believed it: if the page server had stopped, that session restarted it from the page server's older plugin copy
+  instead of its own. Now only the state-folder setting (`UNIFE_PAGES_HOME`) passes from the page server to what it
+  starts, and from whoever starts the page server to it. A page server already running keeps the old behaviour until
+  the first new session after the update replaces it. The same holds for what opens a session from a page on
+  Linux. And the `unife-pages` command now finds its own plugin folder when that folder's path has a space in it.
+  Tests: `packages/claude-pages/test/daemon/env.test.ts`, `packages/claude-pages/test/daemon/open.test.ts`,
+  `packages/claude-pages/test/cli/root.test.ts`.
+
+## 0.6.3 — 2026-10-29
+
+On Claude Code, the page server no longer takes on the settings of the session that started it, and a second stop
+request no longer cuts its stop short (B-0175, B-0176). `@unifedev/claude-pages` 0.6.3; `@unifedev/pages-core` stays
+0.6.1 and the bb plugin `@unifedev/thread-pages` 1.14.1: neither changes.
+
+### Fixed
+
+- **Claude Code: sessions started from a page use your own login and settings.** The page server runs as one
+  background daemon per machine, and it kept a copy of the environment of whichever session started it, then passed
+  that on to every session a page starts and to every extension it runs. A daemon first started from an agent
+  session could make every page-started session use that agent's API endpoint and token, its effort and its session
+  markers; since 0.6.2 that happens again at every update, from whichever new session comes first. Now the daemon
+  starts with a short fixed list of machine-level variables (who you are and where your home and tools are, language
+  and time zone, network proxies and certificates, the ssh agent), so a page-started session behaves like one opened
+  in a new terminal. One change to know: a Claude Code login kept only in a shell-exported variable (an exported API
+  key) no longer reaches page-started sessions; Claude Code's own `env` setting in `~/.claude/settings.json` still
+  does. Tests: `packages/claude-pages/test/daemon/env.test.ts`, `packages/claude-pages/test/bridge/handover.test.ts`.
+- **Claude Code: two sessions starting at once after an update no longer leave an extension running twice.** Each new
+  session asks the old daemon to stop; when two asked together, the second request ended the daemon at once, and an
+  extension slow to quit kept running beside the new daemon's copy. The same happened when `unife-pages daemon stop`
+  met another stop request. Now the daemon's stop runs once and still waits for every extension, ending a slow one
+  after 5 s. Daemons from earlier releases keep the old behaviour until they
+  are replaced. Test: `packages/claude-pages/test/daemon/stop.test.ts`.
+
+## 0.6.2 — 2026-10-29
+
+On Claude Code, an update reaches the running daemon (B-0171). `@unifedev/claude-pages` 0.6.2; `@unifedev/pages-core`
+stays 0.6.1 and the bb plugin `@unifedev/thread-pages` 1.14.1: neither changes.
+
+### Fixed
+
+- **Claude Code: the first session after an update moves the daemon onto the new version.** The page server runs as
+  one background daemon per machine, and it kept the version that started it: after a plugin update, new sessions
+  attached to the old daemon, so what a release changes in serving (0.6.0's shortcuts, for example) stayed off until
+  the machine restarted or someone ran `unife-pages daemon stop`. Now a session from a newer installed plugin stops
+  the running daemon with the same clean stop as `daemon stop` (sessions, queued messages and reader sign-ins are
+  kept) and starts it again from its own plugin; open pages and the other sessions reconnect by themselves. It works
+  on the daemons already running: every released Claude Code daemon (0.3.0 on) stops cleanly on it. Only an installed
+  plugin does this (one in Claude Code's plugin cache): a session started with `--plugin-dir` never replaces the
+  daemon, and an older plugin is served as it is: going back to an older version still needs `daemon stop`. Test:
+  `packages/claude-pages/test/bridge/handover.test.ts`.
+
+## 1.14.1 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.1 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.1`): `bb pages init`, `bb pages status` and the
+answer wording for uploads give absolute paths, and with Connect on `init` also prints the page's loopback address
+for the agent's own check.
+
+## 0.6.1 — 2026-10-29
+
+On bb, `init` gives paths every file tool takes, and an address the agent can open itself (B-0165, B-0166): spec 02
+§The answer wording, 04 R6.7a, 05 §The serving host interface and R-S9, 06 R-P12; 08 A211.
+
+`@unifedev/pages-core` 0.6.1, `@unifedev/claude-pages` 0.6.1, the bb plugin `@unifedev/thread-pages` 1.14.1.
+
+### Changed
+
+- **bb: a local address for the agent's own check.** With Connect paired, the URL `init` prints is the Connect
+  address, which a browser on this machine is refused without signing in. `init` now adds one line after it,
+  `Local: http://127.0.0.1:<port>/api/v1/plugins/thread-pages/http/page?session=<id> (this machine only, for your own
+  check)`. That address opens the page on this machine with no sign-in and carries no credential. Without Connect the
+  URL is already that address and there is no `Local:` line. In pages-core this is an optional
+  `ServingHost.checkOrigin()`, used by `init` only. The Claude Code host has none, by design: its agent does not
+  open the reader's page. Test: `packages/pages-core/test/agent/commands.test.ts`.
+
+## 1.14.0 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.0 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.0`): a shortcut or installed app of the home or a
+page carries the Syns mark and a sensible name, from pages-core.
+
+## 0.6.0 — 2026-10-29
+
+Shortcuts and installed apps carry the Syns mark and a sensible name, on bb and Claude Code alike, in pages-core
+(B-0130): spec 05 R2.14, R2.14a, §Routes; 08 A210. A new route and head; no agent text changed.
+
+`@unifedev/pages-core` 0.6.0, `@unifedev/claude-pages` 0.6.0, the bb plugin `@unifedev/thread-pages` 1.14.0.
 
 ## 1.13.4 (bb plugin) — 2026-10-29
 

@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.5.4",
+  pluginVersion: "0.6.9",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -24,6 +24,7 @@ var state = {
   home: null,
   held: [],
   deliveries: /* @__PURE__ */ new Set(),
+  submitted: [],
   settingsChain: Promise.resolve(),
   ownSwitch: null,
   commandOutput: [],
@@ -443,7 +444,7 @@ function handle($, line) {
         return;
       }
       $.ui.toast("Answer from your page");
-      void $.prompt.submit({ text: m.text, asUser: true }).then(() => call($, "POST", `/v1/deliveries/${encodeURIComponent(m.deliveryId)}/ack`, {})).catch((e) => $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" })).finally(() => state.deliveries.delete(m.deliveryId));
+      void submitTaken($, m.text).then(() => call($, "POST", `/v1/deliveries/${encodeURIComponent(m.deliveryId)}/ack`, {})).catch((e) => $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" })).finally(() => state.deliveries.delete(m.deliveryId));
       return;
     }
     case "steer":
@@ -602,7 +603,7 @@ async function submitWithSettings($, delivery) {
   void postSettings($);
   $.ui.toast("Answer from your page");
   try {
-    await $.prompt.submit({ text, asUser: true });
+    await submitTaken($, text);
     await call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, {});
   } catch (e) {
     $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
@@ -610,12 +611,39 @@ async function submitWithSettings($, delivery) {
     state.deliveries.delete(deliveryId);
   }
 }
+function submitTaken($, text) {
+  return new Promise((resolve, reject) => {
+    const s = { text, taken: resolve };
+    state.submitted.push(s);
+    $.prompt.submit({ text, asUser: true }).then(() => takeThrough(s), (e) => {
+      const i = state.submitted.indexOf(s);
+      if (i >= 0) state.submitted.splice(i, 1);
+      reject(e);
+    });
+  });
+}
+function takenByTurn(text) {
+  if (typeof text !== "string" || !text) return;
+  let pos = 0, last = null;
+  for (const s of state.submitted) {
+    const at = text.indexOf(s.text, pos);
+    if (at < 0 || last === null && at !== 0) break;
+    last = s;
+    pos = at + s.text.length;
+  }
+  if (last) takeThrough(last);
+}
+function takeThrough(s) {
+  const i = state.submitted.indexOf(s);
+  if (i < 0) return;
+  for (const x of state.submitted.splice(0, i + 1)) x.taken();
+}
 function flushHeld($) {
   for (const h of state.held.splice(0)) enqueueSettings($, h);
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.5.4";
+var PLUGIN_VERSION = "0.6.9";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -668,6 +696,7 @@ function register(on) {
   });
   on("turn.start", async ($, e, next) => {
     state.turnId = e.turnId;
+    takenByTurn(e.text);
     void post($, "state", { state: "working", turnId: e.turnId, atMs: Date.now() });
     return next(e);
   });
