@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.9",
+  pluginVersion: "0.6.10",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -29,7 +29,8 @@ var state = {
   ownSwitch: null,
   commandOutput: [],
   commandWaiter: null,
-  reasoningLevel: null
+  reasoningLevel: null,
+  stopNoted: false
 };
 async function homeFor($) {
   if (state.home) return state.home;
@@ -588,7 +589,7 @@ async function submitWithSettings($, delivery) {
     if (failure === null && field === "reasoningLevel") state.reasoningLevel = value;
     if (failure !== null) {
       const reason = `/${command} ${value}: ${failure}`;
-      $.ui.log(`unife-pages: a reply from your page was not delivered \u2014 ${reason}`);
+      $.ui.log(`a reply from your page was not delivered \u2014 ${reason}`);
       $.ui.log(`unife-pages: delivery ${deliveryId} not submitted: ${reason}`, { to: "debug" });
       try {
         await call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, { failed: { fields: [field], reason } });
@@ -615,12 +616,28 @@ function submitTaken($, text) {
   return new Promise((resolve, reject) => {
     const s = { text, taken: resolve };
     state.submitted.push(s);
-    $.prompt.submit({ text, asUser: true }).then(() => takeThrough(s), (e) => {
+    const notTaken = (e) => {
       const i = state.submitted.indexOf(s);
       if (i >= 0) state.submitted.splice(i, 1);
       reject(e);
-    });
+    };
+    $.prompt.submit({ text, asUser: true }).then((r) => {
+      const drop = dropReason(r);
+      if (drop === null) {
+        takeThrough(s);
+        return;
+      }
+      if (!state.stopNoted) {
+        state.stopNoted = true;
+        $.ui.log(STOPPED_LINE);
+      }
+      notTaken(new Error(`not taken, Claude Code dropped it: ${drop}`));
+    }, notTaken);
   });
+}
+var STOPPED_LINE = "Claude Code was stopped, so answers from your page wait until you send a message here";
+function dropReason(r) {
+  return r && typeof r === "object" && typeof r.drop === "string" ? r.drop : null;
 }
 function takenByTurn(text) {
   if (typeof text !== "string" || !text) return;
@@ -643,7 +660,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.9";
+var PLUGIN_VERSION = "0.6.10";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -696,6 +713,7 @@ function register(on) {
   });
   on("turn.start", async ($, e, next) => {
     state.turnId = e.turnId;
+    state.stopNoted = false;
     takenByTurn(e.text);
     void post($, "state", { state: "working", turnId: e.turnId, atMs: Date.now() });
     return next(e);

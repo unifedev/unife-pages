@@ -1,8 +1,30 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` e3f3a9d): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 64af87b): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.10 — 2026-10-29
+
+On Claude Code, a page answer that Claude Code throws away after a stop in the terminal is no longer lost (B-0208),
+and answers after a stop run in the order you sent them (B-0210).
+`@unifedev/claude-pages` 0.6.10; `@unifedev/pages-core` stays 0.6.5 and the bb plugin `@unifedev/thread-pages`
+1.14.5: neither changes.
+
+### Fixed
+
+- **Claude Code: a page answer is no longer lost when you stop Claude Code in the terminal.** Pressing Esc or Ctrl+C
+  while a turn runs makes Claude Code throw away the page answers waiting behind that turn, and every new page answer
+  after it until you type in the terminal. The page still said Started for each, and none of them ran. Now such an
+  answer stays queued: the page says Queued, and it runs once, in the turn after the next prompt you send in the
+  terminal. One line in the terminal tells you that answers from your page wait until you send a message there. The
+  page's own Stop and `/clear` throw nothing away and work as before. Test: `packages/claude-pages/test/mod/mod.test.ts`.
+- **Claude Code: after a stop, your page answers run in the order you sent them.** An answer you sent before the stop
+  used to run after one you sent later, while your next prompt ran. Now the older one goes to Claude Code first
+  (B-0210). Test: `packages/claude-pages/test/daemon/control.test.ts`.
+- **Claude Code: the line about a refused model or effort shows the plugin's name once.** It read
+  "unife-pages: unife-pages: a reply from your page was not delivered"; Claude Code already puts the name in front
+  (B-0211). Test: `packages/claude-pages/test/mod/mod.test.ts`.
 
 ## 1.14.5 (bb plugin) — 2026-10-29
 

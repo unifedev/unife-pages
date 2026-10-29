@@ -21126,7 +21126,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
           return { delivery: "steered", ...mid ? { messageId: mid } : {} };
         }
         const did = d.queue.append(id, text, "queue", next?.settings);
-        d.bridges.push(id, { type: "deliver", deliveryId: did, text, ...next ? { settings: next.settings } : {} });
+        d.drainQueue(id, { steers: false });
         if (e.liveState !== "idle") return { delivery: "queued", ...applied };
         const r = await d.queue.waitAck(did, ACK_MS);
         if (r.failed) throw new ProviderError("unsupported", `the session could not apply ${r.failed.fields.join(", ")}: ${r.failed.reason}`, "settings", { detail: { unsupported: r.failed.fields } });
@@ -21907,9 +21907,9 @@ var Daemon = class {
     this.events.add(sid, "end", true, `session ended: ${reason}`);
     this.log.info(`session ${sid}: detached (${reason})`);
   }
-  /** On hello and on every idle: push the unacked queue in order. */
-  drainQueue(sid) {
-    for (const q of this.queue.unacked(sid)) this.bridges.push(sid, q.mode === "steer" ? { type: "steer", deliveryId: q.deliveryId, text: q.text } : { type: "deliver", deliveryId: q.deliveryId, text: q.text, ...q.settings ? { settings: q.settings } : {} });
+  /** On hello and on every idle: push the unacked queue in order. `send` pushes the queue-mode ones alone (`steers: false`, B-0210): the mod drops a `deliver` it holds (RS-2) but has no such check for a `steer`. */
+  drainQueue(sid, { steers = true } = {}) {
+    for (const q of this.queue.unacked(sid)) if (steers || q.mode !== "steer") this.bridges.push(sid, q.mode === "steer" ? { type: "steer", deliveryId: q.deliveryId, text: q.text } : { type: "deliver", deliveryId: q.deliveryId, text: q.text, ...q.settings ? { settings: q.settings } : {} });
   }
   async forgetSession(id, why) {
     this.bridges.detach(id);
