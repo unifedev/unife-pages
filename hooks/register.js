@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.18",
+  pluginVersion: "0.6.19",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -14,6 +14,9 @@ var state = {
   endedId: null,
   helloed: /* @__PURE__ */ new Set(),
   linkedFrom: null,
+  supersededId: null,
+  bridgeExtra: {},
+  keptRows: null,
   inflight: /* @__PURE__ */ new Map(),
   decided: /* @__PURE__ */ new Map(),
   turnId: null,
@@ -328,8 +331,14 @@ function stamp(e, atMs) {
   };
 }
 async function sendRow($, e) {
-  await post($, "rows", [stamp(e, await $.clock.now())]);
+  const row = stamp(e, await $.clock.now());
+  if (!state.token && state.keptRows) {
+    if (state.keptRows.length < KEPT_ROWS) state.keptRows.push(row);
+    return;
+  }
+  await post($, "rows", [row]);
 }
+var KEPT_ROWS = 100;
 var FLUSH_MS = 250;
 var FLUSH_BYTES = 2048;
 function pushChunk(turnId, step, c, agentId, atMs) {
@@ -368,9 +377,11 @@ async function reregister($, contributions) {
 }
 
 // src/mod/bridge-loop.ts
-function runBridge($, extra = {}) {
+function runBridge($, extra = {}, ifFree = false) {
   if (state.bridgeAlive || !state.sessionId || state.endedId === state.sessionId) return;
+  if (state.supersededId === state.sessionId !== ifFree) return;
   state.bridgeAlive = true;
+  state.bridgeExtra = extra;
   const sid = state.sessionId;
   void (async () => {
     let buf = "";
@@ -389,7 +400,8 @@ function runBridge($, extra = {}) {
         "0",
         ...extra.clearedFrom ? ["--cleared-from", extra.clearedFrom] : [],
         ...extra.forkOf ? ["--fork-of", extra.forkOf] : [],
-        ...extra.resumedFrom ? ["--resumed-from", extra.resumedFrom] : []
+        ...extra.resumedFrom ? ["--resumed-from", extra.resumedFrom] : [],
+        ...ifFree ? ["--if-free"] : []
       ];
       child = $.process.spawn({ argv });
       state.bridge = child;
@@ -411,11 +423,22 @@ function runBridge($, extra = {}) {
       $.ui.log(`unife-pages: bridge failed: ${err.message}`, { to: "debug" });
     }
     if (child && state.bridge !== child) return;
+    const greeted = state.token !== null;
     state.bridgeAlive = false;
     state.bridge = null;
     state.token = null;
-    if (state.sessionId === sid && state.endedId !== sid) $.clock.after(3e3, () => runBridge($, extra));
+    if (state.sessionId !== sid || state.endedId === sid) return;
+    if (state.supersededId === sid) $.clock.after(SUPERSEDED_TRY_MS, () => runBridge($, extra, true));
+    else if (ifFree && !greeted) runBridge($, extra);
+    else $.clock.after(3e3, () => runBridge($, extra));
   })();
+}
+var SUPERSEDED_TRY_MS = 1e4;
+function reclaim($) {
+  if (!state.sessionId || state.supersededId !== state.sessionId) return;
+  state.supersededId = null;
+  state.keptRows ??= [];
+  runBridge($, state.bridgeExtra);
 }
 function handle($, line) {
   let m;
@@ -428,10 +451,14 @@ function handle($, line) {
     case "hello": {
       state.token = m.sessionToken;
       if (state.sessionId) state.helloed.add(state.sessionId);
+      if (state.supersededId === state.sessionId) state.supersededId = null;
       state.helloTimedOut = false;
       state.pageRoot = m.page.root;
       state.pageUrl = m.page.url;
       state.instruction = null;
+      const kept = state.keptRows;
+      state.keptRows = null;
+      if (kept?.length && !m.backfill) void post($, "rows", kept);
       if (m.backfill) {
         void $.session.messages().then((rows) => post($, "backfill", rows)).catch((e) => $.ui.log(`unife-pages: backfill failed: ${e.message}`, { to: "debug" }));
       }
@@ -480,6 +507,14 @@ function handle($, line) {
       const ask = state.contributors.get(m.namespace)?.pageScript;
       const answer = ask ? ask({ caller: m.caller, documentPath: m.documentPath, have: m.have }).then((result) => ({ result }), (e) => ({ failure: e.message })) : Promise.resolve({ failure: "no page script for this contributor in this session" });
       void answer.then((a) => call($, "POST", `/v1/calls/${encodeURIComponent(m.callId)}`, a)).catch(() => null);
+      return;
+    }
+    case "superseded": {
+      state.supersededId = state.sessionId;
+      const held = state.held.splice(0);
+      for (const h of held) state.deliveries.delete(h.deliveryId);
+      state.waiting = Math.max(0, state.waiting - held.length);
+      $.ui.log("unife-pages: this session was resumed in another Claude Code process; its page follows that one until you type here or it lets go", { to: "debug" });
       return;
     }
     case "instruction.changed":
@@ -720,7 +755,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.18";
+var PLUGIN_VERSION = "0.6.19";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -740,6 +775,8 @@ function register(on) {
     const id = typeof e.session_id === "string" && e.session_id ? e.session_id : await $.session.id();
     if (state.sessionId && (id !== state.sessionId || state.endedId === id)) {
       state.endedId = null;
+      state.supersededId = null;
+      state.keptRows = null;
       let previous = state.previousId ?? state.sessionId;
       const kind = e.source === "clear" ? "clear" : e.source === "fork" ? "fork" : e.source === "resume" && previous !== id ? "resume" : null;
       if (kind && !state.helloed.has(previous) && state.linkedFrom?.kind === kind && state.linkedFrom.id !== id) previous = state.linkedFrom.id;
@@ -814,6 +851,7 @@ function register(on) {
     return result;
   });
   on("session.append", async ($, e, next) => {
+    if (e.door === "prompt" && e.origin?.kind === "composer") reclaim($);
     if (noteCommandOutput(e)) void postSettings($);
     const r = await next(e);
     await sendRow($, e);

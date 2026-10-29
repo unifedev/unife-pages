@@ -140,6 +140,7 @@ var parentPid = Number(argOf("parent-pid")) || process.ppid;
 var clearedFrom = argOf("cleared-from");
 var forkOf = argOf("fork-of");
 var resumedFrom = argOf("resumed-from");
+var ifFree = process.argv.includes("--if-free");
 if (!sid) {
   process.stderr.write("bridge: --session required\n");
   process.exit(2);
@@ -176,6 +177,7 @@ function newerThan(a, b) {
   return false;
 }
 var ended = false;
+var superseded = false;
 var handingOver = 0;
 var signalled = /* @__PURE__ */ new Set();
 function maybeHandOver(m, own) {
@@ -204,7 +206,7 @@ function connect() {
   return new Promise((resolve) => {
     const pluginDirs = (process.env.CLAUDE_CODE_PLUGIN_DIRS ?? "").split(path4.delimiter).map((d) => d.trim()).filter(Boolean);
     const own = pluginVersion();
-    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
+    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...ifFree ? { ifFree: true } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
     const text = JSON.stringify(body);
     const req = http.request({
       socketPath: sock,
@@ -212,6 +214,11 @@ function connect() {
       method: "POST",
       headers: { "content-type": "application/json", "content-length": String(Buffer.byteLength(text)), [BRIDGE_HEADER]: "1" }
     }, (res) => {
+      if (res.statusCode === 409 && ifFree) {
+        res.resume();
+        resolve("busy");
+        return;
+      }
       if (res.statusCode !== 200) {
         res.resume();
         resolve("bad-status");
@@ -230,6 +237,7 @@ function connect() {
             const m = JSON.parse(line);
             if (m.type !== "ping") process.stdout.write(line + "\n");
             if (m.type === "ended") ended = true;
+            if (m.type === "superseded") superseded = true;
             maybeHandOver(m, own);
           } catch {
           }
@@ -252,7 +260,7 @@ setInterval(() => {
 var startedAt = 0;
 for (let attempt = 0; ; attempt++) {
   const r = await connect();
-  if (ended) process.exit(0);
+  if (ended || superseded || r === "busy") process.exit(0);
   if (handingOver) {
     await exited(handingOver, 8e3);
     handingOver = 0;

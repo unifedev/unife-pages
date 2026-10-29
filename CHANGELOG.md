@@ -1,8 +1,30 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 74e4ccb): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 2615bdd): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.19 — 2026-10-29
+
+On Claude Code, a conversation open in two terminals at once no longer makes its page flicker: the page follows the
+terminal you last typed in (B-0230). `@unifedev/claude-pages` 0.6.19; `@unifedev/pages-core` stays 0.6.8 and the bb
+plugin `@unifedev/thread-pages` 1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: one conversation open in two terminals keeps a steady page.** Claude Code lets you open a
+  conversation that is still open in another terminal, with `/resume <id>` typed in a session or `claude --resume <id>`
+  from a shell. Until now the page's connection then flipped between the two terminals about three times a second for
+  as long as both stayed open: a question or approval waiting on the page closed each time, and a page answer reached
+  whichever terminal held the connection at that moment. Now the page goes to the terminal that opened the conversation
+  last, and moves back to the other one when you type a message there, or within about 10 seconds once the terminal
+  that has it closes or leaves the conversation; it moves at most once per turn, and an answer from the page goes to
+  the terminal that has it. The terminal without the page keeps working as before; only its turns stop showing on the
+  page until it has the page again. One case remains: an answer the terminal that lost the page had already passed to
+  Claude Code, waiting for its running turn to end, can still run there as well. If the other terminal still runs an older Unife Pages
+  plugin, the page stays with that terminal until it is updated. Resuming a background session
+  (`claude --bg`) was not affected and is unchanged. Tests: `packages/claude-pages/test/daemon/control.test.ts`,
+  `test/bridge/superseded.test.ts`, `test/mod/mod.test.ts`.
 
 ## 0.6.18 — 2026-10-29
 

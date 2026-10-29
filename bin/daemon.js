@@ -1068,11 +1068,20 @@ var Bridges = class {
     }, pingMs);
     this.ping.unref();
   }
+  /**
+   * A mod reload re-attaches from the same process: the old stream ends first, and an old bridge that attaches again
+   * evicts in turn, as before. An attach from another process (the bridge's parent differs: the id resumed in a second
+   * terminal) supersedes the old one: `superseded` goes down before the close, so that bridge exits instead of
+   * attaching again 300 ms later, and the two processes stop evicting each other (B-0230, H-123). A pid of 0 (unknown)
+   * is never another process.
+   */
   attach(sessionId, res, meta) {
     const prev = this.bySession.get(sessionId);
     if (prev) {
+      const superseded = prev.parentPid > 0 && meta.parentPid > 0 && prev.parentPid !== meta.parentPid;
+      if (superseded) this.write(prev, { type: "superseded" });
       this.drop(prev, false);
-      this.onEvict?.(sessionId);
+      this.onEvict?.(sessionId, { fromPid: prev.parentPid, toPid: meta.parentPid, superseded });
     }
     const a = { sessionId, token: randomBytes2(24).toString("base64url"), res, attachedAtMs: Date.now(), ...meta };
     this.bySession.set(sessionId, a);
@@ -1092,6 +1101,11 @@ var Bridges = class {
     } catch {
     }
     if (notify) this.onDrop?.(a.sessionId);
+  }
+  /** A bridge from another process holds the id: an `ifFree` attach is refused (B-0230 review F1). */
+  heldByOther(sessionId, parentPid) {
+    const a = this.bySession.get(sessionId);
+    return !!a && a.parentPid !== parentPid;
   }
   detach(sessionId) {
     const a = this.bySession.get(sessionId);
@@ -21570,10 +21584,12 @@ ${this.hostStatus(sessionId)}`;
     if (!ctx.bridge) return json3(ctx.res, 403, { error: "bridge header required" });
     if (!SESSION_ID_RE.test(id)) return json3(ctx.res, 404, { error: "not_found" });
     const body = await ctx.body() ?? {};
+    const parentPid = Number.isSafeInteger(body.parentPid) && body.parentPid > 0 ? body.parentPid : 0;
+    if (body.ifFree === true && this.d.bridges.heldByOther(id, parentPid)) return json3(ctx.res, 409, { error: "held by another process" });
     const res = ctx.res;
     res.writeHead(200, { "content-type": "application/x-ndjson", "cache-control": "no-store", "connection": "keep-alive" });
     res.flushHeaders();
-    const a = this.d.bridges.attach(id, res, { pluginVersion: String(body.pluginVersion ?? ""), pluginRoot: String(body.pluginRoot ?? "") });
+    const a = this.d.bridges.attach(id, res, { pluginVersion: String(body.pluginVersion ?? ""), pluginRoot: String(body.pluginRoot ?? ""), parentPid });
     const pluginDirs = Array.isArray(body.pluginDirs) ? body.pluginDirs.filter((d) => typeof d === "string" && d.startsWith("/")) : [];
     const { backfill } = this.d.onAttach({ sessionId: id, cwd: String(body.cwd ?? ""), pluginRoot: String(body.pluginRoot ?? ""), ...body.clearedFrom ? { clearedFrom: String(body.clearedFrom) } : {}, ...body.forkOf ? { forkOf: String(body.forkOf) } : {}, ...body.resumedFrom ? { resumedFrom: String(body.resumedFrom) } : {}, ...body.underHost === "bb" ? { underHost: "bb", ...typeof body.underHostId === "string" ? { underHostId: body.underHostId.slice(0, 128) } : {} } : {}, pluginDirs });
     this.d.bridges.write(a, { type: "hello", sessionToken: a.token, daemon: { version: this.d.version, pid: process.pid }, page: { root: this.d.pageRoot(id), url: this.d.pageUrl(id) }, backfill });
@@ -21808,7 +21824,7 @@ var Daemon = class {
     this.provider = createProvider(this);
     this.control = new ControlServer(this);
     this.bridges.onDrop = (sid) => this.onBridgeDrop(sid);
-    this.bridges.onEvict = (sid) => this.onBridgeEvicted(sid);
+    this.bridges.onEvict = (sid, how) => this.onBridgeEvicted(sid, how);
     for (const e of this.registry.all()) this.waits.restore(e.id);
   }
   opts;
@@ -22040,10 +22056,19 @@ var Daemon = class {
     const e = this.registry.get(sid);
     if (e && e.liveState === "waiting") this.registry.upsert(sid, { liveState: "working" });
   }
-  /** A second attach for the session: the evicted bridge's waits close as bridge-lost and its contributions go (CP-10); the new hello brings the mod's back. */
-  onBridgeEvicted(sid) {
+  /**
+   * A second attach for the session: the evicted bridge's waits close as bridge-lost and its contributions go (CP-10); the
+   * new hello brings the mod's back. From another process (the id resumed in a second terminal) the page moves there,
+   * once per switch: logged as that, not as a fault (B-0230).
+   */
+  onBridgeEvicted(sid, how) {
     this.waits.closeSession(sid, "bridge-lost");
     this.contributors.dropSession(sid);
+    if (how.superseded) {
+      this.events.add(sid, "detach", true, "the page moved to another Claude Code process");
+      this.log.info(`session ${sid}: another process resumed it (pid ${how.fromPid} \u2192 ${how.toPid}); the page follows it`);
+      return;
+    }
     this.events.add(sid, "detach", true, "bridge evicted by a new attach");
     this.log.warn(`session ${sid}: a second bridge attached; the first is evicted`);
   }
