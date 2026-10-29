@@ -1,8 +1,23 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` a9818c4): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 74e4ccb): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.18 — 2026-10-29
+
+On Claude Code, a page answer that runs after two quick `/clear`s now reads "delivered" on the page it came from, and
+runs only once (B-0231). `@unifedev/claude-pages` 0.6.18; `@unifedev/pages-core` stays 0.6.8 and the bb plugin
+`@unifedev/thread-pages` 1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: an answer sent before two quick `/clear`s runs once and reads "delivered".** If a page answer was
+  waiting in Claude Code's queue and you typed `/clear` twice before it ran, Claude Code ran it in the newest session,
+  but its page kept it as "queued", and the next time you opened the first session (`claude --resume`) the answer ran a
+  second time. The same could happen when the session in between was still running an older version of this plugin.
+  Unife Pages now reports it done for the session it came from, still only when it saw that session end by `/clear`. Tests: `packages/claude-pages/test/daemon/control.test.ts`,
+  `test/mod/mod.test.ts`.
 
 ## 0.6.17 — 2026-10-29
 

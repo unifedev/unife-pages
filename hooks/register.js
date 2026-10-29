@@ -5,13 +5,15 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.17",
+  pluginVersion: "0.6.18",
   socketPath: null,
   nodePath: null,
   bridge: null,
   bridgeAlive: false,
   previousId: null,
   endedId: null,
+  helloed: /* @__PURE__ */ new Set(),
+  linkedFrom: null,
   inflight: /* @__PURE__ */ new Map(),
   decided: /* @__PURE__ */ new Map(),
   turnId: null,
@@ -425,6 +427,7 @@ function handle($, line) {
   switch (m.type) {
     case "hello": {
       state.token = m.sessionToken;
+      if (state.sessionId) state.helloed.add(state.sessionId);
       state.helloTimedOut = false;
       state.pageRoot = m.page.root;
       state.pageUrl = m.page.url;
@@ -717,7 +720,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.17";
+var PLUGIN_VERSION = "0.6.18";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -737,7 +740,10 @@ function register(on) {
     const id = typeof e.session_id === "string" && e.session_id ? e.session_id : await $.session.id();
     if (state.sessionId && (id !== state.sessionId || state.endedId === id)) {
       state.endedId = null;
-      const previous = state.previousId ?? state.sessionId;
+      let previous = state.previousId ?? state.sessionId;
+      const kind = e.source === "clear" ? "clear" : e.source === "fork" ? "fork" : e.source === "resume" && previous !== id ? "resume" : null;
+      if (kind && !state.helloed.has(previous) && state.linkedFrom?.kind === kind && state.linkedFrom.id !== id) previous = state.linkedFrom.id;
+      state.linkedFrom = kind ? { kind, id: previous } : null;
       state.sessionId = id;
       state.token = null;
       state.pageRoot = null;
@@ -750,7 +756,7 @@ function register(on) {
       } catch {
       }
       state.bridgeAlive = false;
-      runBridge($, e.source === "clear" ? { clearedFrom: previous } : e.source === "fork" ? { forkOf: previous } : e.source === "resume" && previous !== id ? { resumedFrom: previous } : {});
+      runBridge($, kind === "clear" ? { clearedFrom: previous } : kind === "fork" ? { forkOf: previous } : kind === "resume" ? { resumedFrom: previous } : {});
     } else if (!state.sessionId) {
       await ids($);
       runBridge($);

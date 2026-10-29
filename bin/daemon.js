@@ -22003,25 +22003,32 @@ var Daemon = class {
     return { backfill: !this.rows.hasRows(a.sessionId) };
   }
   /**
-   * The session whose queue holds `deliveryId`, for an ack from `sessionId`: its own, else the nearest session this
-   * Claude Code left for it, followed back through repeated switches: `clearedFromId` (`/clear`), `resumedFromId`
-   * (`/resume`) or `forkOfId` (`/branch`). Each hop goes only to a session this daemon saw end at that switch (reason
-   * `clear` for the first, `resume` for the other two): a session acks no delivery of one it only says it came from
-   * (B-0217, B-0224, B-0229). Falls back to `sessionId`, whose queue then misses.
+   * The session whose queue holds `deliveryId`, for an ack from `sessionId`: its own, else one this Claude Code left
+   * for it, followed back through repeated switches: `clearedFromId` (`/clear`), `resumedFromId` (`/resume`) or
+   * `forkOfId` (`/branch`). The walk goes through any session on those links, but a hit counts only in a session this
+   * daemon saw end at the switch of a link that reached it (reason `clear` for the first, `resume` for the other two):
+   * a session acks no delivery of one it only says it came from, and a middle session whose own end never came (its
+   * detach had no bearer, or an older bridge attached again) does not cut its predecessor off (B-0217, B-0224, B-0229,
+   * B-0231). Falls back to `sessionId`, whose queue then misses.
    */
   ackOwner(sessionId, deliveryId) {
-    const seen = /* @__PURE__ */ new Set([sessionId]);
-    for (let level = [sessionId]; level.length && seen.size <= ACK_SWITCH_DEPTH; ) {
+    const via = /* @__PURE__ */ new Map([[sessionId, /* @__PURE__ */ new Set()]]);
+    for (let level = [sessionId]; level.length; ) {
       const hit = this.queue.owner(deliveryId, level);
-      if (hit) return hit;
+      if (hit) return hit === sessionId || via.get(hit).has(this.registry.get(hit)?.ended?.reason ?? "") ? hit : sessionId;
       const nextLevel = [];
       for (const id of level) {
         const e = this.registry.get(id);
         for (const [from, reason] of [[e?.clearedFromId, "clear"], [e?.resumedFromId, "resume"], [e?.forkOfId, "resume"]]) {
-          if (from && !seen.has(from) && seen.size <= ACK_SWITCH_DEPTH && this.registry.get(from)?.ended?.reason === reason) {
-            seen.add(from);
-            nextLevel.push(from);
+          if (!from) continue;
+          const reached = via.get(from);
+          if (reached) {
+            if (from !== sessionId) reached.add(reason);
+            continue;
           }
+          if (via.size > ACK_SWITCH_DEPTH) continue;
+          via.set(from, /* @__PURE__ */ new Set([reason]));
+          nextLevel.push(from);
         }
       }
       level = nextLevel;
