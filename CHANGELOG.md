@@ -1,8 +1,26 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 826fda2): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 235d38b): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.21 — 2026-10-30
+
+On Claude Code, a page answer that runs after a `/clear` now reads "delivered" and runs only once, also when the page
+server was away at that moment, or when you typed `/clear` and then `/branch` or `/resume` quickly (B-0234, B-0236).
+`@unifedev/claude-pages` 0.6.21; `@unifedev/pages-core` stays 0.6.8 and the bb plugin `@unifedev/thread-pages` 1.14.8:
+neither changes.
+
+### Fixed
+
+- **Claude Code: an answer sent before a `/clear` runs once, even if the page server was restarting.** If a page
+  answer was waiting in Claude Code's queue when you typed `/clear`, and the page server was away at that moment (a
+  restart or an update), its page kept the answer as "queued". The next time you opened the old session
+  (`claude --resume`), the answer ran a second time. The same happened when you typed `/clear` and then `/branch` or
+  `/resume` before the first switch had settled. The plugin now remembers what the page server missed and tells it
+  when the new session connects. The page server accepts this only for a session the new one came from, and only while
+  that session is not connected. Tests: `packages/claude-pages/test/daemon/control.test.ts`, `test/mod/mod.test.ts`,
+  `test/bridge/ended.test.ts`.
 
 ## 0.6.20 — 2026-10-30
 

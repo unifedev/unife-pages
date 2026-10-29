@@ -381,6 +381,7 @@ var ProviderError = class extends Error {
 
 // src/shared/protocol.ts
 var PROTOCOL_VERSION = 1;
+var ACK_SWITCH_DEPTH = 8;
 var underBbSkip = (threadId) => `SKIP     \u2014 this session has no page here: it runs inside bb thread ${threadId}, whose page is this session's. Use \`bb pages init\` and that page; nothing of unife-pages applies.
 `;
 var CLI_ROLES = ["init", "guide", "status", "home", "grants"];
@@ -21591,7 +21592,8 @@ ${this.hostStatus(sessionId)}`;
     res.flushHeaders();
     const a = this.d.bridges.attach(id, res, { pluginVersion: String(body.pluginVersion ?? ""), pluginRoot: String(body.pluginRoot ?? ""), parentPid });
     const pluginDirs = Array.isArray(body.pluginDirs) ? body.pluginDirs.filter((d) => typeof d === "string" && d.startsWith("/")) : [];
-    const { backfill } = this.d.onAttach({ sessionId: id, cwd: String(body.cwd ?? ""), pluginRoot: String(body.pluginRoot ?? ""), ...body.clearedFrom ? { clearedFrom: String(body.clearedFrom) } : {}, ...body.forkOf ? { forkOf: String(body.forkOf) } : {}, ...body.resumedFrom ? { resumedFrom: String(body.resumedFrom) } : {}, ...body.underHost === "bb" ? { underHost: "bb", ...typeof body.underHostId === "string" ? { underHostId: body.underHostId.slice(0, 128) } : {} } : {}, pluginDirs });
+    const missed = missedOf(body.missed);
+    const { backfill } = this.d.onAttach({ sessionId: id, cwd: String(body.cwd ?? ""), pluginRoot: String(body.pluginRoot ?? ""), ...body.clearedFrom ? { clearedFrom: String(body.clearedFrom) } : {}, ...body.forkOf ? { forkOf: String(body.forkOf) } : {}, ...body.resumedFrom ? { resumedFrom: String(body.resumedFrom) } : {}, ...missed.length ? { missed } : {}, ...body.underHost === "bb" ? { underHost: "bb", ...typeof body.underHostId === "string" ? { underHostId: body.underHostId.slice(0, 128) } : {} } : {}, pluginDirs });
     this.d.bridges.write(a, { type: "hello", sessionToken: a.token, daemon: { version: this.d.version, pid: process.pid }, page: { root: this.d.pageRoot(id), url: this.d.pageUrl(id) }, backfill });
     this.d.drainQueue(id);
   }
@@ -21699,6 +21701,19 @@ ${this.hostStatus(sessionId)}`;
     json3(res, 404, { error: "not_found" });
   }
 };
+function missedOf(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const m of v.slice(-ACK_SWITCH_DEPTH)) {
+    if (!m || typeof m !== "object" || typeof m.id !== "string" || !SESSION_ID_RE.test(m.id)) continue;
+    const ended = typeof m.ended === "string" && m.ended ? m.ended.slice(0, 64) : void 0;
+    const l = m.link && typeof m.link === "object" ? m.link : void 0;
+    const kind = ["clear", "fork", "resume"].find((k) => k === l?.kind);
+    const link = kind && typeof l.from === "string" && SESSION_ID_RE.test(l.from) ? { kind, from: l.from } : void 0;
+    if (ended || link) out.push({ id: m.id, ...ended ? { ended } : {}, ...link ? { link } : {} });
+  }
+  return out;
+}
 function json3(res, status, body, headers = {}) {
   const text = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json", "content-length": String(Buffer.byteLength(text)), ...headers });
@@ -21772,7 +21787,6 @@ function releaseLock(home3) {
 
 // src/daemon/daemon.ts
 var ROOT_WORDS = "the folder init prints as `Root`";
-var ACK_SWITCH_DEPTH = 8;
 var Daemon = class {
   constructor(opts) {
     this.opts = opts;
@@ -22013,6 +22027,7 @@ var Daemon = class {
       if (stale) delete rest.resumedFromId;
       this.registry.replace(rest);
     }
+    if (a.missed?.length) this.takeMissed(a.sessionId, a.missed);
     this.events.add(a.sessionId, "attach", true, "bridge attached");
     this.log.info(`session ${a.sessionId}: bridge attached`);
     this.waits.restore(a.sessionId);
@@ -22029,13 +22044,13 @@ var Daemon = class {
    */
   ackOwner(sessionId, deliveryId) {
     const via = /* @__PURE__ */ new Map([[sessionId, /* @__PURE__ */ new Set()]]);
+    const reported = /* @__PURE__ */ new Map();
     for (let level = [sessionId]; level.length; ) {
       const hit = this.queue.owner(deliveryId, level);
       if (hit) return hit === sessionId || via.get(hit).has(this.registry.get(hit)?.ended?.reason ?? "") ? hit : sessionId;
       const nextLevel = [];
       for (const id of level) {
-        const e = this.registry.get(id);
-        for (const [from, reason] of [[e?.clearedFromId, "clear"], [e?.resumedFromId, "resume"], [e?.forkOfId, "resume"]]) {
+        for (const [from, reason] of this.linksOf(id, reported)) {
           if (!from) continue;
           const reached = via.get(from);
           if (reached) {
@@ -22050,6 +22065,63 @@ var Daemon = class {
       level = nextLevel;
     }
     return sessionId;
+  }
+  /**
+   * The links back from `id`, each with the end reason its switch leaves (`clear`, or `resume` for `/resume` and
+   * `/branch`): its own when this daemon saw it attach; else the one an attach later on the walk reported for it, which
+   * a known session's entry keeps in `reportedLinks` and this gathers into `reported` as the walk passes (B-0236).
+   */
+  linksOf(id, reported) {
+    const e = this.registry.get(id);
+    if (!e) {
+      const r = reported.get(id);
+      return r ? [[r.from, r.reason]] : [];
+    }
+    for (const r of e.reportedLinks ?? []) if (!reported.has(r.id)) reported.set(r.id, r);
+    return [[e.clearedFromId, "clear"], [e.resumedFromId, "resume"], [e.forkOfId, "resume"]];
+  }
+  /**
+   * What the attaching session's Claude Code saw at its earlier switches and this daemon missed (B-0234, B-0236). Walking
+   * back from the attaching session along the links `ackOwner` walks: a reported end is recorded for a session this
+   * daemon knows, offline now and not already ended; a reported link is kept, on the attaching session's entry, for a
+   * session this daemon never saw attach. Nothing else is taken, so an ack reaches no queue off the attacher's own
+   * switches, the roster gains no session, and a live session is never ended by it (D-0093).
+   */
+  takeMissed(sessionId, missed) {
+    const report = /* @__PURE__ */ new Map();
+    for (const m of missed) if (m.id !== sessionId) report.set(m.id, { ...report.get(m.id), ...m });
+    const reported = /* @__PURE__ */ new Map();
+    const fresh = /* @__PURE__ */ new Set();
+    for (const m of report.values()) {
+      if (!m.link || this.registry.get(m.id)) continue;
+      const r = { id: m.id, from: m.link.from, reason: m.link.kind === "clear" ? "clear" : "resume" };
+      reported.set(m.id, r);
+      fresh.add(r);
+    }
+    const reached = /* @__PURE__ */ new Set([sessionId]);
+    const kept = [];
+    for (let level = [sessionId]; level.length; ) {
+      const nextLevel = [];
+      for (const id of level) {
+        const r = reported.get(id), e = this.registry.get(id), ended = report.get(id)?.ended;
+        if (r && fresh.has(r) && !e) kept.push(r);
+        if (ended && e && !e.ended && id !== sessionId && !this.bridges.isOnline(id)) {
+          this.registry.upsert(id, { online: false, ended: { reason: ended, atMs: Date.now() } });
+          this.events.add(id, "end", true, `session ended: ${ended}`);
+          this.log.info(`session ${id}: ended (${ended}), as the attach of ${sessionId} reported`);
+        }
+        for (const [from] of this.linksOf(id, reported)) {
+          if (!from || reached.has(from) || reached.size > ACK_SWITCH_DEPTH) continue;
+          reached.add(from);
+          nextLevel.push(from);
+        }
+      }
+      level = nextLevel;
+    }
+    if (kept.length) {
+      const earlier = (this.registry.get(sessionId)?.reportedLinks ?? []).filter((r) => !kept.some((k) => k.id === r.id));
+      this.registry.upsert(sessionId, { reportedLinks: [...earlier, ...kept].slice(-ACK_SWITCH_DEPTH) });
+    }
   }
   /** The last open wait of a session closed: a hold runs inside a turn, so the state the hold replaced is `working`; `turn.complete` makes it idle (CP-2). */
   onWaitsClosed(sid) {

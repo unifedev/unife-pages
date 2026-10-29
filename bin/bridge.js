@@ -141,6 +141,14 @@ var clearedFrom = argOf("cleared-from");
 var forkOf = argOf("fork-of");
 var resumedFrom = argOf("resumed-from");
 var ifFree = process.argv.includes("--if-free");
+var missed = (() => {
+  try {
+    const v = JSON.parse(argOf("missed") ?? "null");
+    return Array.isArray(v) && v.length ? v : void 0;
+  } catch {
+    return void 0;
+  }
+})();
 if (!sid) {
   process.stderr.write("bridge: --session required\n");
   process.exit(2);
@@ -206,7 +214,7 @@ function connect() {
   return new Promise((resolve) => {
     const pluginDirs = (process.env.CLAUDE_CODE_PLUGIN_DIRS ?? "").split(path4.delimiter).map((d) => d.trim()).filter(Boolean);
     const own = pluginVersion();
-    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...ifFree ? { ifFree: true } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
+    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...ifFree ? { ifFree: true } : {}, ...missed ? { missed } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
     const text = JSON.stringify(body);
     const req = http.request({
       socketPath: sock,
@@ -238,6 +246,7 @@ function connect() {
             if (m.type !== "ping") process.stdout.write(line + "\n");
             if (m.type === "ended") ended = true;
             if (m.type === "superseded") superseded = true;
+            if (m.type === "hello") missed = void 0;
             maybeHandOver(m, own);
           } catch {
           }

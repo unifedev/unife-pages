@@ -1,3 +1,6 @@
+// src/shared/protocol.ts
+var ACK_SWITCH_DEPTH = 8;
+
 // src/mod/state.ts
 var state = {
   sessionId: null,
@@ -5,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.20",
+  pluginVersion: "0.6.21",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -17,6 +20,9 @@ var state = {
   supersededId: null,
   bridgeExtra: {},
   keptRows: null,
+  missed: [],
+  telling: null,
+  detaching: null,
   inflight: /* @__PURE__ */ new Map(),
   decided: /* @__PURE__ */ new Map(),
   turnId: null,
@@ -42,6 +48,10 @@ var state = {
   stopNoted: false,
   bridgeDeferred: false
 };
+function keepMissed(id, what) {
+  const prev = state.missed.find((m) => m.id === id);
+  state.missed = [...state.missed.filter((m) => m !== prev), { ...prev, id, ...what }].slice(-ACK_SWITCH_DEPTH);
+}
 async function homeFor($) {
   if (state.home) return state.home;
   const userHome = await $.env.get("HOME") ?? "";
@@ -378,6 +388,7 @@ async function reregister($, contributions) {
 }
 
 // src/mod/bridge-loop.ts
+var DETACH_WAIT_MS = 1500;
 function runBridge($, extra = {}, ifFree = false) {
   if (state.bridgeAlive || !state.sessionId || state.endedId === state.sessionId) return;
   if (state.supersededId === state.sessionId !== ifFree) return;
@@ -388,8 +399,15 @@ function runBridge($, extra = {}, ifFree = false) {
     let buf = "";
     let child = null;
     try {
+      const node = await nodePathFor($);
+      if (state.detaching) {
+        await Promise.race([state.detaching, new Promise((r) => $.clock.after(DETACH_WAIT_MS, r))]);
+        if (state.sessionId !== sid || !state.bridgeAlive) return;
+      }
+      const telling = state.missed.filter((m) => m.id !== sid);
+      state.telling = telling.length ? telling : null;
       const argv = [
-        await nodePathFor($),
+        node,
         `${state.pluginRoot}/bin/bridge.js`,
         "--session",
         sid,
@@ -402,7 +420,8 @@ function runBridge($, extra = {}, ifFree = false) {
         ...extra.clearedFrom ? ["--cleared-from", extra.clearedFrom] : [],
         ...extra.forkOf ? ["--fork-of", extra.forkOf] : [],
         ...extra.resumedFrom ? ["--resumed-from", extra.resumedFrom] : [],
-        ...ifFree ? ["--if-free"] : []
+        ...ifFree ? ["--if-free"] : [],
+        ...telling.length ? ["--missed", JSON.stringify(telling)] : []
       ];
       child = $.process.spawn({ argv });
       state.bridge = child;
@@ -453,6 +472,11 @@ function handle($, line) {
       state.token = m.sessionToken;
       if (state.sessionId) state.helloed.add(state.sessionId);
       if (state.supersededId === state.sessionId) state.supersededId = null;
+      if (state.telling) {
+        const told = new Set(state.telling);
+        state.missed = state.missed.filter((x) => !told.has(x));
+        state.telling = null;
+      }
       state.helloTimedOut = false;
       state.pageRoot = m.page.root;
       state.pageUrl = m.page.url;
@@ -756,7 +780,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.20";
+var PLUGIN_VERSION = "0.6.21";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -803,7 +827,11 @@ function register(on) {
       state.keptRows = null;
       let previous = state.previousId ?? state.sessionId;
       const kind = e.source === "clear" ? "clear" : e.source === "fork" ? "fork" : e.source === "resume" && previous !== id ? "resume" : null;
-      if (kind && !state.helloed.has(previous) && state.linkedFrom?.kind === kind && state.linkedFrom.id !== id) previous = state.linkedFrom.id;
+      if (kind && !state.helloed.has(previous) && state.linkedFrom && state.linkedFrom.id !== id) {
+        if (state.linkedFrom.kind === kind) previous = state.linkedFrom.id;
+        else keepMissed(previous, { link: { kind: state.linkedFrom.kind, from: state.linkedFrom.id } });
+      }
+      state.missed = state.missed.filter((m) => m.id !== id);
       state.linkedFrom = kind ? { kind, id: previous } : null;
       state.sessionId = id;
       state.token = null;
@@ -827,8 +855,15 @@ function register(on) {
   });
   on("session.end", async ($, e, next) => {
     state.previousId = e.sessionId;
-    state.endedId = state.sessionId;
-    void post($, "detach", { reason: e.reason, ...e.resume?.id ? { resumeId: e.resume.id } : {} });
+    const id = state.endedId = state.sessionId;
+    const detaching = post($, "detach", { reason: e.reason, ...e.resume?.id ? { resumeId: e.resume.id } : {} }).then((r) => {
+      if (id && !r?.ok) keepMissed(id, { ended: e.reason });
+    }, () => {
+      if (id) keepMissed(id, { ended: e.reason });
+    }).finally(() => {
+      if (state.detaching === detaching) state.detaching = null;
+    });
+    state.detaching = detaching;
     return next(e);
   });
   on("prompt.compose", async ($, e, next) => {
