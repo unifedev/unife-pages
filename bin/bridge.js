@@ -174,6 +174,7 @@ function newerThan(a, b) {
   for (let i = 1; i <= 3; i++) if (Number(x[i]) !== Number(y[i])) return Number(x[i]) > Number(y[i]);
   return false;
 }
+var ended = false;
 var handingOver = 0;
 var signalled = /* @__PURE__ */ new Set();
 function maybeHandOver(m, own) {
@@ -227,6 +228,7 @@ function connect() {
           try {
             const m = JSON.parse(line);
             if (m.type !== "ping") process.stdout.write(line + "\n");
+            if (m.type === "ended") ended = true;
             maybeHandOver(m, own);
           } catch {
           }
@@ -249,6 +251,7 @@ setInterval(() => {
 var startedAt = 0;
 for (let attempt = 0; ; attempt++) {
   const r = await connect();
+  if (ended) process.exit(0);
   if (handingOver) {
     await exited(handingOver, 8e3);
     handingOver = 0;

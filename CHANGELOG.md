@@ -1,8 +1,50 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 0034a17): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 00d44b4): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.16 — 2026-10-29
+
+On Claude Code, a conversation you resume or branch inside a session gets its own page (B-0222), the page of a session
+you left stays ended (B-0224), and an answer run after a `/clear` is reported delivered even when the new session
+reaches the page server late, without running a second time when you go back to the old conversation (B-0225).
+`@unifedev/claude-pages` 0.6.16; `@unifedev/pages-core` stays 0.6.8 and the bb plugin `@unifedev/thread-pages`
+1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: a conversation you resume with `/resume` inside a session shows on its own page again.** You typed
+  `/resume <an older session>` in a running Claude Code session (also after a `/clear`), saw the older conversation
+  and kept talking in it, but your new turns showed up on the page of the session you had just left, and the older
+  session's page stayed offline. The plugin asked Claude Code which session it was in at a moment when the answer was
+  still the old one. It now takes the session from the resume event itself, so the resumed session's page comes back
+  live and the session you left reads ended. `claude --resume <id>` from a shell already worked and is unchanged; so
+  is opening an ended session from its page, which now also lands right when it falls back to `/resume`.
+- **Claude Code: `/branch` gives the branched conversation its own page.** Before, the branch's turns showed up on
+  the page of the conversation you branched from, and the branch had no page. Now the branch's page comes live,
+  linked to the one it came from, and the original page reads ended. Tests: `packages/claude-pages/test/mod/mod.test.ts`.
+- **Claude Code: the page of a session you left stays ended.** After `/clear` or `/resume`, the page of the session
+  you left showed "session ended", then "bridge attached" and "bridge dropped" again, and for a moment read live. The
+  plugin's helper for that session took the end for a dropped connection and reconnected about 300 ms later, which
+  made Unife Pages forget the session had ended. The daemon now tells the helper the session ended, and the helper
+  stops instead of reconnecting; the plugin starts no new helper for that session unless you resume it. Tests:
+  `packages/claude-pages/test/bridge/ended.test.ts`, `test/daemon/control.test.ts`, `test/mod/mod.test.ts`.
+- **An answer sent just before a `/clear` is reported back to its page only through a real `/clear`.** A page answer
+  Claude Code runs after a `/clear` still reads "delivered" on the page it came from (0.6.14). The link from the new
+  session to the old one is now trusted only when Unife Pages saw the old session end by `/clear`, not merely because
+  the new session names it. A session still on an older plugin keeps reconnecting after its end until it updates, and
+  an answer through it then reads "queued", as before 0.6.14.
+- **Claude Code: an answer's "delivered" is no longer lost when the page server answers late.** After a `/clear`, the
+  new session has no connection to the page server for a moment. If an answer from the page ran in that moment and
+  the connection took more than 4 seconds to come (a slow server, or one that restarts after the `/clear`), the plugin reported it without
+  credentials, the server refused it, and the plugin never tried again: the page never read "delivered", and the
+  server kept the answer as waiting, so reopening the old conversation (`claude --resume`) ran it again. Now the
+  report waits for the connection, however late, and one the server refuses or cannot receive is sent again when the
+  connection comes back. While it waits, a repeat of that answer is not run again. Waiting no longer delays a
+  `/model` or `/effort` change from the page behind it, or leaves your next prompt without the page's instruction.
+  If Claude Code exits before the connection comes, the report is lost as before. Test:
+  `packages/claude-pages/test/mod/mod.test.ts`.
 
 ## 1.14.8 (bb plugin) — 2026-10-29
 

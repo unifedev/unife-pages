@@ -5,12 +5,13 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.15",
+  pluginVersion: "0.6.16",
   socketPath: null,
   nodePath: null,
   bridge: null,
   bridgeAlive: false,
   previousId: null,
+  endedId: null,
   inflight: /* @__PURE__ */ new Map(),
   decided: /* @__PURE__ */ new Map(),
   turnId: null,
@@ -25,6 +26,8 @@ var state = {
   held: [],
   waiting: 0,
   deliveries: /* @__PURE__ */ new Set(),
+  acks: [],
+  acking: false,
   submitted: [],
   settingsChain: Promise.resolve(),
   ownSwitch: null,
@@ -364,7 +367,7 @@ async function reregister($, contributions) {
 
 // src/mod/bridge-loop.ts
 function runBridge($, extra = {}) {
-  if (state.bridgeAlive || !state.sessionId) return;
+  if (state.bridgeAlive || !state.sessionId || state.endedId === state.sessionId) return;
   state.bridgeAlive = true;
   const sid = state.sessionId;
   void (async () => {
@@ -408,7 +411,7 @@ function runBridge($, extra = {}) {
     state.bridgeAlive = false;
     state.bridge = null;
     state.token = null;
-    if (state.sessionId === sid) $.clock.after(3e3, () => runBridge($, extra));
+    if (state.sessionId === sid && state.endedId !== sid) $.clock.after(3e3, () => runBridge($, extra));
   })();
 }
 function handle($, line) {
@@ -431,10 +434,14 @@ function handle($, line) {
       void post($, "state", { state: state.turnId ? "working" : "idle", ...state.turnId ? { turnId: state.turnId } : {}, atMs: Date.now() });
       void postSettings($);
       if (state.contributors.size) void reregister($, state.contributors);
+      void sendAcks($);
       return;
     }
     case "deliver": {
-      if (state.deliveries.has(m.deliveryId)) return;
+      if (state.deliveries.has(m.deliveryId)) {
+        if (state.acks.some((a) => a.deliveryId === m.deliveryId)) void sendAcks($);
+        return;
+      }
       state.deliveries.add(m.deliveryId);
       if (hasSettings(m.settings) || state.waiting) {
         const delivery = { deliveryId: m.deliveryId, text: m.text, settings: hasSettings(m.settings) ? m.settings : {} };
@@ -484,14 +491,47 @@ function handle($, line) {
 function hasSettings(settings) {
   return !!settings && (settings.model !== void 0 || settings.reasoningLevel !== void 0);
 }
-async function ack($, deliveryId, body) {
-  await waitForToken($);
-  const r = await call($, "POST", `/v1/deliveries/${encodeURIComponent(deliveryId)}/ack`, body);
-  if (r.status >= 300) $.ui.log(`unife-pages: ack of ${deliveryId} refused: ${r.status}`, { to: "debug" });
+var ACK_TRIES = 3;
+function ack($, deliveryId, body) {
+  state.acks.push({ deliveryId, body, tries: 0 });
+  void sendAcks($);
+}
+async function sendAcks($) {
+  if (state.acking) return;
+  state.acking = true;
+  try {
+    while (state.token && state.acks.length) {
+      const a = state.acks[0];
+      const token = state.token;
+      let status = null;
+      try {
+        status = (await call($, "POST", `/v1/deliveries/${encodeURIComponent(a.deliveryId)}/ack`, a.body)).status;
+      } catch (e) {
+        $.ui.log(`unife-pages: ack of ${a.deliveryId} not sent: ${e.message}`, { to: "debug" });
+      }
+      const retry = status === null || status === 401 || status >= 500;
+      if (retry && ++a.tries < ACK_TRIES) {
+        if (state.token === token) break;
+        continue;
+      }
+      state.acks.shift();
+      state.deliveries.delete(a.deliveryId);
+      if (retry) $.ui.log(`unife-pages: ack of ${a.deliveryId} dropped after ${ACK_TRIES} tries`, { to: "debug" });
+      else if (status >= 300) $.ui.log(`unife-pages: ack of ${a.deliveryId} refused: ${status}`, { to: "debug" });
+    }
+  } finally {
+    state.acking = false;
+  }
 }
 function submitPlain($, deliveryId, text) {
   $.ui.toast("Answer from your page");
-  void submitTaken($, text).then(() => ack($, deliveryId, {})).catch((e) => $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" })).finally(() => state.deliveries.delete(deliveryId));
+  void submitTaken($, text).then(
+    () => ack($, deliveryId, {}),
+    (e) => {
+      $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
+      state.deliveries.delete(deliveryId);
+    }
+  );
 }
 async function postSettings($) {
   const body = {};
@@ -611,14 +651,8 @@ async function submitWithSettings($, delivery) {
       const reason = `/${command} ${value}: ${failure}`;
       $.ui.log(`a reply from your page was not delivered \u2014 ${reason}`);
       $.ui.log(`unife-pages: delivery ${deliveryId} not submitted: ${reason}`, { to: "debug" });
-      try {
-        await ack($, deliveryId, { failed: { fields: [field], reason } });
-      } catch (e) {
-        $.ui.log(`unife-pages: failed ack failed: ${e.message}`, { to: "debug" });
-      } finally {
-        state.deliveries.delete(deliveryId);
-        state.waiting--;
-      }
+      ack($, deliveryId, { failed: { fields: [field], reason } });
+      state.waiting--;
       return;
     }
   }
@@ -628,10 +662,9 @@ async function submitWithSettings($, delivery) {
     const taken = submitTaken($, text);
     state.waiting--;
     await taken;
-    await ack($, deliveryId, {});
+    ack($, deliveryId, {});
   } catch (e) {
     $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
-  } finally {
     state.deliveries.delete(deliveryId);
   }
 }
@@ -683,7 +716,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.15";
+var PLUGIN_VERSION = "0.6.16";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -700,8 +733,9 @@ function register(on) {
     return next(e);
   });
   on("classic.SessionStart", async ($, e, next) => {
-    const id = await $.session.id();
-    if (state.sessionId && id !== state.sessionId) {
+    const id = typeof e.session_id === "string" && e.session_id ? e.session_id : await $.session.id();
+    if (state.sessionId && (id !== state.sessionId || state.endedId === id)) {
+      state.endedId = null;
       const previous = state.previousId ?? state.sessionId;
       state.sessionId = id;
       state.token = null;
@@ -724,6 +758,7 @@ function register(on) {
   });
   on("session.end", async ($, e, next) => {
     state.previousId = e.sessionId;
+    state.endedId = state.sessionId;
     void post($, "detach", { reason: e.reason, ...e.resume?.id ? { resumeId: e.resume.id } : {} });
     return next(e);
   });

@@ -21673,7 +21673,9 @@ ${this.hostStatus(sessionId)}`;
       }
       case "detach": {
         const b = body ?? {};
-        this.d.onDetach(id, String(b.reason ?? "other"));
+        const reason = String(b.reason ?? "other");
+        this.d.onDetach(id, reason);
+        this.d.bridges.push(id, { type: "ended", reason });
         this.d.bridges.detach(id);
         return json3(res, 200, { ok: true });
       }
@@ -21999,14 +22001,17 @@ var Daemon = class {
   }
   /**
    * The session whose queue holds `deliveryId`, for an ack from `sessionId`: its own, else the nearest session it was
-   * cleared from (`clearedFromId`, followed back through repeated `/clear`s) that holds it. Only that line: a session
-   * acks no delivery of a session it was not cleared from (B-0217). Falls back to `sessionId`, whose queue then misses.
+   * cleared from (`clearedFromId`, followed back through repeated `/clear`s) that holds it. Only that line, and only to
+   * a session this daemon saw end by `clear`: a session acks no delivery of one it only says it was cleared from (B-0217,
+   * B-0224). Falls back to `sessionId`, whose queue then misses.
    */
   ackOwner(sessionId, deliveryId) {
     const seen = /* @__PURE__ */ new Set();
-    for (let id = sessionId; id && !seen.has(id) && seen.size < ACK_CLEARED_DEPTH; id = this.registry.get(id)?.clearedFromId) {
+    for (let id = sessionId; id && !seen.has(id) && seen.size < ACK_CLEARED_DEPTH; ) {
       seen.add(id);
       if (this.queue.owner(deliveryId, [id])) return id;
+      const from = this.registry.get(id)?.clearedFromId;
+      id = from && this.registry.get(from)?.ended?.reason === "clear" ? from : void 0;
     }
     return sessionId;
   }
