@@ -30,7 +30,7 @@ the sessions' transcripts and queues, the log).
 
 A build artefact. The plugin is developed in the private monorepo `unifedev/unife` (`packages/claude-pages`):
 the bundles here are committed as built, nothing is edited by hand, and `main` is only ever a reviewed release
-(tags `unife-pages--v<version>`; this is 0.6.12). Report problems in this repository's issues.
+(tags `unife-pages--v<version>`; this is 0.6.13). Report problems in this repository's issues.
 
 Unife Pages is a host of a protocol for agent-written pages; the protocol spec is published separately. The
 reference server, `@unifedev/pages-core`, is inlined into the daemon unchanged.

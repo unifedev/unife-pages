@@ -1,8 +1,33 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` f4a5c5e): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 4f03cb7): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.14.7 (bb plugin) — 2026-10-29
+
+The bb plugin's release of the 0.6.13 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.7`): a reload comes back to an older session opened
+from the home's search, from pages-core.
+
+## 0.6.13 — 2026-10-29
+
+A reload comes back to an older session opened from the home's search. In pages-core's built-in home, so both hosts
+carry it (B-0214): spec 08 A201.
+
+`@unifedev/pages-core` 0.6.7, `@unifedev/claude-pages` 0.6.13, the bb plugin `@unifedev/thread-pages` 1.14.7.
+
+### Fixed
+
+- **A reload comes back to an older session opened from search.** The home reopens the session you had open when it
+  reloads within 10 minutes, but it looked the session up only in the sidebar's rows, so one found with search past
+  them dropped to New session, with no word why. A phone tab reloads often. Now the home also keeps that session's
+  title, workspace and the page search found it on. After a reload it shows the session under its title, reads that
+  page again, and the session joins the list as the open one, as when you picked it. If the session has moved off
+  that page, its workspace is read. It says "This session is not listed" only once the host says the session is
+  gone; a read that fails keeps the session open and is tried again. If the host refuses the saved page itself (on
+  Claude Code, once the session it was read past is removed), the workspace is read instead, so a session opened from
+  search and later deleted also says "not listed" without a reload. Test: `packages/pages-core/test/agent/home.test.ts`.
 
 ## 0.6.12 — 2026-10-29
 
