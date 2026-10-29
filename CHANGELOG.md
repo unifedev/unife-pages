@@ -1,8 +1,23 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 2615bdd): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 826fda2): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.20 — 2026-10-30
+
+On Claude Code, opening the agent view no longer adds an "Untitled session" to the home (B-0233).
+`@unifedev/claude-pages` 0.6.20; `@unifedev/pages-core` stays 0.6.8 and the bb plugin `@unifedev/thread-pages`
+1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: the agent view no longer leaves an "Untitled session" in the home.** When you open Claude Code's agent
+  view (`claude agents`, or leaving a background session you had attached to), Claude Code gets an empty session ready
+  for its "new session" line. Unife Pages listed that session in the home as "Untitled session", and the row stayed
+  after you closed the view. It is now listed only once you send it a prompt. Background sessions you start, a
+  conversation you send to the background, and a terminal session you have just opened are still listed at once.
+  Tests: `packages/claude-pages/test/mod/mod.test.ts`.
 
 ## 0.6.19 — 2026-10-29
 

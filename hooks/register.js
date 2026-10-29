@@ -5,7 +5,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.19",
+  pluginVersion: "0.6.20",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -39,7 +39,8 @@ var state = {
   commandOutput: [],
   commandWaiter: null,
   reasoningLevel: null,
-  stopNoted: false
+  stopNoted: false,
+  bridgeDeferred: false
 };
 async function homeFor($) {
   if (state.home) return state.home;
@@ -755,7 +756,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.19";
+var PLUGIN_VERSION = "0.6.20";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -764,11 +765,34 @@ async function ids($) {
   state.underHost = await $.env.get("BB_THREAD_ID") ? "bb" : null;
   return state.sessionId;
 }
+async function emptyJob($) {
+  if (!await $.env.get("CLAUDE_JOB_DIR")) return false;
+  try {
+    return (await $.session.messages()).length === 0;
+  } catch {
+    return false;
+  }
+}
+async function startBridge($, source) {
+  if (state.bridgeAlive) return;
+  if ((source === void 0 || source === "startup") && await emptyJob($)) {
+    state.bridgeDeferred = true;
+    void nodePathFor($);
+    return;
+  }
+  state.bridgeDeferred = false;
+  runBridge($);
+}
+function startDeferred($) {
+  if (!state.bridgeDeferred) return;
+  state.bridgeDeferred = false;
+  runBridge($);
+}
 var guard = (next, e) => next.called ? void 0 : next(e);
 function register(on) {
   on("session.start", async ($, e, next) => {
     await ids($);
-    runBridge($);
+    await startBridge($);
     return next(e);
   });
   on("classic.SessionStart", async ($, e, next) => {
@@ -793,11 +817,12 @@ function register(on) {
       } catch {
       }
       state.bridgeAlive = false;
+      state.bridgeDeferred = false;
       runBridge($, kind === "clear" ? { clearedFrom: previous } : kind === "fork" ? { forkOf: previous } : kind === "resume" ? { resumedFrom: previous } : {});
     } else if (!state.sessionId) {
       await ids($);
-      runBridge($);
-    }
+      await startBridge($, e.source);
+    } else if (e.source !== "startup") startDeferred($);
     return next(e);
   });
   on("session.end", async ($, e, next) => {
@@ -807,6 +832,7 @@ function register(on) {
     return next(e);
   });
   on("prompt.compose", async ($, e, next) => {
+    startDeferred($);
     const r = await next(e);
     if (state.underHost) return r;
     const text = await instructionText($);
@@ -814,6 +840,7 @@ function register(on) {
     return { ...r, sections: [...r.sections, { id: "unife-pages:pages", text, scope: "session" }] };
   });
   on("turn.start", async ($, e, next) => {
+    startDeferred($);
     state.turnId = e.turnId;
     state.stopNoted = false;
     takenByTurn(e.text);
