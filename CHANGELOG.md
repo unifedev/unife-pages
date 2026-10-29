@@ -1,8 +1,23 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` d002a7f): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` f4a5c5e): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.12 — 2026-10-29
+
+On Claude Code, page answers run in the order you sent them also when one of them asks for a model or effort (B-0212).
+`@unifedev/claude-pages` 0.6.12; `@unifedev/pages-core` stays 0.6.6 and the bb plugin `@unifedev/thread-pages`
+1.14.6: neither changes.
+
+### Fixed
+
+- **Claude Code: a page answer with a model or effort no longer runs after a plain answer you sent later.** While
+  Claude Code worked, an answer sent with a model or effort waited for the turn's end so the setting never changed the
+  running turn, but a plain answer sent after it went to Claude Code at once and ran first. Now an answer sent while
+  one with a setting still waits goes behind it: the setting is applied, that answer runs, then the later ones, in the
+  order you sent them. Plain answers sent together behind it still run as one turn. When no answer with a setting
+  waits, nothing changes. Test: `packages/claude-pages/test/mod/mod.test.ts`.
 
 ## 1.14.6 (bb plugin) — 2026-10-29
 
