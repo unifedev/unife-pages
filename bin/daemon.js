@@ -591,10 +591,39 @@ import fs4 from "node:fs";
 import path9 from "node:path";
 import { spawnSync } from "node:child_process";
 var START_GRACE_MS = 1e3;
-function processStarts(pids) {
+var TICKS_PER_SEC = 100;
+function processStarts(pids, onFail, procRoot = process.platform === "linux" ? "/proc" : null) {
+  if (!pids.length) return /* @__PURE__ */ new Map();
+  return procRoot !== null && procStarts(pids, procRoot) || psStarts(pids, onFail);
+}
+function procStarts(pids, root) {
   const out = /* @__PURE__ */ new Map();
-  if (!pids.length) return out;
+  try {
+    const uptime = Number(fs4.readFileSync(path9.join(root, "uptime"), "utf8").split(" ")[0]);
+    if (!Number.isFinite(uptime)) return null;
+    const now = Date.now();
+    for (const pid of pids) {
+      let stat;
+      try {
+        stat = fs4.readFileSync(path9.join(root, String(pid), "stat"), "utf8");
+      } catch (e) {
+        if (e.code === "ENOENT" || e.code === "ESRCH") continue;
+        throw e;
+      }
+      const ticks = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
+      if (!Number.isFinite(ticks)) return null;
+      out.set(pid, now - (uptime - ticks / TICKS_PER_SEC) * 1e3);
+    }
+  } catch {
+    return null;
+  }
+  return out;
+}
+function psStarts(pids, onFail) {
+  const out = /* @__PURE__ */ new Map();
   const r = spawnSync("ps", ["-o", "pid=,etime=", "-p", pids.join(",")], { encoding: "utf8", timeout: 5e3 });
+  const why = r.error?.message ?? (r.signal ? `killed by ${r.signal}` : r.status !== 0 ? (r.stderr ?? "").trim().replace(/\s+/g, " ").slice(0, 200) : "");
+  if (why) onFail?.(why);
   const now = Date.now();
   for (const line of (r.stdout ?? "").split("\n")) {
     const m = /^\s*(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)\s*$/.exec(line);
@@ -1156,7 +1185,7 @@ var Bridges = class {
   bySession = /* @__PURE__ */ new Map();
   byToken = /* @__PURE__ */ new Map();
   calls = /* @__PURE__ */ new Map();
-  /** The bearers of superseded bridges: good for their process's acks and release only, until that process is gone (B-0239). */
+  /** The bearers of superseded bridges, and of refused only-if-free tries: good for their process's acks and releases only, until that process is gone (B-0239, B-0253). */
   ackOnly = /* @__PURE__ */ new Map();
   ping;
   onDrop = null;
@@ -1210,6 +1239,17 @@ var Bridges = class {
   heldByOther(sessionId, parentPid) {
     const a = this.bySession.get(sessionId);
     return !!a && a.parentPid !== parentPid;
+  }
+  /**
+   * The ack-only bearer a refused `ifFree` try of process `parentPid` gets: the one that process already has for the
+   * session, else a fresh one. A page server that restarted knows no bearer of the superseded bridge, so without it that
+   * process's acks of what it runs would never land, and its exit would hand those answers to the holder (B-0253).
+   */
+  ackOnlyFor(sessionId, parentPid) {
+    for (const [t, k] of this.ackOnly) if (k.sessionId === sessionId && k.parentPid === parentPid) return t;
+    const token = randomBytes2(24).toString("base64url");
+    this.ackOnly.set(token, { sessionId, parentPid });
+    return token;
   }
   detach(sessionId) {
     const a = this.bySession.get(sessionId);
@@ -21705,7 +21745,7 @@ ${this.hostStatus(sessionId)}`;
     if (!SESSION_ID_RE.test(id)) return json3(ctx.res, 404, { error: "not_found" });
     const body = await ctx.body() ?? {};
     const parentPid = Number.isSafeInteger(body.parentPid) && body.parentPid > 0 ? body.parentPid : 0;
-    if (body.ifFree === true && this.d.bridges.heldByOther(id, parentPid)) return json3(ctx.res, 409, { error: "held by another process" });
+    if (body.ifFree === true && this.d.bridges.heldByOther(id, parentPid)) return json3(ctx.res, 409, { error: "held by another process", ...parentPid > 0 ? { ackToken: this.d.bridges.ackOnlyFor(id, parentPid) } : {} });
     const res = ctx.res;
     res.writeHead(200, { "content-type": "application/x-ndjson", "cache-control": "no-store", "connection": "keep-alive" });
     res.flushHeaders();
@@ -21751,15 +21791,18 @@ ${this.hostStatus(sessionId)}`;
     json3(ctx.res, ok ? 200 : 404, { ok });
   }
   /**
-   * A superseded process's mod lets go of the answers pushed to it that Claude Code does not have (B-0239): `keep` names
-   * the ones it does; the rest go to the session's holder now instead of when that process exits.
+   * A process's mod lets go of the answers pushed to it for a session it no longer holds (superseded, B-0239, or left by
+   * a `/clear`, `/resume` or `/branch`, B-0250) that Claude Code does not have: `keep` names the ones it does; the rest
+   * go to the session's holder now instead of when that process exits. Any bearer of that process may name any session:
+   * only the notes of the bearer's own pid are dropped (D-0096's boundary).
    */
   async release(ctx) {
     if (!ctx.session) return json3(ctx.res, 401, { error: "unauthorized" });
     const body = await ctx.body() ?? {};
-    if (body.sessionId !== void 0 && body.sessionId !== ctx.session) return json3(ctx.res, 403, { error: "forbidden" });
+    const sid = body.sessionId === void 0 ? ctx.session : body.sessionId;
+    if (typeof sid !== "string" || !SESSION_ID_RE.test(sid)) return json3(ctx.res, 400, { error: "sessionId" });
     const keep = new Set(Array.isArray(body.keep) ? body.keep.filter((k) => typeof k === "string") : []);
-    return json3(ctx.res, 200, { released: ctx.pid > 0 ? this.d.releasePushed(ctx.session, ctx.pid, keep) : 0 });
+    return json3(ctx.res, 200, { released: ctx.pid > 0 ? this.d.releasePushed(sid, ctx.pid, keep) : 0 });
   }
   async sessionRoute(ctx, id, what) {
     const { req, res } = ctx;
@@ -21982,7 +22025,13 @@ var Daemon = class {
     this.bridges.onEvict = (sid, how) => this.onBridgeEvicted(sid, how);
     for (const e of this.registry.all()) this.waits.restore(e.id);
     this.pushedTo = new Pushed(sessionsDir(this.home), (sid, err) => this.log.warn(`session ${sid}: the note of where its answers went could not be written: ${err.message}`));
-    this.pushedTo.load(this.registry.all().map((e) => e.id), opts.bootMs ?? Date.now() - os3.uptime() * 1e3, this.pidAlive, opts.processStarts ?? processStarts, (sid) => new Set(this.queue.unacked(sid).map((q) => q.deliveryId)));
+    this.pushedTo.load(
+      this.registry.all().map((e) => e.id),
+      opts.bootMs ?? Date.now() - os3.uptime() * 1e3,
+      this.pidAlive,
+      (pids) => (opts.processStarts ?? processStarts)(pids, (why) => this.log.warn(`ps could not check the ${pids.length} Claude Code process${pids.length === 1 ? "" : "es"} unacked answers were pushed to (${why}): those notes are dropped, so such an answer may be pushed again to the session's next terminal`)),
+      (sid) => new Set(this.queue.unacked(sid).map((q) => q.deliveryId))
+    );
   }
   opts;
   home;
@@ -22354,14 +22403,15 @@ var Daemon = class {
     this.pushedTo.delete(deliveryId);
   }
   /**
-   * A superseded process's mod lets go of what it pushed there except `keep`, the ones Claude Code already has in its
-   * queue (B-0239): the rest go to the session's holder at once.
+   * A process's mod lets go of what was pushed to it for session `sid` except `keep`, the ones Claude Code already has in
+   * its queue (B-0239, B-0250): the rest go to the session's holder at once. Never at once to that same process (its
+   * bridge for `sid` not yet closed after a switch): there they wait for its next idle, as before.
    */
   releasePushed(sid, pid, keep) {
     const n = this.pushedTo.drop((did, p) => p.sessionId === sid && p.pid === pid && !keep.has(did)).length;
     if (n) {
       this.log.info(`session ${sid}: ${n} answer(s) released by pid ${pid}`);
-      this.drainQueue(sid);
+      if (this.bridges.get(sid)?.parentPid !== pid) this.drainQueue(sid);
     }
     return n;
   }

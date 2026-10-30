@@ -223,8 +223,7 @@ function connect() {
       headers: { "content-type": "application/json", "content-length": String(Buffer.byteLength(text)), [BRIDGE_HEADER]: "1" }
     }, (res) => {
       if (res.statusCode === 409 && ifFree) {
-        res.resume();
-        resolve("busy");
+        busy(res).then(() => resolve("busy"), () => resolve("busy"));
         return;
       }
       if (res.statusCode !== 200) {
@@ -258,6 +257,19 @@ function connect() {
     req.on("error", (err) => resolve(err.code === "ECONNREFUSED" || err.code === "ENOENT" ? "refused" : "error"));
     req.end(text);
   });
+}
+async function busy(res) {
+  let text = "";
+  res.setEncoding("utf8");
+  for await (const d of res) text += d;
+  let token;
+  try {
+    token = JSON.parse(text).ackToken;
+  } catch {
+    return;
+  }
+  if (typeof token !== "string" || !token) return;
+  await new Promise((r) => process.stdout.write(JSON.stringify({ type: "ackOnly", token }) + "\n", () => r()));
 }
 setInterval(() => {
   try {

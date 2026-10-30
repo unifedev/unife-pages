@@ -1,8 +1,47 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` f2f9e0c): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` c9c56b3): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.24 — 2026-10-30
+
+On Claude Code, a page answer you stopped with Esc in one terminal now runs in the other terminal you opened the
+conversation in, at once, instead of waiting until the first terminal closes (B-0250, a regression in 0.6.22). Two
+narrower cases of one conversation open in two terminals are fixed with it (B-0252, B-0253). On Linux, the page
+server's check of the processes it pushed answers to now also works in Alpine and Debian slim containers, and its
+log says when it cannot check (B-0254, B-0256).
+`@unifedev/claude-pages` 0.6.24; `@unifedev/pages-core` stays 0.6.8 and the bb plugin `@unifedev/thread-pages`
+1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: an answer stopped in one terminal runs in the other at once.** You answered on the page while
+  Claude Code was busy in one terminal, pressed Esc there (so the answer did not run), typed `/clear`, and opened
+  the conversation in a second terminal. Since 0.6.22 the page server kept the answer from the second terminal for
+  as long as the first stayed open, and the page read queued. A terminal now tells the page server which answers it
+  still has for a conversation it left (`/clear`, `/resume`, `/branch`) or lost to another terminal: when it leaves,
+  and again each time Claude Code drops one. The rest go to the terminal that has the page. A terminal can only let
+  go of answers sent to its own Claude Code. Tests: `packages/claude-pages/test/mod/mod.test.ts`,
+  `test/daemon/control.test.ts`.
+- **Claude Code: an answer with a model or effort change goes where the page is.** When another terminal took the
+  page while such an answer was still waiting its turn in the first terminal, the first terminal ran it there, model
+  change included, not where your page was. It now goes to the terminal with the page. One whose `/model` had
+  already started still finishes in the first terminal, once (B-0252). Tests: `packages/claude-pages/test/mod/mod.test.ts`.
+- **Claude Code: a terminal that lost its page confirms its answers across a page-server restart.** A terminal
+  that lost its page ran an answer it already had. If its "this answer ran" message failed once, for example because the page server
+  restarted (each plugin upgrade restarts it), nothing sent the message again. When that terminal then closed, the
+  answer ran a second time in the other terminal. The first terminal now sends it again every 10 s, the 10 s it
+  already uses to try to get its page back. The page server answers each refused try with a key good only for these
+  messages, so they also get through after a restart (B-0253). If that terminal closes before its next try, within
+  those 10 s, the answer can still run in the other terminal too. Tests: `packages/claude-pages/test/mod/mod.test.ts`,
+  `test/daemon/control.test.ts`, `test/bridge/superseded.test.ts`.
+- **Claude Code: the page server checks the processes it pushed answers to in more Linux containers.** When it
+  restarts, it checks that each Claude Code an answer went to is still the process it was. If it cannot check
+  (the system's `ps` is missing or fails), it drops those notes as before and now says so in its log (B-0254).
+  On Linux it now reads those start times from `/proc` instead of `ps`. So the check also works in containers
+  whose `ps` cannot do it (Alpine) or that have none (Debian slim), and the warning no longer shows at each start
+  there (B-0256). Tests: `packages/claude-pages/test/daemon/control.test.ts`.
 
 ## 0.6.23 — 2026-10-30
 

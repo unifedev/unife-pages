@@ -8,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.23",
+  pluginVersion: "0.6.24",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -37,6 +37,9 @@ var state = {
   held: [],
   waiting: 0,
   deliveries: /* @__PURE__ */ new Set(),
+  deliveryOf: /* @__PURE__ */ new Map(),
+  releasing: /* @__PURE__ */ new Set(),
+  chained: [],
   acks: [],
   acking: false,
   ackToken: null,
@@ -451,6 +454,7 @@ function runBridge($, extra = {}, ifFree = false) {
     state.token = null;
     if (state.sessionId !== sid || state.endedId === sid) return;
     if (state.supersededId === sid) $.clock.after(SUPERSEDED_TRY_MS, () => {
+      void sendAcks($).then(() => flushReleases($));
       if (state.sessionId === sid) runBridge($, extra, true);
     });
     else if (ifFree && !greeted) runBridge($, extra);
@@ -504,7 +508,7 @@ function handle($, line) {
       void post($, "state", { state: state.turnId ? "working" : "idle", ...state.turnId ? { turnId: state.turnId } : {}, atMs: Date.now() });
       void postSettings($);
       if (state.contributors.size) void reregister($, state.contributors);
-      void sendAcks($);
+      void sendAcks($).then(() => flushReleases($));
       return;
     }
     case "deliver": {
@@ -513,6 +517,7 @@ function handle($, line) {
         return;
       }
       state.deliveries.add(m.deliveryId);
+      if (state.sessionId) state.deliveryOf.set(m.deliveryId, state.sessionId);
       if (hasSettings(m.settings) || state.waiting) {
         const delivery = { deliveryId: m.deliveryId, text: m.text, settings: hasSettings(m.settings) ? m.settings : {} };
         const holdNow = state.turnId && state.waiting === state.held.length;
@@ -549,17 +554,24 @@ function handle($, line) {
       return;
     }
     case "superseded": {
-      state.supersededId = state.sessionId;
+      const sid = state.supersededId = state.sessionId;
       const held = state.held.splice(0);
-      for (const h of held) state.deliveries.delete(h.deliveryId);
-      state.waiting = Math.max(0, state.waiting - held.length);
+      const chained = state.chained.filter((c) => state.deliveryOf.get(c.deliveryId) === sid);
+      state.chained = state.chained.filter((c) => !chained.includes(c));
+      for (const h of [...held, ...chained]) forgetDelivery(h.deliveryId);
+      state.waiting = Math.max(0, state.waiting - held.length - chained.length);
       state.ackToken = state.token;
-      release($);
+      release($, sid);
       $.ui.log("unife-pages: this session was resumed in another Claude Code process; its page follows that one until you type here or it lets go", { to: "debug" });
       return;
     }
     case "instruction.changed":
       state.instruction = null;
+      return;
+    case "ackOnly":
+      if (state.token) return;
+      state.ackToken = m.token;
+      void sendAcks($).then(() => flushReleases($));
       return;
     case "status":
       $.ui.log(`unife-pages: ${m.text}`, { to: "debug" });
@@ -568,9 +580,41 @@ function handle($, line) {
       return;
   }
 }
-function release($) {
-  if (!state.ackToken || !state.sessionId || state.supersededId !== state.sessionId) return;
-  void call($, "POST", "/v1/deliveries/release", { sessionId: state.sessionId, keep: [...state.deliveries] }, { authorization: `Bearer ${state.ackToken}` }).catch((e) => $.ui.log(`unife-pages: release failed: ${e.message}`, { to: "debug" }));
+function forgetDelivery(deliveryId) {
+  const sid = state.deliveryOf.get(deliveryId);
+  state.deliveries.delete(deliveryId);
+  state.deliveryOf.delete(deliveryId);
+  return sid;
+}
+function release($, sid) {
+  if (!sid) return;
+  if (sid === state.sessionId && state.supersededId !== sid) {
+    state.releasing.delete(sid);
+    return;
+  }
+  const token = state.token ?? state.ackToken;
+  if (!token) {
+    state.releasing.add(sid);
+    return;
+  }
+  state.releasing.delete(sid);
+  const keep = [...state.deliveries].filter((d) => state.deliveryOf.get(d) === sid);
+  const again = () => {
+    if (state.ackToken === token) state.ackToken = null;
+    if ((state.token ?? state.ackToken) && state.token !== token) release($, sid);
+    else state.releasing.add(sid);
+  };
+  void call($, "POST", "/v1/deliveries/release", { sessionId: sid, keep }, { authorization: `Bearer ${token}` }).then((r) => {
+    if (r.status === 401) again();
+    else if (r.status >= 500) state.releasing.add(sid);
+  }, (e) => {
+    $.ui.log(`unife-pages: release failed: ${e.message}`, { to: "debug" });
+    state.releasing.add(sid);
+  });
+}
+function flushReleases($) {
+  if (!(state.token ?? state.ackToken)) return;
+  for (const sid of [...state.releasing]) release($, sid);
 }
 function hasSettings(settings) {
   return !!settings && (settings.model !== void 0 || settings.reasoningLevel !== void 0);
@@ -593,13 +637,17 @@ async function sendAcks($) {
       } catch (e) {
         $.ui.log(`unife-pages: ack of ${a.deliveryId} not sent: ${e.message}`, { to: "debug" });
       }
+      if (status === 401 && token !== state.token && token === state.ackToken) {
+        state.ackToken = null;
+        continue;
+      }
       const retry = status === null || status === 401 || status >= 500;
       if (retry && ++a.tries < ACK_TRIES) {
         if ((state.token ?? state.ackToken) === token) break;
         continue;
       }
       state.acks.shift();
-      state.deliveries.delete(a.deliveryId);
+      forgetDelivery(a.deliveryId);
       if (retry) $.ui.log(`unife-pages: ack of ${a.deliveryId} dropped after ${ACK_TRIES} tries`, { to: "debug" });
       else if (status >= 300) $.ui.log(`unife-pages: ack of ${a.deliveryId} refused: ${status}`, { to: "debug" });
     }
@@ -613,8 +661,7 @@ function submitPlain($, deliveryId, text) {
     () => ack($, deliveryId, {}),
     (e) => {
       $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
-      state.deliveries.delete(deliveryId);
-      release($);
+      release($, forgetDelivery(deliveryId));
     }
   );
 }
@@ -639,6 +686,7 @@ async function postSettings($) {
   }
 }
 function enqueueSettings($, delivery) {
+  state.chained.push(delivery);
   state.settingsChain = state.settingsChain.then(() => submitWithSettings($, delivery)).catch(() => void 0);
 }
 function refusedText(answer) {
@@ -706,6 +754,9 @@ async function settingTook($, command, value) {
   return `${NO_TEXT}; the session's model is ${alias ?? (id || "unknown")}`;
 }
 async function submitWithSettings($, delivery) {
+  const at = state.chained.indexOf(delivery);
+  if (at < 0) return;
+  state.chained.splice(at, 1);
   const { deliveryId, text, settings } = delivery;
   const plain = !hasSettings(settings);
   if (plain ? state.held.length : state.turnId) {
@@ -750,8 +801,7 @@ async function submitWithSettings($, delivery) {
     ack($, deliveryId, {});
   } catch (e) {
     $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
-    state.deliveries.delete(deliveryId);
-    release($);
+    release($, forgetDelivery(deliveryId));
   }
 }
 function submitTaken($, text) {
@@ -805,7 +855,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.23";
+var PLUGIN_VERSION = "0.6.24";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -847,6 +897,7 @@ function register(on) {
   on("classic.SessionStart", async ($, e, next) => {
     const id = typeof e.session_id === "string" && e.session_id ? e.session_id : await $.session.id();
     if (state.sessionId && (id !== state.sessionId || state.endedId === id)) {
+      const left = state.sessionId;
       state.endedId = null;
       state.supersededId = null;
       state.keptRows = null;
@@ -864,6 +915,7 @@ function register(on) {
       state.instruction = null;
       state.inflight.clear();
       state.decided.clear();
+      if (state.helloed.has(left)) release($, left);
       state.cwd = await $.session.cwd();
       try {
         await state.bridge?.return(void 0);
