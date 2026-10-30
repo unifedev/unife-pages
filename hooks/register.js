@@ -8,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.21",
+  pluginVersion: "0.6.22",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -39,6 +39,8 @@ var state = {
   deliveries: /* @__PURE__ */ new Set(),
   acks: [],
   acking: false,
+  ackToken: null,
+  ownTexts: [],
   submitted: [],
   settingsChain: Promise.resolve(),
   ownSwitch: null,
@@ -448,12 +450,23 @@ function runBridge($, extra = {}, ifFree = false) {
     state.bridge = null;
     state.token = null;
     if (state.sessionId !== sid || state.endedId === sid) return;
-    if (state.supersededId === sid) $.clock.after(SUPERSEDED_TRY_MS, () => runBridge($, extra, true));
+    if (state.supersededId === sid) $.clock.after(SUPERSEDED_TRY_MS, () => {
+      if (state.sessionId === sid) runBridge($, extra, true);
+    });
     else if (ifFree && !greeted) runBridge($, extra);
-    else $.clock.after(3e3, () => runBridge($, extra));
+    else $.clock.after(3e3, () => {
+      if (state.sessionId === sid) runBridge($, extra);
+    });
   })();
 }
 var SUPERSEDED_TRY_MS = 1e4;
+function typedWhileBusy(e) {
+  if (e.door !== "queue" || e.message?.type !== "user" || e.message.isMeta) return false;
+  const c = e.message.content;
+  const text = (typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => b && typeof b.text === "string" ? b.text : "").join("") : "").trim();
+  if (!text || text.startsWith("<")) return false;
+  return !state.submitted.some((s) => s.text.trim() === text) && !state.ownTexts.some((t) => t.trim() === text);
+}
 function reclaim($) {
   if (!state.sessionId || state.supersededId !== state.sessionId) return;
   state.supersededId = null;
@@ -470,6 +483,7 @@ function handle($, line) {
   switch (m.type) {
     case "hello": {
       state.token = m.sessionToken;
+      state.ackToken = null;
       if (state.sessionId) state.helloed.add(state.sessionId);
       if (state.supersededId === state.sessionId) state.supersededId = null;
       if (state.telling) {
@@ -539,6 +553,8 @@ function handle($, line) {
       const held = state.held.splice(0);
       for (const h of held) state.deliveries.delete(h.deliveryId);
       state.waiting = Math.max(0, state.waiting - held.length);
+      state.ackToken = state.token;
+      release($);
       $.ui.log("unife-pages: this session was resumed in another Claude Code process; its page follows that one until you type here or it lets go", { to: "debug" });
       return;
     }
@@ -552,6 +568,10 @@ function handle($, line) {
       return;
   }
 }
+function release($) {
+  if (!state.ackToken || !state.sessionId || state.supersededId !== state.sessionId) return;
+  void call($, "POST", "/v1/deliveries/release", { sessionId: state.sessionId, keep: [...state.deliveries] }, { authorization: `Bearer ${state.ackToken}` }).catch((e) => $.ui.log(`unife-pages: release failed: ${e.message}`, { to: "debug" }));
+}
 function hasSettings(settings) {
   return !!settings && (settings.model !== void 0 || settings.reasoningLevel !== void 0);
 }
@@ -564,18 +584,18 @@ async function sendAcks($) {
   if (state.acking) return;
   state.acking = true;
   try {
-    while (state.token && state.acks.length) {
+    while ((state.token ?? state.ackToken) && state.acks.length) {
       const a = state.acks[0];
-      const token = state.token;
+      const token = state.token ?? state.ackToken;
       let status = null;
       try {
-        status = (await call($, "POST", `/v1/deliveries/${encodeURIComponent(a.deliveryId)}/ack`, a.body)).status;
+        status = (await call($, "POST", `/v1/deliveries/${encodeURIComponent(a.deliveryId)}/ack`, a.body, { authorization: `Bearer ${token}` })).status;
       } catch (e) {
         $.ui.log(`unife-pages: ack of ${a.deliveryId} not sent: ${e.message}`, { to: "debug" });
       }
       const retry = status === null || status === 401 || status >= 500;
       if (retry && ++a.tries < ACK_TRIES) {
-        if (state.token === token) break;
+        if ((state.token ?? state.ackToken) === token) break;
         continue;
       }
       state.acks.shift();
@@ -594,6 +614,7 @@ function submitPlain($, deliveryId, text) {
     (e) => {
       $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
       state.deliveries.delete(deliveryId);
+      release($);
     }
   );
 }
@@ -730,12 +751,15 @@ async function submitWithSettings($, delivery) {
   } catch (e) {
     $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
     state.deliveries.delete(deliveryId);
+    release($);
   }
 }
 function submitTaken($, text) {
   return new Promise((resolve, reject) => {
     const s = { text, taken: resolve };
     state.submitted.push(s);
+    state.ownTexts.push(text);
+    if (state.ownTexts.length > OWN_TEXTS) state.ownTexts.shift();
     const notTaken = (e) => {
       const i = state.submitted.indexOf(s);
       if (i >= 0) state.submitted.splice(i, 1);
@@ -755,6 +779,7 @@ function submitTaken($, text) {
     }, notTaken);
   });
 }
+var OWN_TEXTS = 16;
 var STOPPED_LINE = "Claude Code was stopped, so answers from your page wait until you send a message here";
 function dropReason(r) {
   return r && typeof r === "object" && typeof r.drop === "string" ? r.drop : null;
@@ -780,7 +805,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.21";
+var PLUGIN_VERSION = "0.6.22";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -914,6 +939,7 @@ function register(on) {
   });
   on("session.append", async ($, e, next) => {
     if (e.door === "prompt" && e.origin?.kind === "composer") reclaim($);
+    else if (typedWhileBusy(e)) reclaim($);
     if (noteCommandOutput(e)) void postSettings($);
     const r = await next(e);
     await sendRow($, e);

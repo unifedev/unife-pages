@@ -1,10 +1,10 @@
 // src/daemon/main.ts
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import path18 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/daemon/daemon.ts
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 import path17 from "node:path";
 
 // src/daemon/log.ts
@@ -586,6 +586,7 @@ var Queue = class {
 };
 
 // src/daemon/rows.ts
+import fs4 from "node:fs";
 import path9 from "node:path";
 var cursorOf = (seq) => String(seq).padStart(12, "0");
 var CURSOR_RE = /^\d{1,12}$/;
@@ -616,6 +617,16 @@ var Rows = class {
   }
   hasRows(id) {
     return this.load(id).rows.length > 0;
+  }
+  /** Whether the session has any row, without reading its file into memory: its size, unless it is loaded; an unreadable one counts as having rows (B-0240 review F2). */
+  hasAny(id) {
+    const s = this.sessions.get(id);
+    if (s) return s.rows.length > 0;
+    try {
+      return fs4.statSync(this.file(id)).size > 0;
+    } catch (e) {
+      return e.code !== "ENOENT";
+    }
   }
   maxSeq(id) {
     return this.load(id).rows.length;
@@ -1059,6 +1070,8 @@ var Bridges = class {
   bySession = /* @__PURE__ */ new Map();
   byToken = /* @__PURE__ */ new Map();
   calls = /* @__PURE__ */ new Map();
+  /** The bearers of superseded bridges: good for their process's acks and release only, until that process is gone (B-0239). */
+  ackOnly = /* @__PURE__ */ new Map();
   ping;
   onDrop = null;
   /** A second attach for the same session evicted the first: its waits and contributors are gone with it (CP-10). */
@@ -1074,7 +1087,9 @@ var Bridges = class {
    * evicts in turn, as before. An attach from another process (the bridge's parent differs: the id resumed in a second
    * terminal) supersedes the old one: `superseded` goes down before the close, so that bridge exits instead of
    * attaching again 300 ms later, and the two processes stop evicting each other (B-0230, H-123). A pid of 0 (unknown)
-   * is never another process.
+   * is never another process. The superseded bridge's bearer stays good for its acks and its release, so an answer
+   * already in that process's own queue is acked when it runs there (B-0239); the same process attaching the id again
+   * gets a fresh bearer, and the kept one goes.
    */
   attach(sessionId, res, meta) {
     const prev = this.bySession.get(sessionId);
@@ -1082,8 +1097,10 @@ var Bridges = class {
       const superseded = prev.parentPid > 0 && meta.parentPid > 0 && prev.parentPid !== meta.parentPid;
       if (superseded) this.write(prev, { type: "superseded" });
       this.drop(prev, false);
+      if (superseded) this.ackOnly.set(prev.token, { sessionId, parentPid: prev.parentPid });
       this.onEvict?.(sessionId, { fromPid: prev.parentPid, toPid: meta.parentPid, superseded });
     }
+    for (const [t, k] of this.ackOnly) if (k.sessionId === sessionId && k.parentPid === meta.parentPid) this.ackOnly.delete(t);
     const a = { sessionId, token: randomBytes2(24).toString("base64url"), res, attachedAtMs: Date.now(), ...meta };
     this.bySession.set(sessionId, a);
     this.byToken.set(a.token, a);
@@ -1114,6 +1131,18 @@ var Bridges = class {
   }
   sessionOf(token) {
     return token ? this.byToken.get(token)?.sessionId ?? null : null;
+  }
+  /** Who a bearer is: an attached bridge's, or a superseded one's, good for acks only (B-0239). */
+  bearer(token) {
+    if (!token) return null;
+    const a = this.byToken.get(token);
+    if (a) return { sessionId: a.sessionId, parentPid: a.parentPid, ackOnly: false };
+    const k = this.ackOnly.get(token);
+    return k ? { ...k, ackOnly: true } : null;
+  }
+  /** The ack-only bearers of processes that are gone go with them. */
+  sweepAckOnly(alive) {
+    for (const [t, k] of this.ackOnly) if (!alive(k.parentPid)) this.ackOnly.delete(t);
   }
   isOnline(sessionId) {
     return this.bySession.has(sessionId);
@@ -1172,6 +1201,7 @@ var Bridges = class {
   }
   close() {
     clearInterval(this.ping);
+    this.ackOnly.clear();
     for (const a of [...this.bySession.values()]) this.drop(a, false);
   }
 };
@@ -1275,7 +1305,7 @@ var Contributors = class {
 // src/daemon/supervisor.ts
 import { spawn as spawn2 } from "node:child_process";
 import { randomBytes as randomBytes3 } from "node:crypto";
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import path13 from "node:path";
 var DECLARATION_FILE = "unife-pages.json";
 var SCAN_MS = 3e4;
@@ -1286,7 +1316,7 @@ function installedPluginDirs(claudeDir) {
   if (!claudeDir) return [];
   const read = (file) => {
     try {
-      return JSON.parse(fs4.readFileSync(file, "utf8"));
+      return JSON.parse(fs5.readFileSync(file, "utf8"));
     } catch {
       return {};
     }
@@ -1304,7 +1334,7 @@ function readDeclaration(pluginDir, log) {
   const file = path13.join(pluginDir, DECLARATION_FILE);
   let raw;
   try {
-    raw = JSON.parse(fs4.readFileSync(file, "utf8"));
+    raw = JSON.parse(fs5.readFileSync(file, "utf8"));
   } catch (e) {
     if (e.code !== "ENOENT") log.warn(`contributors: ${file} is not JSON`);
     return null;
@@ -1320,7 +1350,7 @@ function readDeclaration(pluginDir, log) {
   if (typeof c.process !== "string" || path13.isAbsolute(c.process) || c.process.split(/[\\/]/).includes("..")) return refuse("process must be a path inside the plugin folder");
   if (c.args !== void 0 && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) return refuse("args must be strings");
   const entry = path13.join(pluginDir, c.process);
-  if (!fs4.existsSync(entry)) return refuse(`${c.process} does not exist`);
+  if (!fs5.existsSync(entry)) return refuse(`${c.process} does not exist`);
   return { namespace: c.namespace, pluginDir, process: entry, args: c.args ?? [] };
 }
 var Supervisor = class {
@@ -1395,7 +1425,7 @@ var Supervisor = class {
     };
     const found = /* @__PURE__ */ new Map();
     for (const dir of [...installedPluginDirs(this.o.claudeDir), ...this.extraDirs]) {
-      if (!fs4.existsSync(dir)) continue;
+      if (!fs5.existsSync(dir)) continue;
       const d = readDeclaration(dir, { info: this.o.log.info, warn: warnOnce });
       if (!d) continue;
       const first = found.get(d.namespace);
@@ -20497,7 +20527,7 @@ async function mountPages(serving, provider, options) {
 var encoder2 = new TextEncoder();
 
 // src/daemon/serving/files-route.ts
-import fs5 from "node:fs";
+import fs6 from "node:fs";
 import fsp4 from "node:fs/promises";
 import path15 from "node:path";
 var TYPES2 = {
@@ -20594,7 +20624,7 @@ async function serveOwnFile2(req, res, root, rel) {
     return;
   }
   await new Promise((resolve) => {
-    const stream = fs5.createReadStream(abs, { start, end });
+    const stream = fs6.createReadStream(abs, { start, end });
     stream.on("error", () => {
       res.destroy();
       resolve();
@@ -20970,14 +21000,14 @@ async function startBackground(d, cwd, args) {
 }
 
 // src/daemon/open.ts
-import fs6 from "node:fs";
+import fs7 from "node:fs";
 import os2 from "node:os";
 import { spawn as spawn4 } from "node:child_process";
 var asq = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 var shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 var TERMINAL_NAMES = { ghostty: "Ghostty", terminal: "Terminal" };
 function pickTerminal(setting) {
-  return setting ?? (fs6.existsSync("/Applications/Ghostty.app") ? "ghostty" : "terminal");
+  return setting ?? (fs7.existsSync("/Applications/Ghostty.app") ? "ghostty" : "terminal");
 }
 function terminalScript(terminal, command, cwd) {
   return terminal === "ghostty" ? [
@@ -21076,7 +21106,7 @@ function openUrl(url, log, waitMs = OPEN_WAIT_MS) {
     }, waitMs);
   });
 }
-var deepLinkInstalled = () => process.platform === "darwin" ? fs6.existsSync(`${os2.homedir()}/Applications/Claude Code URL Handler.app`) : process.platform === "linux";
+var deepLinkInstalled = () => process.platform === "darwin" ? fs7.existsSync(`${os2.homedir()}/Applications/Claude Code URL Handler.app`) : process.platform === "linux";
 var resumeDeepLink = (cwd, sessionId) => `claude-cli://open?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(`/resume ${sessionId}`)}`;
 var realOpener = (log) => ({
   terminal: (t, command, cwd) => openInTerminal(t, command, cwd, log),
@@ -21246,7 +21276,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
         }
         if (mode === "steer" && e.liveState !== "idle" && !next) {
           const did2 = d.queue.append(id, text, "steer");
-          d.bridges.push(id, { type: "steer", deliveryId: did2, text });
+          if (d.bridges.push(id, { type: "steer", deliveryId: did2, text })) d.notePushed(did2, id);
           const r2 = await d.queue.waitAck(did2, RELAY_MS);
           if (!r2.acked) return { delivery: "queued" };
           const mid = steerIds.get(did2);
@@ -21407,7 +21437,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
 }
 
 // src/daemon/control/api.ts
-import fs7 from "node:fs";
+import fs8 from "node:fs";
 import http3 from "node:http";
 var BODY_LIMIT2 = 8 * 1024 * 1024;
 var ControlServer = class {
@@ -21429,13 +21459,13 @@ var ControlServer = class {
   listen(socketPath2) {
     this.path = socketPath2;
     try {
-      fs7.unlinkSync(socketPath2);
+      fs8.unlinkSync(socketPath2);
     } catch {
     }
     return new Promise((resolve, reject) => {
       this.server.once("error", reject);
       this.server.listen(socketPath2, () => {
-        fs7.chmodSync(socketPath2, 384);
+        fs8.chmodSync(socketPath2, 384);
         this.server.off("error", reject);
         resolve();
       });
@@ -21446,7 +21476,7 @@ var ControlServer = class {
       this.server.closeAllConnections?.();
       this.server.close(() => {
         try {
-          fs7.unlinkSync(this.path);
+          fs8.unlinkSync(this.path);
         } catch {
         }
         r();
@@ -21466,12 +21496,14 @@ var ControlServer = class {
     const url = new URL(req.url ?? "/", "http://control");
     const auth = req.headers.authorization;
     const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
-    const session = this.d.bridges.sessionOf(token);
-    if (token && !session) return json3(res, 401, { error: "unauthorized" });
+    const p = url.pathname;
+    const who = this.d.bridges.bearer(token);
+    if (token && !who) return json3(res, 401, { error: "unauthorized" });
+    if (who?.ackOnly && !(req.method === "POST" && (p === "/v1/deliveries/release" || /^\/v1\/deliveries\/[^/]+\/ack$/.test(p)))) return json3(res, 401, { error: "unauthorized" });
+    const session = who?.sessionId ?? null;
     const bridge = req.headers[BRIDGE_HEADER] !== void 0;
     let bodyP = null;
-    const ctx = { req, res, url, session, bridge, firstOnConnection, body: () => bodyP ??= readJson2(req) };
-    const p = url.pathname;
+    const ctx = { req, res, url, session, pid: who?.parentPid ?? 0, bridge, firstOnConnection, body: () => bodyP ??= readJson2(req) };
     const m = (re) => re.exec(p);
     let x;
     if (req.method === "GET" && p === "/v1/daemon") {
@@ -21501,6 +21533,7 @@ var ControlServer = class {
       const ok = this.d.contributors.unregister(ns, ctx.session ? { sessionId: ctx.session } : ctx.bridge ? { bridge: true } : typeof token2 === "string" ? { token: token2 } : {});
       return json3(res, ok ? 200 : 404, { ok });
     }
+    if (req.method === "POST" && p === "/v1/deliveries/release") return this.release(ctx);
     if (req.method === "POST" && (x = m(/^\/v1\/deliveries\/([^/]+)\/ack$/))) return this.ack(ctx, decodeURIComponent(x[1]));
     if (req.method === "POST" && (x = m(/^\/v1\/calls\/([^/]+)$/))) {
       if (!ctx.session) return json3(res, 401, { error: "unauthorized" });
@@ -21618,8 +21651,9 @@ ${this.hostStatus(sessionId)}`;
     const body = await ctx.body() ?? {};
     if (typeof body.messageId === "string") this.d.steerIds.set(did, body.messageId);
     const failed2 = body.failed && typeof body.failed === "object" ? { fields: (Array.isArray(body.failed.fields) ? body.failed.fields : []).filter((f) => typeof f === "string").slice(0, 3), reason: String(body.failed.reason ?? "the command failed").slice(0, 512) } : void 0;
-    const owner = this.d.ackOwner(ctx.session, did);
+    const owner = this.d.ackOwner(ctx.session, did, ctx.pid);
     const ok = this.d.queue.ack(owner, did, failed2);
+    if (ok) this.d.delivered(did);
     if (owner !== ctx.session && ok) this.d.log.info(`session ${owner}: delivery ${did} acked by ${ctx.session}, switched to from it`);
     if (ok && failed2) {
       this.d.registry.upsert(owner, { lastDeliveryError: { deliveryId: did, fields: failed2.fields, reason: failed2.reason, atMs: Date.now() } });
@@ -21629,6 +21663,17 @@ ${this.hostStatus(sessionId)}`;
       this.d.events.add(owner, "delivery", true, ok ? "delivered" : "ack for an unknown delivery");
     }
     json3(ctx.res, ok ? 200 : 404, { ok });
+  }
+  /**
+   * A superseded process's mod lets go of the answers pushed to it that Claude Code does not have (B-0239): `keep` names
+   * the ones it does; the rest go to the session's holder now instead of when that process exits.
+   */
+  async release(ctx) {
+    if (!ctx.session) return json3(ctx.res, 401, { error: "unauthorized" });
+    const body = await ctx.body() ?? {};
+    if (body.sessionId !== void 0 && body.sessionId !== ctx.session) return json3(ctx.res, 403, { error: "forbidden" });
+    const keep = new Set(Array.isArray(body.keep) ? body.keep.filter((k) => typeof k === "string") : []);
+    return json3(ctx.res, 200, { released: ctx.pid > 0 ? this.d.releasePushed(ctx.session, ctx.pid, keep) : 0 });
   }
   async sessionRoute(ctx, id, what) {
     const { req, res } = ctx;
@@ -21744,7 +21789,7 @@ function readJson2(req) {
 }
 
 // src/shared/daemon-start.ts
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 function pidAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -21754,24 +21799,24 @@ function pidAlive(pid) {
   }
 }
 function takeLock(home3) {
-  fs8.mkdirSync(home3, { recursive: true, mode: 448 });
+  fs9.mkdirSync(home3, { recursive: true, mode: 448 });
   const lock = lockPath(home3);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = fs8.openSync(lock, fs8.constants.O_WRONLY | fs8.constants.O_CREAT | fs8.constants.O_EXCL, 384);
-      fs8.writeSync(fd, String(process.pid));
-      fs8.closeSync(fd);
+      const fd = fs9.openSync(lock, fs9.constants.O_WRONLY | fs9.constants.O_CREAT | fs9.constants.O_EXCL, 384);
+      fs9.writeSync(fd, String(process.pid));
+      fs9.closeSync(fd);
       return true;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
       let pid = NaN;
       try {
-        pid = Number(fs8.readFileSync(lock, "utf8").trim());
+        pid = Number(fs9.readFileSync(lock, "utf8").trim());
       } catch {
       }
       if (Number.isFinite(pid) && pidAlive(pid)) return false;
       try {
-        fs8.unlinkSync(lock);
+        fs9.unlinkSync(lock);
       } catch {
       }
     }
@@ -21780,13 +21825,22 @@ function takeLock(home3) {
 }
 function releaseLock(home3) {
   try {
-    fs8.unlinkSync(lockPath(home3));
+    fs9.unlinkSync(lockPath(home3));
   } catch {
   }
 }
 
 // src/daemon/daemon.ts
 var ROOT_WORDS = "the folder init prints as `Root`";
+var PUSHED_SWEEP_MS = 5e3;
+function pidAlive2(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
 var Daemon = class {
   constructor(opts) {
     this.opts = opts;
@@ -21795,6 +21849,7 @@ var Daemon = class {
     this.version = opts.version;
     this.runner = opts.runner;
     this.opener = opts.opener;
+    this.pidAlive = opts.pidAlive ?? pidAlive2;
     ensureDir(this.home);
     this.log = createLog(opts.logToStderr ? null : logPath(this.home));
     for (const name of PRIVATE_NAMES) {
@@ -21873,6 +21928,14 @@ var Daemon = class {
   startedAtMs = Date.now();
   /** steer acks carry the appended row's uuid; kept until `send` reads it. */
   steerIds = /* @__PURE__ */ new Map();
+  pidAlive;
+  /**
+   * The Claude Code process each unacked delivery was last pushed to (its bridge's parent pid), until it is acked,
+   * released or that process is gone: Claude Code may hold it in its own queue, which nothing can take back, so no
+   * other process gets it meanwhile (B-0239). Not durable: after a daemon restart every bridge attaches again.
+   */
+  pushedTo = /* @__PURE__ */ new Map();
+  sweep = null;
   pageRoot(id) {
     return path17.join(pagesDir(this.home), id);
   }
@@ -21893,6 +21956,7 @@ var Daemon = class {
       commands: { init: this.cliSpelling("init"), guide: this.cliSpelling("guide"), status: this.cliSpelling("status"), home: this.cliSpelling("home"), grants: this.cliSpelling("grants"), root: ROOT_WORDS },
       routeStrategy: "prefix"
     });
+    await this.forgetEmpty();
     this.workspaces.bind((p) => this.server.workspaceIdFor(p), this.registry.all().map((e) => e.cwd).filter(Boolean));
     for (const e of this.registry.all()) if (e.cwd) {
       const id = this.workspaces.add(e.cwd);
@@ -21900,6 +21964,8 @@ var Daemon = class {
     }
     await this.control.listen(this.socket);
     this.supervisor.start();
+    this.sweep = setInterval(() => this.sweepPushed(), PUSHED_SWEEP_MS);
+    this.sweep.unref();
     this.log.info(`daemon ${this.version} pid ${process.pid} listening on ${this.settings.listen.host}:${this.listener.port}, control ${this.socket}`);
   }
   stopping = null;
@@ -21921,6 +21987,7 @@ var Daemon = class {
     this.log.info("daemon stopping");
     this.registry.flush();
     this.rows.flushAll();
+    if (this.sweep) clearInterval(this.sweep);
     this.bridges.close();
     await this.supervisor.stop();
     await this.server?.close();
@@ -21951,6 +22018,7 @@ var Daemon = class {
       }
       if (r.name && (!e || !e.title)) patch.title = r.name;
       if (r.id && (!e || !e.shortId)) patch.shortId = r.id;
+      if (r.id && e && e.kind !== "background") patch.kind = "background";
       if (typeof r.pid === "number") patch.pid = r.pid;
       if (!e) {
         patch.kind = kindOf(r.kind);
@@ -21961,7 +22029,7 @@ var Daemon = class {
     if (read.at === this.prunedAt) return;
     this.prunedAt = read.at;
     for (const e of this.registry.all()) {
-      if (!(e.kind === "background" && e.shortId && !e.online)) continue;
+      if (!(e.shortId && !e.online)) continue;
       if (seen.has(e.id)) {
         this.absent.delete(e.id);
         continue;
@@ -22040,14 +22108,16 @@ var Daemon = class {
    * daemon saw end at the switch of a link that reached it (reason `clear` for the first, `resume` for the other two):
    * a session acks no delivery of one it only says it came from, and a middle session whose own end never came (its
    * detach had no bearer, or an older bridge attached again) does not cut its predecessor off (B-0217, B-0224, B-0229,
-   * B-0231). Falls back to `sessionId`, whose queue then misses.
+   * B-0231). A hit counts too when the acking process (`pid`) is the one the daemon pushed that delivery to: Claude
+   * Code ran it there after a switch, whatever another process did to the session meanwhile (B-0239, Delta 1 D2).
+   * Falls back to `sessionId`, whose queue then misses.
    */
-  ackOwner(sessionId, deliveryId) {
+  ackOwner(sessionId, deliveryId, pid = 0) {
     const via = /* @__PURE__ */ new Map([[sessionId, /* @__PURE__ */ new Set()]]);
     const reported = /* @__PURE__ */ new Map();
     for (let level = [sessionId]; level.length; ) {
       const hit = this.queue.owner(deliveryId, level);
-      if (hit) return hit === sessionId || via.get(hit).has(this.registry.get(hit)?.ended?.reason ?? "") ? hit : sessionId;
+      if (hit) return hit === sessionId || via.get(hit).has(this.registry.get(hit)?.ended?.reason ?? "") || this.pushedBy(deliveryId, hit, pid) ? hit : sessionId;
       const nextLevel = [];
       for (const id of level) {
         for (const [from, reason] of this.linksOf(id, reported)) {
@@ -22158,19 +22228,100 @@ var Daemon = class {
     this.events.add(sid, "end", true, `session ended: ${reason}`);
     this.log.info(`session ${sid}: detached (${reason})`);
   }
-  /** On hello and on every idle: push the unacked queue in order. `send` pushes the queue-mode ones alone (`steers: false`, B-0210): the mod drops a `deliver` it holds (RS-2) but has no such check for a `steer`. */
+  /**
+   * On hello and on every idle: push the unacked queue in order. `send` pushes the queue-mode ones alone (`steers: false`,
+   * B-0210): the mod drops a `deliver` it holds (RS-2) but has no such check for a `steer`. One pushed to another
+   * process that still runs is skipped until that process acks it, releases it, or exits (B-0239); a bridge of unknown
+   * pid (an older plugin) is never told apart, as before.
+   */
   drainQueue(sid, { steers = true } = {}) {
-    for (const q of this.queue.unacked(sid)) if (steers || q.mode !== "steer") this.bridges.push(sid, q.mode === "steer" ? { type: "steer", deliveryId: q.deliveryId, text: q.text } : { type: "deliver", deliveryId: q.deliveryId, text: q.text, ...q.settings ? { settings: q.settings } : {} });
+    const holder = this.bridges.get(sid);
+    if (!holder) return;
+    for (const q of this.queue.unacked(sid)) {
+      if (!steers && q.mode === "steer") continue;
+      if (this.heldElsewhere(q.deliveryId, holder.parentPid)) continue;
+      const sent = this.bridges.push(sid, q.mode === "steer" ? { type: "steer", deliveryId: q.deliveryId, text: q.text } : { type: "deliver", deliveryId: q.deliveryId, text: q.text, ...q.settings ? { settings: q.settings } : {} });
+      if (sent && holder.parentPid > 0) this.pushedTo.set(q.deliveryId, { sessionId: sid, pid: holder.parentPid });
+    }
+  }
+  /** A delivery pushed to the session's bridge outside a drain (a steer): the process it went to is noted the same way. */
+  notePushed(deliveryId, sid) {
+    const pid = this.bridges.get(sid)?.parentPid ?? 0;
+    if (pid > 0) this.pushedTo.set(deliveryId, { sessionId: sid, pid });
+  }
+  heldElsewhere(deliveryId, pid) {
+    const p = this.pushedTo.get(deliveryId);
+    if (!p || pid <= 0 || p.pid === pid) return false;
+    if (this.pidAlive(p.pid)) return true;
+    this.pushedTo.delete(deliveryId);
+    return false;
+  }
+  pushedBy(deliveryId, sessionId, pid) {
+    const p = this.pushedTo.get(deliveryId);
+    return pid > 0 && !!p && p.sessionId === sessionId && p.pid === pid;
+  }
+  /** The delivery is done (acked): no process holds it any more. */
+  delivered(deliveryId) {
+    this.pushedTo.delete(deliveryId);
+  }
+  /**
+   * A superseded process's mod lets go of what it pushed there except `keep`, the ones Claude Code already has in its
+   * queue (B-0239): the rest go to the session's holder at once.
+   */
+  releasePushed(sid, pid, keep) {
+    let n = 0;
+    for (const [did, p] of this.pushedTo) if (p.sessionId === sid && p.pid === pid && !keep.has(did)) {
+      this.pushedTo.delete(did);
+      n++;
+    }
+    if (n) {
+      this.log.info(`session ${sid}: ${n} answer(s) released by pid ${pid}`);
+      this.drainQueue(sid);
+    }
+    return n;
+  }
+  /** The processes that held an unacked delivery and are gone: their deliveries go to the session's holder, their ack-only bearers go (B-0239). */
+  sweepPushed() {
+    const sids = /* @__PURE__ */ new Set();
+    for (const [did, p] of this.pushedTo) if (!this.pidAlive(p.pid)) {
+      this.pushedTo.delete(did);
+      sids.add(p.sessionId);
+    }
+    this.bridges.sweepAckOnly(this.pidAlive);
+    for (const sid of sids) this.drainQueue(sid);
   }
   async forgetSession(id, why) {
     this.bridges.detach(id);
+    for (const [did, p] of this.pushedTo) if (p.sessionId === id) this.pushedTo.delete(did);
     this.waits.forget(id);
     this.rows.forget(id);
     this.registry.delete(id);
-    fs9.rmSync(path17.join(sessionsDir(this.home), id), { recursive: true, force: true });
-    fs9.rmSync(this.pageRoot(id), { recursive: true, force: true });
+    fs10.rmSync(path17.join(sessionsDir(this.home), id), { recursive: true, force: true });
+    fs10.rmSync(this.pageRoot(id), { recursive: true, force: true });
     await this.server?.forgetSession(id);
     this.log.info(`session ${id}: forgotten (${why})`);
+  }
+  /**
+   * At start, before any bridge attaches, forgets each row with nothing behind it: one a bridge attached once (a session
+   * learnt of from `claude agents` alone has its rows elsewhere, review F1), untitled, no short id (a background
+   * session's row goes by DR-8), no rows, no page files, no unacked answer, no open wait, and on no session's links
+   * back (the ack walk passes through it, B-0229, B-0236). Those are the agent view's slots recorded before 0.6.20 and a
+   * terminal quit before its first prompt: nothing to show or resume. A session with a conversation has a title or rows
+   * and stays. A terminal open with no prompt yet at a restart is forgotten too and listed again when its bridge
+   * reattaches (review F4). A forget that fails is logged and the start goes on (review F3) (B-0240, D-0097).
+   */
+  async forgetEmpty() {
+    const all = this.registry.all();
+    const named = new Set(all.flatMap((e) => [e.clearedFromId, e.resumedFromId, e.forkOfId, ...(e.reportedLinks ?? []).map((r) => r.from)]).filter(Boolean));
+    for (const e of all) {
+      if (!e.pluginRoot || e.title || e.shortId || e.kind === "background" || e.reportedLinks?.length || named.has(e.id)) continue;
+      if (this.rows.hasAny(e.id) || this.queue.unacked(e.id).length || this.waits.current(e.id) || hasFiles(this.pageRoot(e.id))) continue;
+      try {
+        await this.forgetSession(e.id, "nothing behind it at start");
+      } catch (err) {
+        this.log.warn(`session ${e.id}: not forgotten at start: ${err.message}`);
+      }
+    }
   }
   registerCommand(role, handler2) {
     this.commands.set(role, handler2);
@@ -22188,9 +22339,18 @@ function kindOf(k) {
   if (k === "print") return "print";
   return "unknown";
 }
+function hasFiles(dir) {
+  let names;
+  try {
+    names = fs10.readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    return e.code !== "ENOENT";
+  }
+  return names.some((d) => !d.isDirectory() || hasFiles(path17.join(dir, d.name)));
+}
 function defaultClaudeDir() {
   const p = claudeConfigDir();
-  return p && fs9.existsSync(p) ? p : null;
+  return p && fs10.existsSync(p) ? p : null;
 }
 
 // src/daemon/main.ts
@@ -22203,7 +22363,7 @@ async function runDaemon(argv = process.argv.slice(2)) {
     process.stderr.write("another daemon is starting or running\n");
     process.exit(0);
   }
-  fs10.writeFileSync(lockPath(home3), String(process.pid), { mode: 384 });
+  fs11.writeFileSync(lockPath(home3), String(process.pid), { mode: 384 });
   const d = new Daemon({ home: home3, pluginRoot, version, logToStderr: argv.includes("--stderr") });
   try {
     await d.start();
@@ -22220,7 +22380,7 @@ async function runDaemon(argv = process.argv.slice(2)) {
 }
 function readVersion(pluginRoot) {
   try {
-    return String(JSON.parse(fs10.readFileSync(path18.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")).version ?? "0.0.0");
+    return String(JSON.parse(fs11.readFileSync(path18.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")).version ?? "0.0.0");
   } catch {
     return "0.0.0";
   }

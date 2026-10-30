@@ -1,8 +1,51 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 235d38b): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 761fd28): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.22 — 2026-10-30
+
+On Claude Code, with one conversation open in two terminals, an answer from the page now runs once, in one terminal
+(B-0239), and typing in a terminal while its own turn runs takes the page back to it (B-0241). A background session
+you remove with `claude rm` leaves the home, and the "Untitled session" rows the agent view left before 0.6.20 are
+cleared (B-0240). `@unifedev/claude-pages` 0.6.22; `@unifedev/pages-core` stays 0.6.8 and the bb plugin
+`@unifedev/thread-pages` 1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: a page answer runs once when the conversation moves to another terminal.** If you sent an answer
+  from the page while one terminal was busy, Claude Code queued it there to run after the current turn. When you then
+  opened the same conversation in a second terminal, the page moved there and sent the answer again: it ran in both
+  terminals, and the page kept showing it as queued. Now an answer the first terminal has already queued stays with
+  it: it runs there once when its turn ends, and the page reads it as delivered. It moves to the other terminal only
+  if the first one closes without running it, or you stop that terminal's turn with Esc. An answer the first terminal
+  had not yet passed to Claude Code moves to the other terminal at once, unless it was waiting there behind another
+  answer's model or effort change: then it runs in the first terminal, once. The same holds after a `/clear` or
+  `/resume` typed in the second terminal while the first one takes the page back. Until the first terminal runs a
+  queued answer, the page shows it as queued. If the first terminal runs an older Unife Pages plugin, its answers not
+  yet passed to Claude Code move only when it closes, and one it already ran there before closing can then run again
+  in the other terminal.
+- **Claude Code: typing in a terminal during its own turn takes the page back.** A message you type while that
+  terminal is still working now brings the conversation's page back to it, as a message typed between turns already
+  did. Before, the page stayed with the other terminal until your next message there between turns.
+- **Claude Code: a terminal that switched conversations no longer reconnects the new one with the old one's links.**
+  Within 10 seconds of leaving a conversation that another terminal had taken, if the new conversation was also opened
+  elsewhere, a leftover retry could connect it with the old conversation's links, and an answer's confirmation could
+  then be lost. Tests: `packages/claude-pages/test/daemon/control.test.ts`, `test/mod/mod.test.ts`.
+- **Claude Code: background sessions started from a terminal are treated as background sessions.** A session you
+  started with `claude --bg` was shown in the home as a terminal session. After `claude rm` its row stayed in the home
+  for good; **Open in terminal** on it said "already open in your terminal" instead of attaching to it; and **Stop**,
+  once it was no longer attached, answered "not running". Now a session that `claude agents` lists as a background
+  session is one: `claude rm` takes its row out of the home within two refreshes, Open attaches with `claude attach`,
+  and Stop runs `claude stop`. Rows of background sessions you already removed leave within two refreshes after the
+  update. Sessions started from the home were not affected.
+- **Claude Code: old "Untitled session" rows are cleared.** When the page server starts, for example after this
+  update, it forgets each row with nothing behind it: no title, no messages, no page files and no answer waiting. That
+  clears the rows the agent view left before 0.6.20, and a terminal you opened and quit without typing anything. A
+  session with a conversation or a page is never removed. A terminal still open with nothing typed yet is listed again
+  as soon as it reconnects.
+  Tests: `packages/claude-pages/test/daemon/forget.test.ts`, `test/bridge/handover.test.ts`.
 
 ## 0.6.21 — 2026-10-30
 
