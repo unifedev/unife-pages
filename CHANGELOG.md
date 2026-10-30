@@ -1,8 +1,26 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` c9c56b3): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` b5150c5): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.25 — 2026-10-30
+
+On Claude Code under LXCFS (LXD, Incus, some Kubernetes nodes), the page server now says in its log why it drops its
+notes of the processes it pushed answers to, where 0.6.24 dropped them without a word (B-0257).
+`@unifedev/claude-pages` 0.6.25; `@unifedev/pages-core` stays 0.6.8 and the bb plugin `@unifedev/thread-pages`
+1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: the page server says why it drops its notes where a container fakes the uptime.** When it
+  restarts, the page server checks that each Claude Code an answer went to is still the process it was. Where a
+  container reports its own age as the uptime instead of the machine's (LXCFS), 0.6.24 read the processes as
+  starting after now and dropped their notes without a word. It still drops them, since it cannot tell there which
+  process is which, and now says so in its log, naming the uptime. A start time on Linux that is not a plain number
+  now falls back to `ps` instead of reading as "started at boot". The log line for a check that cannot run now begins
+  `could not tell when`, not `ps could not check`; on macOS only that wording changes (B-0257). Tests:
+  `packages/claude-pages/test/daemon/control.test.ts`.
 
 ## 0.6.24 — 2026-10-30
 

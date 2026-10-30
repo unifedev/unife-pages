@@ -594,9 +594,9 @@ var START_GRACE_MS = 1e3;
 var TICKS_PER_SEC = 100;
 function processStarts(pids, onFail, procRoot = process.platform === "linux" ? "/proc" : null) {
   if (!pids.length) return /* @__PURE__ */ new Map();
-  return procRoot !== null && procStarts(pids, procRoot) || psStarts(pids, onFail);
+  return procRoot !== null && procStarts(pids, procRoot, onFail) || psStarts(pids, onFail);
 }
-function procStarts(pids, root) {
+function procStarts(pids, root, onFail) {
   const out = /* @__PURE__ */ new Map();
   try {
     const uptime = Number(fs4.readFileSync(path9.join(root, "uptime"), "utf8").split(" ")[0]);
@@ -610,9 +610,14 @@ function procStarts(pids, root) {
         if (e.code === "ENOENT" || e.code === "ESRCH") continue;
         throw e;
       }
-      const ticks = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
-      if (!Number.isFinite(ticks)) return null;
-      out.set(pid, now - (uptime - ticks / TICKS_PER_SEC) * 1e3);
+      const ticks = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? "";
+      if (!/^\d+$/.test(ticks)) return null;
+      const at = now - (uptime - Number(ticks) / TICKS_PER_SEC) * 1e3;
+      if (at > now + START_GRACE_MS) {
+        onFail?.(`${path9.join(root, "uptime")} says ${uptime} s since boot, but process ${pid} started ${Number(ticks) / TICKS_PER_SEC} s after it`);
+        return /* @__PURE__ */ new Map();
+      }
+      out.set(pid, at);
     }
   } catch {
     return null;
@@ -22029,7 +22034,7 @@ var Daemon = class {
       this.registry.all().map((e) => e.id),
       opts.bootMs ?? Date.now() - os3.uptime() * 1e3,
       this.pidAlive,
-      (pids) => (opts.processStarts ?? processStarts)(pids, (why) => this.log.warn(`ps could not check the ${pids.length} Claude Code process${pids.length === 1 ? "" : "es"} unacked answers were pushed to (${why}): those notes are dropped, so such an answer may be pushed again to the session's next terminal`)),
+      (pids) => (opts.processStarts ?? processStarts)(pids, (why) => this.log.warn(`could not tell when the ${pids.length} Claude Code process${pids.length === 1 ? "" : "es"} unacked answers were pushed to started (${why}): those notes are dropped, so such an answer may be pushed again to the session's next terminal`)),
       (sid) => new Set(this.queue.unacked(sid).map((q) => q.deliveryId))
     );
   }
