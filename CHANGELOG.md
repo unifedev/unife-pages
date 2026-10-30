@@ -1,8 +1,52 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` b5150c5): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` ebe805a): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.14.9 (bb plugin) — 2026-10-30
+
+The bb plugin's release of the 0.6.26 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.9`): the page server stops waiting on a host call
+after 30 seconds (90 for a file upload), and the home recovers on its own from a call that never answers, both from
+pages-core.
+
+## 0.6.26 — 2026-10-30
+
+When the host never answers a call, the page server now stops waiting after 30 seconds, tells the page the host did
+not answer, and frees the call's place, so a page or the home keeps working instead of being refused everything after
+eight such calls (B-0232); file uploads get the same after 90 seconds (B-0238). The home also recovers on its own when
+one of its reads never comes back (B-0228). All three are in pages-core, so both hosts carry them.
+
+`@unifedev/pages-core` 0.6.9, `@unifedev/claude-pages` 0.6.26, the bb plugin `@unifedev/thread-pages` 1.14.9.
+
+### Fixed
+
+- **A host call that never answers no longer uses up a page's calls.** The page server waited for the host as long as
+  it took, and each call still waiting held one of the eight a page may have in flight. After eight that never came
+  back, every call from that page was refused as rate limited, sends included, until the host gave up on those calls
+  (bb does after 75 seconds) or the server restarted; for the home those eight are shared by every home tab on every
+  device, so a reload did not help. Now the server stops waiting after 30 seconds, answers `unavailable` with reason
+  `timeout` ("The host did not answer within 30 seconds"), and the call's place is free again at once. A send or
+  another write may still go through later: a form answer or a confirmed action tried again is not done a second
+  time, and once the host answers, the retry gets that answer. A call that was still waiting for an earlier step when
+  it was answered does nothing more. The folder picker and voice transcription are not cut off, and calls to other
+  plugins keep their own 30-second limit. Test: `packages/pages-core/test/serving/bridge-timeout.test.ts`.
+- **A file upload the host never takes no longer uses up a page's calls.** A form's file upload and a file attached to
+  a prompt waited for the host as long as it took, in one of the page's eight places. Now the server stops waiting 90
+  seconds after the upload took its place, and the form shows "The host did not answer within 90 seconds". 90 seconds
+  is above the 75 seconds after which bb itself gives up on a host call, and a 24 MiB file took under a second on bb
+  on the same machine, so no host call that would succeed is cut on its own. An attachment the host takes after that
+  is not added to the prompt; an upload that lands late stays in the page's `uploads/` folder, named by no answer.
+  Test: `packages/pages-core/test/serving/file-timeout.test.ts`.
+- **A host call that never answers no longer freezes the home.** The home waited for every read as long as the host
+  took. A read that never came back kept an older session reopened after a reload from ever refreshing, stopped the
+  session list or the open chat from updating, and four of them stopped every call the home makes, sends included,
+  until the tab was reloaded. Now a read that has no answer after 60 seconds fails in the home itself (the server's
+  30-second answer above usually comes first; this covers an answer lost on the way back), and the home tries again
+  as it would after any failed read. Sending, answering, stopping and the other actions still wait for the server.
+  If the home cannot read your saved view settings when it starts, it no longer saves its defaults over them.
+  Test: `packages/pages-core/test/agent/home.test.ts`.
 
 ## 0.6.25 — 2026-10-30
 
