@@ -1,11 +1,12 @@
 // src/daemon/main.ts
-import fs11 from "node:fs";
-import path18 from "node:path";
+import fs12 from "node:fs";
+import path19 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/daemon/daemon.ts
-import fs10 from "node:fs";
-import path17 from "node:path";
+import fs11 from "node:fs";
+import os3 from "node:os";
+import path18 from "node:path";
 
 // src/daemon/log.ts
 import fs from "node:fs";
@@ -585,9 +586,94 @@ var Queue = class {
   }
 };
 
-// src/daemon/rows.ts
+// src/daemon/pushed.ts
 import fs4 from "node:fs";
 import path9 from "node:path";
+import { spawnSync } from "node:child_process";
+var START_GRACE_MS = 1e3;
+function processStarts(pids) {
+  const out = /* @__PURE__ */ new Map();
+  if (!pids.length) return out;
+  const r = spawnSync("ps", ["-o", "pid=,etime=", "-p", pids.join(",")], { encoding: "utf8", timeout: 5e3 });
+  const now = Date.now();
+  for (const line of (r.stdout ?? "").split("\n")) {
+    const m = /^\s*(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)\s*$/.exec(line);
+    if (m) out.set(Number(m[1]), now - (((Number(m[2] ?? 0) * 24 + Number(m[3] ?? 0)) * 60 + Number(m[4])) * 60 + Number(m[5])) * 1e3);
+  }
+  return out;
+}
+var Pushed = class {
+  constructor(sessionsDir2, onWriteError) {
+    this.sessionsDir = sessionsDir2;
+    this.onWriteError = onWriteError;
+  }
+  sessionsDir;
+  onWriteError;
+  map = /* @__PURE__ */ new Map();
+  file(sid) {
+    return path9.join(this.sessionsDir, sid, "pushed.json");
+  }
+  get(deliveryId) {
+    return this.map.get(deliveryId);
+  }
+  set(deliveryId, sessionId, pid) {
+    const prev = this.map.get(deliveryId);
+    this.map.set(deliveryId, { sessionId, pid, atMs: Date.now() });
+    this.write(sessionId);
+    if (prev && prev.sessionId !== sessionId) this.write(prev.sessionId);
+  }
+  delete(deliveryId) {
+    this.drop((did) => did === deliveryId);
+  }
+  /** Removes every entry `pred` picks, writing each session it touched once; returns them. */
+  drop(pred) {
+    const gone = [];
+    for (const [did, e] of this.map) if (pred(did, e)) {
+      this.map.delete(did);
+      gone.push([did, e]);
+    }
+    for (const sid of new Set(gone.map(([, e]) => e.sessionId))) this.write(sid);
+    return gone;
+  }
+  /**
+   * At start: the entries of `sessionIds` noted since `bootMs` whose delivery is still unacked and whose process runs
+   * and started no later than the note (`starts`, one call for every pid read).
+   */
+  load(sessionIds, bootMs, alive, starts, unacked) {
+    const read = [];
+    const dirty = /* @__PURE__ */ new Set();
+    for (const sid of sessionIds) {
+      const disk = readJson(this.file(sid), null);
+      if (!disk) continue;
+      const open = unacked(sid);
+      for (const [did, p] of Object.entries(disk)) {
+        if (typeof p?.pid === "number" && p.pid > 0 && typeof p.atMs === "number" && p.atMs >= bootMs && open.has(did) && alive(p.pid)) read.push([sid, did, p]);
+        else dirty.add(sid);
+      }
+    }
+    const started = starts([...new Set(read.map(([, , p]) => p.pid))]);
+    for (const [sid, did, p] of read) {
+      const at = started.get(p.pid);
+      if (at !== void 0 && at <= p.atMs + START_GRACE_MS) this.map.set(did, { sessionId: sid, pid: p.pid, atMs: p.atMs });
+      else dirty.add(sid);
+    }
+    for (const sid of dirty) this.write(sid);
+  }
+  write(sid) {
+    const own2 = {};
+    for (const [did, e] of this.map) if (e.sessionId === sid) own2[did] = { pid: e.pid, atMs: e.atMs };
+    try {
+      if (Object.keys(own2).length) writeJsonSync(this.file(sid), own2);
+      else fs4.rmSync(this.file(sid), { force: true });
+    } catch (e) {
+      this.onWriteError(sid, e);
+    }
+  }
+};
+
+// src/daemon/rows.ts
+import fs5 from "node:fs";
+import path10 from "node:path";
 var cursorOf = (seq) => String(seq).padStart(12, "0");
 var CURSOR_RE = /^\d{1,12}$/;
 var textOf = (blocks) => blocks.filter((b) => b.type === "text" && typeof b.text === "string").map((b) => b.text).join("");
@@ -600,7 +686,7 @@ var Rows = class {
   pluginName;
   sessions = /* @__PURE__ */ new Map();
   file(id) {
-    return path9.join(this.sessionsDir, id, "rows.jsonl");
+    return path10.join(this.sessionsDir, id, "rows.jsonl");
   }
   load(id) {
     let s = this.sessions.get(id);
@@ -623,7 +709,7 @@ var Rows = class {
     const s = this.sessions.get(id);
     if (s) return s.rows.length > 0;
     try {
-      return fs4.statSync(this.file(id)).size > 0;
+      return fs5.statSync(this.file(id)).size > 0;
     } catch (e) {
       return e.code !== "ENOENT";
     }
@@ -812,7 +898,7 @@ var Rows = class {
 };
 
 // src/daemon/waits.ts
-import path10 from "node:path";
+import path11 from "node:path";
 var Waits = class {
   constructor(sessionsDir2, onEvent, onAllClosed) {
     this.sessionsDir = sessionsDir2;
@@ -826,7 +912,7 @@ var Waits = class {
   // waitId → record (open ones only)
   pollers = /* @__PURE__ */ new Map();
   file(sessionId) {
-    return path10.join(this.sessionsDir, sessionId, "waits.json");
+    return path11.join(this.sessionsDir, sessionId, "waits.json");
   }
   persist(sessionId) {
     writeJsonSync(this.file(sessionId), this.forSession(sessionId));
@@ -936,14 +1022,14 @@ function translateAnswers(waiting, answers) {
 }
 
 // src/daemon/events.ts
-import path11 from "node:path";
+import path12 from "node:path";
 var Events = class {
   constructor(sessionsDir2) {
     this.sessionsDir = sessionsDir2;
   }
   sessionsDir;
   file(id) {
-    return path11.join(this.sessionsDir, id, "events.jsonl");
+    return path12.join(this.sessionsDir, id, "events.jsonl");
   }
   add(id, kind, done, label, text = "") {
     appendLine(this.file(id), { kind, done, atMs: Date.now(), label, text });
@@ -958,19 +1044,19 @@ import { randomBytes } from "node:crypto";
 
 // src/shared/paths.ts
 import os from "node:os";
-import path12 from "node:path";
+import path13 from "node:path";
 function stateHome(env = process.env) {
-  return env.UNIFE_PAGES_HOME ?? path12.join(os.homedir(), ".unife-pages");
+  return env.UNIFE_PAGES_HOME ?? path13.join(os.homedir(), ".unife-pages");
 }
-var socketPath = (home3) => path12.join(home3, "control.sock");
-var lockPath = (home3) => path12.join(home3, "daemon.lock");
-var logPath = (home3) => path12.join(home3, "daemon.log");
-var pagesDir = (home3) => path12.join(home3, "pages");
-var sessionsDir = (home3) => path12.join(home3, "sessions");
-var privateDir = (home3) => path12.join(home3, "daemon");
-var kvDir = (home3) => path12.join(privateDir(home3), "kv");
-var readersFile = (home3) => path12.join(privateDir(home3), "readers.json");
-var bootstrapFile = (home3) => path12.join(privateDir(home3), "bootstrap.json");
+var socketPath = (home3) => path13.join(home3, "control.sock");
+var lockPath = (home3) => path13.join(home3, "daemon.lock");
+var logPath = (home3) => path13.join(home3, "daemon.log");
+var pagesDir = (home3) => path13.join(home3, "pages");
+var sessionsDir = (home3) => path13.join(home3, "sessions");
+var privateDir = (home3) => path13.join(home3, "daemon");
+var kvDir = (home3) => path13.join(privateDir(home3), "kv");
+var readersFile = (home3) => path13.join(privateDir(home3), "readers.json");
+var bootstrapFile = (home3) => path13.join(privateDir(home3), "bootstrap.json");
 var PRIVATE_NAMES = ["readers.json", "bootstrap.json", "kv"];
 
 // src/daemon/readers.ts
@@ -1305,8 +1391,8 @@ var Contributors = class {
 // src/daemon/supervisor.ts
 import { spawn as spawn2 } from "node:child_process";
 import { randomBytes as randomBytes3 } from "node:crypto";
-import fs5 from "node:fs";
-import path13 from "node:path";
+import fs6 from "node:fs";
+import path14 from "node:path";
 var DECLARATION_FILE = "unife-pages.json";
 var SCAN_MS = 3e4;
 var BACKOFF_MIN_MS = 1e3;
@@ -1316,13 +1402,13 @@ function installedPluginDirs(claudeDir) {
   if (!claudeDir) return [];
   const read = (file) => {
     try {
-      return JSON.parse(fs5.readFileSync(file, "utf8"));
+      return JSON.parse(fs6.readFileSync(file, "utf8"));
     } catch {
       return {};
     }
   };
-  const installed = read(path13.join(claudeDir, "plugins", "installed_plugins.json")).plugins ?? {};
-  const enabled = read(path13.join(claudeDir, "settings.json")).enabledPlugins ?? {};
+  const installed = read(path14.join(claudeDir, "plugins", "installed_plugins.json")).plugins ?? {};
+  const enabled = read(path14.join(claudeDir, "settings.json")).enabledPlugins ?? {};
   const dirs = [];
   for (const [key, installs] of Object.entries(installed)) {
     if (enabled[key] === false || !Array.isArray(installs)) continue;
@@ -1331,10 +1417,10 @@ function installedPluginDirs(claudeDir) {
   return dirs;
 }
 function readDeclaration(pluginDir, log) {
-  const file = path13.join(pluginDir, DECLARATION_FILE);
+  const file = path14.join(pluginDir, DECLARATION_FILE);
   let raw;
   try {
-    raw = JSON.parse(fs5.readFileSync(file, "utf8"));
+    raw = JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch (e) {
     if (e.code !== "ENOENT") log.warn(`contributors: ${file} is not JSON`);
     return null;
@@ -1347,16 +1433,16 @@ function readDeclaration(pluginDir, log) {
   if (!c || typeof c !== "object") return refuse("no contributor");
   if (typeof c.namespace !== "string" || !NAMESPACE_RE.test(c.namespace)) return refuse("namespace");
   if (RESERVED_NAMESPACES.has(c.namespace)) return refuse(`"${c.namespace}" is a reserved namespace`);
-  if (typeof c.process !== "string" || path13.isAbsolute(c.process) || c.process.split(/[\\/]/).includes("..")) return refuse("process must be a path inside the plugin folder");
+  if (typeof c.process !== "string" || path14.isAbsolute(c.process) || c.process.split(/[\\/]/).includes("..")) return refuse("process must be a path inside the plugin folder");
   if (c.args !== void 0 && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) return refuse("args must be strings");
-  const entry = path13.join(pluginDir, c.process);
-  if (!fs5.existsSync(entry)) return refuse(`${c.process} does not exist`);
+  const entry = path14.join(pluginDir, c.process);
+  if (!fs6.existsSync(entry)) return refuse(`${c.process} does not exist`);
   return { namespace: c.namespace, pluginDir, process: entry, args: c.args ?? [] };
 }
 var Supervisor = class {
   constructor(o) {
     this.o = o;
-    for (const d of o.pluginDirs ?? []) this.extraDirs.add(path13.resolve(d));
+    for (const d of o.pluginDirs ?? []) this.extraDirs.add(path14.resolve(d));
   }
   o;
   children = /* @__PURE__ */ new Map();
@@ -1381,7 +1467,7 @@ var Supervisor = class {
   addPluginDirs(dirs) {
     let added = false;
     for (const d of dirs) {
-      const r = path13.resolve(d);
+      const r = path14.resolve(d);
       if (!this.extraDirs.has(r)) {
         this.extraDirs.add(r);
         added = true;
@@ -1425,7 +1511,7 @@ var Supervisor = class {
     };
     const found = /* @__PURE__ */ new Map();
     for (const dir of [...installedPluginDirs(this.o.claudeDir), ...this.extraDirs]) {
-      if (!fs5.existsSync(dir)) continue;
+      if (!fs6.existsSync(dir)) continue;
       const d = readDeclaration(dir, { info: this.o.log.info, warn: warnOnce });
       if (!d) continue;
       const first = found.get(d.namespace);
@@ -1536,14 +1622,14 @@ var Supervisor = class {
 
 // src/daemon/instruction.ts
 import { createHash as createHash2 } from "node:crypto";
-import path14 from "node:path";
+import path15 from "node:path";
 var Instruction = class {
   file;
   parts;
   eligible = null;
   etag = '""';
   constructor(home3) {
-    this.file = path14.join(home3, "instruction.json");
+    this.file = path15.join(home3, "instruction.json");
     this.parts = readJson(this.file, { standing: "", fragments: [] });
     this.etag = this.hash();
   }
@@ -1928,25 +2014,25 @@ function createRegistry(specs, enabled = () => true) {
 // ../pages-core/src/domain/document-path.ts
 var ENTRY_DOCUMENT = "index.html";
 var UPLOAD_DIR = "uploads";
-function isHtmlPath(path19) {
-  if (typeof path19 !== "string" || path19.length === 0 || path19.length > 1024) return false;
-  if (path19.includes("\0") || path19.includes("\\") || path19.startsWith("/") || path19.startsWith(`${UPLOAD_DIR}/`)) return false;
-  if (!path19.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")) return false;
-  return /\.html?$/i.test(path19);
+function isHtmlPath(path20) {
+  if (typeof path20 !== "string" || path20.length === 0 || path20.length > 1024) return false;
+  if (path20.includes("\0") || path20.includes("\\") || path20.startsWith("/") || path20.startsWith(`${UPLOAD_DIR}/`)) return false;
+  if (!path20.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")) return false;
+  return /\.html?$/i.test(path20);
 }
-function isPartPath(path19) {
-  return isHtmlPath(path19) && path19.split("/").some((segment) => segment.startsWith("_"));
+function isPartPath(path20) {
+  return isHtmlPath(path20) && path20.split("/").some((segment) => segment.startsWith("_"));
 }
-function isDocumentPath(path19) {
-  return isHtmlPath(path19) && !isPartPath(path19);
+function isDocumentPath(path20) {
+  return isHtmlPath(path20) && !isPartPath(path20);
 }
-function directoryOf(path19) {
-  if (!path19) return "";
-  const slash = path19.lastIndexOf("/");
-  return slash < 0 ? "" : path19.slice(0, slash + 1);
+function directoryOf(path20) {
+  if (!path20) return "";
+  const slash = path20.lastIndexOf("/");
+  return slash < 0 ? "" : path20.slice(0, slash + 1);
 }
-function documentKey(path19) {
-  return !path19 || path19 === ENTRY_DOCUMENT ? null : path19;
+function documentKey(path20) {
+  return !path20 || path20 === ENTRY_DOCUMENT ? null : path20;
 }
 var RESERVED_QUERY_NAMES = ["session", "path", "render"];
 function checkDocumentQuery(value) {
@@ -1970,16 +2056,16 @@ function addressQuery(params2, written) {
   return `${written && written !== "?" ? `${written}&` : "?"}${folded.join("&")}`;
 }
 function addressDocumentUrl(params2) {
-  const { path: path19, query } = splitDocumentUrl(params2.get("path") ?? "");
-  return `${path19}${addressQuery(params2, query)}`;
+  const { path: path20, query } = splitDocumentUrl(params2.get("path") ?? "");
+  return `${path20}${addressQuery(params2, query)}`;
 }
 function checkDocumentUrl(raw) {
-  const { path: path19, query } = splitDocumentUrl(raw);
+  const { path: path20, query } = splitDocumentUrl(raw);
   const checked = checkDocumentQuery(query);
   if (!checked.ok) return { ok: false, part: "query", message: checked.message };
-  if (path19 === "" || path19 === ENTRY_DOCUMENT) return { ok: true, path: null, query: checked.query };
-  if (!isDocumentPath(path19)) return { ok: false, part: "path", message: "is not a document of the page" };
-  return { ok: true, path: path19, query: checked.query };
+  if (path20 === "" || path20 === ENTRY_DOCUMENT) return { ok: true, path: null, query: checked.query };
+  if (!isDocumentPath(path20)) return { ok: false, part: "path", message: "is not a document of the page" };
+  return { ok: true, path: path20, query: checked.query };
 }
 
 // ../pages-core/src/domain/external-url.ts
@@ -2041,17 +2127,17 @@ function hostPageTarget(value, ownOrigins2, base) {
   if (parsed.pathname !== `${base}/page`) return null;
   const sessions = parsed.searchParams.getAll("session");
   if (sessions.length !== 1 || !sessions[0]) return null;
-  const path19 = addressDocumentUrl(parsed.searchParams);
+  const path20 = addressDocumentUrl(parsed.searchParams);
   const fragment = parsed.hash.slice(1);
-  return { sessionId: sessions[0], ...path19 ? { path: path19 } : {}, ...fragment ? { fragment } : {} };
+  return { sessionId: sessions[0], ...path20 ? { path: path20 } : {}, ...fragment ? { fragment } : {} };
 }
 
 // ../pages-core/src/domain/json/strict-json.ts
 function valid(value) {
   return { ok: true, value };
 }
-function invalid(path19, message, code = "invalid_value") {
-  return { ok: false, issues: [{ code, path: path19, message }] };
+function invalid(path20, message, code = "invalid_value") {
+  return { ok: false, issues: [{ code, path: path20, message }] };
 }
 var UNSAFE_KEYS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
 function pathForKey(parent, key) {
@@ -2073,42 +2159,42 @@ function validateJson(input, limits = {}) {
   const maxNodes = limits.maxNodes ?? LIMITS.capabilityJsonNodes;
   const ancestors = /* @__PURE__ */ new Set();
   let nodes = 0;
-  function visit(value, path19, depth) {
+  function visit(value, path20, depth) {
     nodes += 1;
-    if (nodes > maxNodes) return { code: "too_many_nodes", path: path19, message: `JSON exceeds ${maxNodes} nodes` };
-    if (depth > maxDepth) return { code: "too_deep", path: path19, message: `JSON exceeds depth ${maxDepth}` };
+    if (nodes > maxNodes) return { code: "too_many_nodes", path: path20, message: `JSON exceeds ${maxNodes} nodes` };
+    if (depth > maxDepth) return { code: "too_deep", path: path20, message: `JSON exceeds depth ${maxDepth}` };
     if (value === null || typeof value === "string" || typeof value === "boolean") return null;
-    if (typeof value === "number") return Number.isFinite(value) ? null : { code: "not_json_safe", path: path19, message: "Numbers must be finite" };
-    if (typeof value !== "object") return { code: "not_json_safe", path: path19, message: `Unsupported value type: ${typeof value}` };
-    if (ancestors.has(value)) return { code: "not_json_safe", path: path19, message: "Cyclic values are not JSON-safe" };
+    if (typeof value === "number") return Number.isFinite(value) ? null : { code: "not_json_safe", path: path20, message: "Numbers must be finite" };
+    if (typeof value !== "object") return { code: "not_json_safe", path: path20, message: `Unsupported value type: ${typeof value}` };
+    if (ancestors.has(value)) return { code: "not_json_safe", path: path20, message: "Cyclic values are not JSON-safe" };
     ancestors.add(value);
     try {
       if (Array.isArray(value)) {
         for (const key of Reflect.ownKeys(value)) {
-          if (typeof key === "symbol") return { code: "not_json_safe", path: path19, message: "Symbol properties are not JSON-safe" };
-          if (key !== "length" && !isCanonicalIndex(key, value.length)) return { code: "not_json_safe", path: pathForKey(path19, key), message: "Arrays may not carry extra properties" };
+          if (typeof key === "symbol") return { code: "not_json_safe", path: path20, message: "Symbol properties are not JSON-safe" };
+          if (key !== "length" && !isCanonicalIndex(key, value.length)) return { code: "not_json_safe", path: pathForKey(path20, key), message: "Arrays may not carry extra properties" };
         }
         for (let index = 0; index < value.length; index += 1) {
           const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-          if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return { code: "not_json_safe", path: `${path19}[${index}]`, message: "Sparse arrays and accessors are not JSON-safe" };
-          const issue2 = visit(descriptor.value, `${path19}[${index}]`, depth + 1);
+          if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return { code: "not_json_safe", path: `${path20}[${index}]`, message: "Sparse arrays and accessors are not JSON-safe" };
+          const issue2 = visit(descriptor.value, `${path20}[${index}]`, depth + 1);
           if (issue2) return issue2;
         }
         return null;
       }
       const prototype = Object.getPrototypeOf(value);
-      if (prototype !== Object.prototype && prototype !== null) return { code: "not_json_safe", path: path19, message: "Only plain objects are JSON-safe" };
+      if (prototype !== Object.prototype && prototype !== null) return { code: "not_json_safe", path: path20, message: "Only plain objects are JSON-safe" };
       for (const key of Reflect.ownKeys(value)) {
-        if (typeof key === "symbol") return { code: "not_json_safe", path: path19, message: "Symbol properties are not JSON-safe" };
-        if (UNSAFE_KEYS.has(key)) return { code: "not_json_safe", path: pathForKey(path19, key), message: "Unsafe object key" };
+        if (typeof key === "symbol") return { code: "not_json_safe", path: path20, message: "Symbol properties are not JSON-safe" };
+        if (UNSAFE_KEYS.has(key)) return { code: "not_json_safe", path: pathForKey(path20, key), message: "Unsafe object key" };
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return { code: "not_json_safe", path: pathForKey(path19, key), message: "Entries must be enumerable data properties" };
-        const issue2 = visit(descriptor.value, pathForKey(path19, key), depth + 1);
+        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return { code: "not_json_safe", path: pathForKey(path20, key), message: "Entries must be enumerable data properties" };
+        const issue2 = visit(descriptor.value, pathForKey(path20, key), depth + 1);
         if (issue2) return issue2;
       }
       return null;
     } catch {
-      return { code: "not_json_safe", path: path19, message: "Value could not be inspected" };
+      return { code: "not_json_safe", path: path20, message: "Value could not be inspected" };
     } finally {
       ancestors.delete(value);
     }
@@ -2150,19 +2236,19 @@ function issues(list) {
 function string(options) {
   const label = options.label ?? "String";
   return {
-    parse(value, path19) {
-      if (typeof value !== "string") return invalid(path19, `${label}: expected a string`, "invalid_type");
+    parse(value, path20) {
+      if (typeof value !== "string") return invalid(path20, `${label}: expected a string`, "invalid_type");
       const min = options.min ?? 0;
-      if (value.length < min || value.length > options.max) return invalid(path19, `${label}: length must be ${min}\u2013${options.max}`, "too_large");
-      if (options.pattern && !options.pattern.test(value)) return invalid(path19, `${label}: invalid format`, "pattern");
+      if (value.length < min || value.length > options.max) return invalid(path20, `${label}: length must be ${min}\u2013${options.max}`, "too_large");
+      if (options.pattern && !options.pattern.test(value)) return invalid(path20, `${label}: invalid format`, "pattern");
       return valid(value);
     }
   };
 }
 function integer(min, max, label = "Integer") {
   return {
-    parse(value, path19) {
-      if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) return invalid(path19, `${label}: expected an integer from ${min} to ${max}`, "out_of_range");
+    parse(value, path20) {
+      if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) return invalid(path20, `${label}: expected an integer from ${min} to ${max}`, "out_of_range");
       return valid(value);
     }
   };
@@ -2170,9 +2256,9 @@ function integer(min, max, label = "Integer") {
 function limit(max, fallback) {
   return withDefault(
     {
-      parse(value, path19) {
-        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) return invalid(path19, "limit: expected an integer of at least 1");
-        if (value > max) return invalid(path19, `limit is at most ${max}`, "out_of_range");
+      parse(value, path20) {
+        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) return invalid(path20, "limit: expected an integer of at least 1");
+        if (value > max) return invalid(path20, `limit is at most ${max}`, "out_of_range");
         return valid(value);
       }
     },
@@ -2181,54 +2267,54 @@ function limit(max, fallback) {
 }
 function number(min, max, label = "Number") {
   return {
-    parse(value, path19) {
-      if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return invalid(path19, `${label}: expected a number from ${min} to ${max}`, "out_of_range");
+    parse(value, path20) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return invalid(path20, `${label}: expected a number from ${min} to ${max}`, "out_of_range");
       return valid(value);
     }
   };
 }
 function boolean(label = "Boolean") {
   return {
-    parse(value, path19) {
-      return typeof value === "boolean" ? valid(value) : invalid(path19, `${label}: expected a boolean`, "invalid_type");
+    parse(value, path20) {
+      return typeof value === "boolean" ? valid(value) : invalid(path20, `${label}: expected a boolean`, "invalid_type");
     }
   };
 }
 function literal(values, label = "Value") {
   return {
-    parse(value, path19) {
-      return values.includes(value) ? valid(value) : invalid(path19, `${label}: expected one of ${values.map((item) => JSON.stringify(item)).join(", ")}`);
+    parse(value, path20) {
+      return values.includes(value) ? valid(value) : invalid(path20, `${label}: expected one of ${values.map((item) => JSON.stringify(item)).join(", ")}`);
     }
   };
 }
 function nullable(schema) {
   return {
-    parse(value, path19) {
-      return value === null ? valid(null) : schema.parse(value, path19);
+    parse(value, path20) {
+      return value === null ? valid(null) : schema.parse(value, path20);
     }
   };
 }
 function optional(schema) {
-  return { isOptional: true, parse: (value, path19) => schema.parse(value, path19) };
+  return { isOptional: true, parse: (value, path20) => schema.parse(value, path20) };
 }
 function withDefault(schema, fallback) {
   return {
     isOptional: true,
     hasDefault: true,
-    parse(value, path19) {
-      return value === void 0 ? valid(fallback) : schema.parse(value, path19);
+    parse(value, path20) {
+      return value === void 0 ? valid(fallback) : schema.parse(value, path20);
     }
   };
 }
 function array(item, max, label = "List", min = 0) {
   return {
-    parse(value, path19) {
-      if (!Array.isArray(value)) return invalid(path19, `${label}: expected a list`, "invalid_type");
-      if (value.length > max) return invalid(path19, `${label}: at most ${max} items`, "too_large");
-      if (value.length < min) return invalid(path19, `${label}: at least ${min} item${min === 1 ? "" : "s"}`);
+    parse(value, path20) {
+      if (!Array.isArray(value)) return invalid(path20, `${label}: expected a list`, "invalid_type");
+      if (value.length > max) return invalid(path20, `${label}: at most ${max} items`, "too_large");
+      if (value.length < min) return invalid(path20, `${label}: at least ${min} item${min === 1 ? "" : "s"}`);
       const out = [];
       for (let index = 0; index < value.length; index += 1) {
-        const parsed = item.parse(value[index], `${path19}[${index}]`);
+        const parsed = item.parse(value[index], `${path20}[${index}]`);
         if (!parsed.ok) return issues(parsed.issues);
         out.push(parsed.value);
       }
@@ -2239,14 +2325,14 @@ function array(item, max, label = "List", min = 0) {
 function map(item, options) {
   const label = options.label ?? "Map";
   return {
-    parse(value, path19) {
-      if (!isJsonObject(value)) return invalid(path19, `${label}: expected an object`, "invalid_type");
+    parse(value, path20) {
+      if (!isJsonObject(value)) return invalid(path20, `${label}: expected an object`, "invalid_type");
       const keys = Object.keys(value);
-      if (keys.length > options.max) return invalid(path19, `${label}: at most ${options.max} entries`, "too_large");
+      if (keys.length > options.max) return invalid(path20, `${label}: at most ${options.max} entries`, "too_large");
       const out = {};
       for (const key of keys) {
-        if (options.keyPattern && !options.keyPattern.test(key)) return invalid(pathForKey(path19, key), `${label}: invalid key`);
-        const parsed = item.parse(value[key], pathForKey(path19, key));
+        if (options.keyPattern && !options.keyPattern.test(key)) return invalid(pathForKey(path20, key), `${label}: invalid key`);
+        const parsed = item.parse(value[key], pathForKey(path20, key));
         if (!parsed.ok) return issues(parsed.issues);
         out[key] = parsed.value;
       }
@@ -2258,10 +2344,10 @@ function object(shape, label = "Object") {
   const keys = Object.keys(shape);
   const known = new Set(keys);
   return {
-    parse(value, path19) {
-      if (!isJsonObject(value)) return invalid(path19, `${label}: expected an object`, "invalid_type");
+    parse(value, path20) {
+      if (!isJsonObject(value)) return invalid(path20, `${label}: expected an object`, "invalid_type");
       for (const key of Object.keys(value)) {
-        if (!known.has(key)) return invalid(pathForKey(path19, key), "Unknown key", "unknown_key");
+        if (!known.has(key)) return invalid(pathForKey(path20, key), "Unknown key", "unknown_key");
       }
       const out = {};
       for (const key of keys) {
@@ -2269,13 +2355,13 @@ function object(shape, label = "Object") {
         const present = Object.prototype.hasOwnProperty.call(value, key);
         if (!present) {
           if (schema.isOptional) {
-            const parsed2 = schema.parse(void 0, pathForKey(path19, key));
+            const parsed2 = schema.parse(void 0, pathForKey(path20, key));
             if (parsed2.ok && parsed2.value !== void 0) out[key] = parsed2.value;
             continue;
           }
-          return invalid(pathForKey(path19, key), "Missing required key", "missing_key");
+          return invalid(pathForKey(path20, key), "Missing required key", "missing_key");
         }
-        const parsed = schema.parse(value[key], pathForKey(path19, key));
+        const parsed = schema.parse(value[key], pathForKey(path20, key));
         if (!parsed.ok) return issues(parsed.issues);
         out[key] = parsed.value;
       }
@@ -2285,21 +2371,21 @@ function object(shape, label = "Object") {
 }
 function noParams() {
   return {
-    parse(value, path19) {
+    parse(value, path20) {
       if (value === void 0 || value === null) return valid(null);
       if (isJsonObject(value) && Object.keys(value).length === 0) return valid(null);
-      return invalid(path19, "This capability takes no parameters", "unknown_key");
+      return invalid(path20, "This capability takes no parameters", "unknown_key");
     }
   };
 }
 function json(limits = {}, label = "Value") {
   return {
-    parse(value, path19) {
-      if (value === void 0) return invalid(path19, `${label}: missing`, "missing_key");
+    parse(value, path20) {
+      if (value === void 0) return invalid(path20, `${label}: missing`, "missing_key");
       const checked = validateJson(value, limits);
       if (!checked.ok) {
         const first = checked.issues[0];
-        return first ? invalid(path19 === "$" ? first.path : `${path19}${first.path.slice(1)}`, first.message, first.code) : checked;
+        return first ? invalid(path20 === "$" ? first.path : `${path20}${first.path.slice(1)}`, first.message, first.code) : checked;
       }
       return checked;
     }
@@ -2307,34 +2393,34 @@ function json(limits = {}, label = "Value") {
 }
 function union(first, second, label = "Value") {
   return {
-    parse(value, path19) {
-      const a = first.parse(value, path19);
+    parse(value, path20) {
+      const a = first.parse(value, path20);
       if (a.ok) return a;
-      const b = second.parse(value, path19);
+      const b = second.parse(value, path20);
       if (b.ok) return b;
-      return invalid(path19, `${label}: did not match any accepted shape`);
+      return invalid(path20, `${label}: did not match any accepted shape`);
     }
   };
 }
 function refine(schema, check) {
   return {
-    parse(value, path19) {
-      const parsed = schema.parse(value, path19);
+    parse(value, path20) {
+      const parsed = schema.parse(value, path20);
       if (!parsed.ok) return parsed;
       const problem = check(parsed.value);
-      return problem ? invalid(path19, problem) : parsed;
+      return problem ? invalid(path20, problem) : parsed;
     }
   };
 }
 function renamingKey(schema, from, to) {
   return {
-    parse(value, path19) {
+    parse(value, path20) {
       if (isJsonObject(value) && Object.prototype.hasOwnProperty.call(value, from)) {
-        if (Object.prototype.hasOwnProperty.call(value, to)) return invalid(pathForKey(path19, from), `Give ${to} or ${from}, not both`);
+        if (Object.prototype.hasOwnProperty.call(value, to)) return invalid(pathForKey(path20, from), `Give ${to} or ${from}, not both`);
         const { [from]: renamed, ...rest } = value;
-        return schema.parse({ ...rest, [to]: renamed }, path19);
+        return schema.parse({ ...rest, [to]: renamed }, path20);
       }
-      return schema.parse(value, path19);
+      return schema.parse(value, path20);
     }
   };
 }
@@ -3424,8 +3510,8 @@ function createOutcomeMemory(options = {}) {
 }
 
 // ../pages-core/src/domain/tokens/workspace-id.ts
-function workspaceIdFor(path19, signingKey) {
-  const canonical = path19.length > 1 ? path19.replace(/[\\/]+$/, "") : path19;
+function workspaceIdFor(path20, signingKey) {
+  const canonical = path20.length > 1 ? path20.replace(/[\\/]+$/, "") : path20;
   return `ws_${hmacHex(signingKey, "workspace-id", canonical)}`;
 }
 
@@ -11818,10 +11904,10 @@ function captureForms(source) {
 }
 
 // ../pages-core/src/domain/own-files.ts
-function isOwnFilePath(path19) {
-  if (typeof path19 !== "string" || path19.length === 0 || path19.length > 1024) return false;
-  if (path19.includes("\0") || path19.includes("\\") || path19.startsWith("/")) return false;
-  return path19.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+function isOwnFilePath(path20) {
+  if (typeof path20 !== "string" || path20.length === 0 || path20.length > 1024) return false;
+  if (path20.includes("\0") || path20.includes("\\") || path20.startsWith("/")) return false;
+  return path20.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 function ownFileReference(reference, documentDirectory) {
   const value = reference.trim();
@@ -11844,17 +11930,17 @@ function ownFileReference(reference, documentDirectory) {
     }
     segments.push(segment);
   }
-  const path19 = segments.join("/");
-  return isOwnFilePath(path19) ? path19 : null;
+  const path20 = segments.join("/");
+  return isOwnFilePath(path20) ? path20 : null;
 }
-function extensionOf(path19) {
-  const name = path19.slice(path19.lastIndexOf("/") + 1);
+function extensionOf(path20) {
+  const name = path20.slice(path20.lastIndexOf("/") + 1);
   const dot = name.lastIndexOf(".");
   return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
 }
 var IMAGES = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "heic", "heif", "tif", "tiff"]);
-function shellFetchLimit(path19) {
-  return IMAGES.has(extensionOf(path19)) ? LIMITS.shellFetchImageBytes : LIMITS.shellFetchBytes;
+function shellFetchLimit(path20) {
+  return IMAGES.has(extensionOf(path20)) ? LIMITS.shellFetchImageBytes : LIMITS.shellFetchBytes;
 }
 var OPENABLE = /* @__PURE__ */ new Set([
   ...IMAGES,
@@ -11883,8 +11969,8 @@ var OPENABLE = /* @__PURE__ */ new Set([
 ]);
 var LARGE_MEDIA = /* @__PURE__ */ new Set([...IMAGES, "mp4", "m4v", "webm", "mov", "ogv", "ogg", "oga", "mp3", "m4a", "aac", "wav", "flac", "opus"]);
 var FILE_VERSION_QUERY = "pages-v";
-function encodeFilePath(path19) {
-  return path19.split("/").map(encodeURIComponent).join("/");
+function encodeFilePath(path20) {
+  return path20.split("/").map(encodeURIComponent).join("/");
 }
 
 // ../pages-core/src/pages/include.ts
@@ -11983,8 +12069,8 @@ async function expandIncludes(html2, io, documentDir = "") {
   const parts2 = [];
   const reported = [];
   if (!html2.toLowerCase().includes(INCLUDE_REL)) return { html: html2, parts: parts2, skipped: reported };
-  const report = (path19, reason) => {
-    if (reported.length < LIMITS.includeReports) reported.push({ path: path19.slice(0, 200), reason });
+  const report = (path20, reason) => {
+    if (reported.length < LIMITS.includeReports) reported.push({ path: path20.slice(0, 200), reason });
   };
   let budget = LIMITS.entryDocumentBytes - utf8Bytes(html2);
   let elements = 0;
@@ -11999,72 +12085,72 @@ async function expandIncludes(html2, io, documentDir = "") {
     return known;
   };
   async function resolveTargets(href, fromDir) {
-    const path19 = ownFileReference(href, fromDir);
-    if (path19 === null) {
+    const path20 = ownFileReference(href, fromDir);
+    if (path20 === null) {
       report(href, "unsafe-path");
       return null;
     }
-    if (!path19.includes("*")) {
-      if (!isPartPath(path19)) {
-        report(path19, "not-a-part");
+    if (!path20.includes("*")) {
+      if (!isPartPath(path20)) {
+        report(path20, "not-a-part");
         return null;
       }
-      const stat = await io.stat(path19);
+      const stat = await io.stat(path20);
       if (stat === null) {
-        report(path19, "missing");
+        report(path20, "missing");
         return null;
       }
       if (stat.kind !== "file") {
-        report(path19, stat.kind === "symlink" ? "symlink" : "missing");
+        report(path20, stat.kind === "symlink" ? "symlink" : "missing");
         return null;
       }
-      return [path19];
+      return [path20];
     }
-    const directory = directoryOf(path19);
-    const pattern = path19.slice(directory.length);
+    const directory = directoryOf(path20);
+    const pattern = path20.slice(directory.length);
     if (directory.includes("*") || pattern.split("*").length - 1 > LIMITS.includePatternStars) {
-      report(path19, "unsafe-path");
+      report(path20, "unsafe-path");
       return null;
     }
     const names = await listed(directory);
     if (names === null) {
-      report(path19, "no-listing");
+      report(path20, "no-listing");
       return null;
     }
     return names.filter((entry) => entry.kind === "file" && globMatches(pattern, entry.name) && isPartPath(directory + entry.name)).map((entry) => entry.name).sort(byCodeUnit).map((name) => directory + name);
   }
-  async function loadPart(path19, depth) {
+  async function loadPart(path20, depth) {
     if (parts2.length >= LIMITS.includeParts) {
-      if (!full) report(path19, "too-many");
+      if (!full) report(path20, "too-many");
       full = true;
       return null;
     }
-    const stat = await io.stat(path19);
+    const stat = await io.stat(path20);
     if (stat === null || stat.kind !== "file") {
-      report(path19, stat?.kind === "symlink" ? "symlink" : "missing");
+      report(path20, stat?.kind === "symlink" ? "symlink" : "missing");
       return null;
     }
     if (stat.size > LIMITS.includePartBytes) {
-      report(path19, "too-large");
+      report(path20, "too-large");
       return null;
     }
-    const bytes = await io.read(path19);
+    const bytes = await io.read(path20);
     if (bytes === null) {
-      report(path19, "missing");
+      report(path20, "missing");
       return null;
     }
     if (bytes.byteLength > LIMITS.includePartBytes) {
-      report(path19, "too-large");
+      report(path20, "too-large");
       return null;
     }
     if (bytes.byteLength > budget) {
-      report(path19, "budget");
+      report(path20, "budget");
       return null;
     }
     budget -= bytes.byteLength;
-    parts2.push({ path: path19, bytes: bytes.byteLength });
+    parts2.push({ path: path20, bytes: bytes.byteLength });
     const text = stripBom(Buffer.from(bytes).toString("utf8"));
-    return expand(text, directoryOf(path19), depth);
+    return expand(text, directoryOf(path20), depth);
   }
   async function expand(text, dir, depth) {
     if (!text.toLowerCase().includes(INCLUDE_REL)) return text;
@@ -12161,8 +12247,8 @@ var EXTENSION_TYPES = Object.freeze({
   wasm: "application/wasm",
   zip: "application/zip"
 });
-function contentTypeFor(path19) {
-  const name = path19.slice(path19.lastIndexOf("/") + 1);
+function contentTypeFor(path20) {
+  const name = path20.slice(path20.lastIndexOf("/") + 1);
   const dot = name.lastIndexOf(".");
   const extension = dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
   return EXTENSION_TYPES[extension] ?? "application/octet-stream";
@@ -12225,44 +12311,44 @@ async function carryOwnFiles(html2, io, documentDir = "") {
   const oversize = /* @__PURE__ */ new Map();
   const undeferred = /* @__PURE__ */ new Set();
   let budget = LIMITS.inlineTotalBytes;
-  async function urlFor(path19, depth, deferrable) {
-    let answer = seen.get(path19);
+  async function urlFor(path20, depth, deferrable) {
+    let answer = seen.get(path20);
     if (answer === void 0) {
-      answer = await load(path19, depth);
-      seen.set(path19, answer);
+      answer = await load(path20, depth);
+      seen.set(path20, answer);
     }
-    if (answer === null && !deferrable && oversize.has(path19)) undeferred.add(path19);
+    if (answer === null && !deferrable && oversize.has(path20)) undeferred.add(path20);
     return answer;
   }
-  async function load(path19, depth) {
-    const stat = await io.stat(path19);
+  async function load(path20, depth) {
+    const stat = await io.stat(path20);
     if (stat === null || stat.kind === "dir") {
-      skipped.push({ path: path19, reason: "missing" });
+      skipped.push({ path: path20, reason: "missing" });
       return null;
     }
     if (stat.kind === "symlink") {
-      skipped.push({ path: path19, reason: "symlink" });
+      skipped.push({ path: path20, reason: "symlink" });
       return null;
     }
     const reason = stat.size > LIMITS.inlineFileBytes ? "too-large" : stat.size > budget ? "budget" : null;
     if (reason) {
-      if (stat.size <= shellFetchLimit(path19)) oversize.set(path19, { bytes: stat.size, version: fileVersion(stat), reason });
-      else skipped.push({ path: path19, reason });
+      if (stat.size <= shellFetchLimit(path20)) oversize.set(path20, { bytes: stat.size, version: fileVersion(stat), reason });
+      else skipped.push({ path: path20, reason });
       return null;
     }
-    const bytes = await io.read(path19);
+    const bytes = await io.read(path20);
     if (bytes === null) {
-      skipped.push({ path: path19, reason: "missing" });
+      skipped.push({ path: path20, reason: "missing" });
       return null;
     }
     if (bytes.byteLength > LIMITS.inlineFileBytes || bytes.byteLength > budget) {
-      skipped.push({ path: path19, reason: bytes.byteLength > LIMITS.inlineFileBytes ? "too-large" : "budget" });
+      skipped.push({ path: path20, reason: bytes.byteLength > LIMITS.inlineFileBytes ? "too-large" : "budget" });
       return null;
     }
     budget -= bytes.byteLength;
-    const contentType = mimeOnly(contentTypeFor(path19));
-    const carried = contentType === "text/css" && depth < LIMITS.inlineCssDepth ? Buffer.from(await resolveCss(Buffer.from(bytes).toString("utf8"), path19, depth), "utf8") : bytes;
-    resolved.push({ path: path19, bytes: bytes.byteLength });
+    const contentType = mimeOnly(contentTypeFor(path20));
+    const carried = contentType === "text/css" && depth < LIMITS.inlineCssDepth ? Buffer.from(await resolveCss(Buffer.from(bytes).toString("utf8"), path20, depth), "utf8") : bytes;
+    resolved.push({ path: path20, bytes: bytes.byteLength });
     return dataUrl(carried, contentType);
   }
   async function resolveCss(css, from, depth) {
@@ -12271,9 +12357,9 @@ async function carryOwnFiles(html2, io, documentDir = "") {
     for (const match of css.matchAll(CSS_URL)) {
       const reference = match[2] ?? "";
       if (replacements.has(reference)) continue;
-      const path19 = ownFileReference(reference, cssDir);
-      if (path19 === null) continue;
-      const url = await urlFor(path19, depth + 1, false);
+      const path20 = ownFileReference(reference, cssDir);
+      if (path20 === null) continue;
+      const url = await urlFor(path20, depth + 1, false);
       if (url) replacements.set(reference, url);
     }
     if (replacements.size === 0) return css;
@@ -12288,17 +12374,17 @@ async function carryOwnFiles(html2, io, documentDir = "") {
       if (element.tagName !== carrier.tag || carrier.test && !carrier.test(element)) continue;
       const reference = attributeOf2(element, carrier.attr);
       if (reference === null) continue;
-      const path19 = ownFileReference(reference, documentDir);
-      if (path19 === null) continue;
-      const url = await urlFor(path19, 0, carrier.defer);
+      const path20 = ownFileReference(reference, documentDir);
+      if (path20 === null) continue;
+      const url = await urlFor(path20, 0, carrier.defer);
       if (url === null) {
-        const large = oversize.get(path19);
+        const large = oversize.get(path20);
         if (!large || !carrier.defer) continue;
         removeAttribute(element, carrier.attr);
-        setAttribute(element, carrier.attr === "poster" ? DEFERRED_POSTER_ATTRIBUTE : DEFERRED_FILE_ATTRIBUTE, `${path19}@${large.version}`);
-        if (!deferredPaths.has(path19)) {
-          deferredPaths.add(path19);
-          deferred.push({ path: path19, bytes: large.bytes });
+        setAttribute(element, carrier.attr === "poster" ? DEFERRED_POSTER_ATTRIBUTE : DEFERRED_FILE_ATTRIBUTE, `${path20}@${large.version}`);
+        if (!deferredPaths.has(path20)) {
+          deferredPaths.add(path20);
+          deferred.push({ path: path20, bytes: large.bytes });
         }
         changed = true;
         continue;
@@ -12322,8 +12408,8 @@ async function carryOwnFiles(html2, io, documentDir = "") {
     const out = [];
     for (const candidate of srcset.split(",").map((entry) => entry.trim()).filter(Boolean)) {
       const [reference, ...descriptor] = candidate.split(/\s+/);
-      const path19 = reference ? ownFileReference(reference, documentDir) : null;
-      const url = path19 ? await urlFor(path19, 0, false) : null;
+      const path20 = reference ? ownFileReference(reference, documentDir) : null;
+      const url = path20 ? await urlFor(path20, 0, false) : null;
       if (!url) {
         out.push(candidate);
         continue;
@@ -12333,8 +12419,8 @@ async function carryOwnFiles(html2, io, documentDir = "") {
     }
     return changedSet ? out.join(", ") : null;
   }
-  for (const [path19, large] of oversize) {
-    if (undeferred.has(path19) || !deferredPaths.has(path19)) skipped.push({ path: path19, reason: large.reason });
+  for (const [path20, large] of oversize) {
+    if (undeferred.has(path20) || !deferredPaths.has(path20)) skipped.push({ path: path20, reason: large.reason });
   }
   return { html: changed ? serialize(document) : html2, resolved, skipped, deferred };
 }
@@ -12347,18 +12433,18 @@ function withVersion(reference, version) {
 async function versionOwnFiles(html2, io, documentDir = "") {
   const document = parse(html2);
   const versions = /* @__PURE__ */ new Map();
-  async function versionOf(path19) {
-    let version = versions.get(path19);
+  async function versionOf(path20) {
+    let version = versions.get(path20);
     if (version === void 0) {
-      const stat = await io.stat(path19);
+      const stat = await io.stat(path20);
       version = stat && stat.kind === "file" ? fileVersion(stat).slice(0, 16) : null;
-      versions.set(path19, version);
+      versions.set(path20, version);
     }
     return version;
   }
   async function versioned(reference) {
-    const path19 = ownFileReference(reference, documentDir);
-    const version = path19 === null ? null : await versionOf(path19);
+    const path20 = ownFileReference(reference, documentDir);
+    const version = path20 === null ? null : await versionOf(path20);
     return version === null ? null : withVersion(reference.trim(), version);
   }
   let changed = false;
@@ -12401,17 +12487,17 @@ function isProviderNotFound(error) {
 }
 function pageFileIo(provider, session) {
   return {
-    async read(path19) {
+    async read(path20) {
       try {
-        return await provider.files.read(session, path19);
+        return await provider.files.read(session, path20);
       } catch (error) {
         if (isProviderNotFound(error)) return null;
         throw error;
       }
     },
-    async stat(path19) {
+    async stat(path20) {
       try {
-        return await provider.files.stat(session, path19);
+        return await provider.files.stat(session, path20);
       } catch (error) {
         if (isProviderNotFound(error)) return null;
         throw error;
@@ -12427,8 +12513,8 @@ function pageFileIo(provider, session) {
     }
   };
 }
-async function assembleDocument(io, authored, path19, strategy) {
-  const directory = directoryOf(path19);
+async function assembleDocument(io, authored, path20, strategy) {
+  const directory = directoryOf(path20);
   const expanded = await expandIncludes(authored, io, directory);
   if (utf8Bytes(expanded.html) > LIMITS.entryDocumentBytes) throw new PageError("page_too_large", PUBLIC_MESSAGES.pageTooLarge);
   const skipped = [...expanded.skipped];
@@ -12559,8 +12645,8 @@ var OFFLINE_COPY_PREFIX = "pages-core:cache:";
 function isProviderUnavailable(error) {
   return error instanceof Error && error.name === "ProviderError" && error.code === "unavailable";
 }
-function copyKey(session, path19) {
-  return `${OFFLINE_COPY_PREFIX}${session}#${path19 ?? ""}`;
+function copyKey(session, path20) {
+  return `${OFFLINE_COPY_PREFIX}${session}#${path20 ?? ""}`;
 }
 function createPageStore(provider, options) {
   const cache = /* @__PURE__ */ new Map();
@@ -12587,7 +12673,7 @@ function createPageStore(provider, options) {
   }
   let cacheBytes = 0;
   const statIsCheap = provider.files.statIsCheap === true;
-  const keyOf = (session, path19) => `${session}\0${path19 ?? ""}`;
+  const keyOf = (session, path20) => `${session}\0${path20 ?? ""}`;
   const cost = (entry) => utf8Bytes(entry.html) + 256;
   function retain(key, entry) {
     const previous = cache.get(key);
@@ -12605,13 +12691,13 @@ function createPageStore(provider, options) {
       if (evicted) cacheBytes -= cost(evicted);
     }
   }
-  async function persist(session, path19, entry, previousRevision) {
+  async function persist(session, path20, entry, previousRevision) {
     if (previousRevision === entry.revision) return;
-    const key = copyKey(session, path19);
+    const key = copyKey(session, path20);
     const known = copySet(session);
     if (utf8Bytes(entry.html) > LIMITS.offlineCopyBytes) {
       if (known.has(key)) {
-        options.log.warn(`offline copy: ${session}#${path19 ?? ENTRY_FILE} is over ${LIMITS.offlineCopyBytes / 1024} KiB and will not open while its host is unreachable`);
+        options.log.warn(`offline copy: ${session}#${path20 ?? ENTRY_FILE} is over ${LIMITS.offlineCopyBytes / 1024} KiB and will not open while its host is unreachable`);
         known.delete(key);
         await provider.kv.delete(key).catch((error) => options.log.warn(`offline copy: could not clear ${key}: ${errorText(error)}`));
       }
@@ -12625,8 +12711,8 @@ function createPageStore(provider, options) {
       options.log.warn(`offline copy: could not store ${key}: ${errorText(error)}`);
     }
   }
-  async function offlineCopy(session, path19) {
-    const key = copyKey(session, path19);
+  async function offlineCopy(session, path20) {
+    const key = copyKey(session, path20);
     let raw;
     try {
       raw = await provider.kv.get(key);
@@ -12649,48 +12735,48 @@ function createPageStore(provider, options) {
     await provider.kv.delete(key).catch(() => void 0);
     return null;
   }
-  function reportOnce(session, path19, entry, previous) {
+  function reportOnce(session, path20, entry, previous) {
     if (entry.report === previous) return;
-    for (const file of entry.site.skipped) options.log.warn(`page ${session}#${path19 ?? ENTRY_FILE}: ${file.path} is referenced but was not carried into the document (${file.reason})`);
-    for (const file of entry.site.deferred) options.log.info(`page ${session}#${path19 ?? ENTRY_FILE}: ${file.path} (${mebibytes(file.bytes)}) is too large to carry; the shell fetches it for the reader`);
+    for (const file of entry.site.skipped) options.log.warn(`page ${session}#${path20 ?? ENTRY_FILE}: ${file.path} is referenced but was not carried into the document (${file.reason})`);
+    for (const file of entry.site.deferred) options.log.info(`page ${session}#${path20 ?? ENTRY_FILE}: ${file.path} (${mebibytes(file.bytes)}) is too large to carry; the shell fetches it for the reader`);
   }
-  async function loadNow(session, path19) {
-    const key = keyOf(session, path19);
-    const file = path19 ?? ENTRY_FILE;
+  async function loadNow(session, path20) {
+    const key = keyOf(session, path20);
+    const file = path20 ?? ENTRY_FILE;
     const now = options.now();
     const cached = cache.get(key);
     const record = await provider.sessions.get(session);
     if (record === null) throw new PageError("not_found", PUBLIC_MESSAGES.deleted);
     const archived = record.archived;
     if (cached && !statIsCheap && now - cached.checkedAt < LIMITS.shellPollWorkingMs) {
-      return { html: cached.html, revision: cached.revision, updatedAtMs: cached.updatedAtMs, path: path19, stale: false, archived, site: cached.site };
+      return { html: cached.html, revision: cached.revision, updatedAtMs: cached.updatedAtMs, path: path20, stale: false, archived, site: cached.site };
     }
     let stat;
     try {
       stat = await provider.files.stat(session, file);
     } catch (error) {
       if (!isProviderUnavailable(error)) throw new PageError("unavailable", PUBLIC_MESSAGES.unreachable, { cause: error });
-      return fallback(session, path19, archived, error);
+      return fallback(session, path20, archived, error);
     }
-    if (stat === null || stat.kind !== "file") throw path19 ? new PageError("not_found", "That document of the page does not exist.") : new PageError("no_page", PUBLIC_MESSAGES.noPage);
+    if (stat === null || stat.kind !== "file") throw path20 ? new PageError("not_found", "That document of the page does not exist.") : new PageError("no_page", PUBLIC_MESSAGES.noPage);
     if (stat.size > LIMITS.entryDocumentBytes) throw new PageError("page_too_large", PUBLIC_MESSAGES.pageTooLarge);
     noteAvailability(session, true, now);
     if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
       cached.checkedAt = now;
       cached.archived = archived;
-      return { html: cached.html, revision: cached.revision, updatedAtMs: cached.updatedAtMs, path: path19, stale: false, archived, site: cached.site };
+      return { html: cached.html, revision: cached.revision, updatedAtMs: cached.updatedAtMs, path: path20, stale: false, archived, site: cached.site };
     }
     const io = pageFileIo(provider, session);
     let assembled;
     try {
       const bytes = await io.read(file);
-      if (bytes === null) throw path19 ? new PageError("not_found", "That document of the page does not exist.") : new PageError("no_page", PUBLIC_MESSAGES.noPage);
+      if (bytes === null) throw path20 ? new PageError("not_found", "That document of the page does not exist.") : new PageError("no_page", PUBLIC_MESSAGES.noPage);
       if (bytes.byteLength > LIMITS.entryDocumentBytes) throw new PageError("page_too_large", PUBLIC_MESSAGES.pageTooLarge);
-      assembled = await assembleDocument(io, Buffer.from(bytes).toString("utf8"), path19, options.strategy);
+      assembled = await assembleDocument(io, Buffer.from(bytes).toString("utf8"), path20, options.strategy);
     } catch (error) {
       if (PageError.is(error)) throw error;
       if (!isProviderUnavailable(error)) throw new PageError("unavailable", PUBLIC_MESSAGES.unreachable, { cause: error });
-      return fallback(session, path19, archived, error);
+      return fallback(session, path20, archived, error);
     }
     const entry = {
       html: assembled.html,
@@ -12704,30 +12790,30 @@ function createPageStore(provider, options) {
       report: [...assembled.site.skipped.map((entry2) => `${entry2.path} (${entry2.reason})`), ...assembled.site.deferred.map((entry2) => `${entry2.path} (deferred)`)].join(", "),
       forms: null
     };
-    reportOnce(session, path19, entry, cached?.report);
+    reportOnce(session, path20, entry, cached?.report);
     retain(key, entry);
-    await persist(session, path19, entry, cached?.revision);
-    return { html: entry.html, revision: entry.revision, updatedAtMs: entry.updatedAtMs, path: path19, stale: false, archived, site: entry.site };
+    await persist(session, path20, entry, cached?.revision);
+    return { html: entry.html, revision: entry.revision, updatedAtMs: entry.updatedAtMs, path: path20, stale: false, archived, site: entry.site };
   }
-  async function fallback(session, path19, archived, cause) {
-    const copy = await offlineCopy(session, path19);
+  async function fallback(session, path20, archived, cause) {
+    const copy = await offlineCopy(session, path20);
     if (!copy) throw new PageError("unavailable", PUBLIC_MESSAGES.unreachable, { cause, reason: "offline" });
-    return { html: copy.html, revision: copy.revision, updatedAtMs: copy.updatedAtMs, path: path19, stale: true, archived, site: { resolved: 0, skipped: [], deferred: [] } };
+    return { html: copy.html, revision: copy.revision, updatedAtMs: copy.updatedAtMs, path: path20, stale: true, archived, site: { resolved: 0, skipped: [], deferred: [] } };
   }
   const store = {
     load(session, requested) {
-      const path19 = documentKey(requested);
-      const key = keyOf(session, path19);
+      const path20 = documentKey(requested);
+      const key = keyOf(session, path20);
       const current = loading.get(key);
       if (current) return current;
-      const started = loadNow(session, path19).finally(() => loading.delete(key));
+      const started = loadNow(session, path20).finally(() => loading.delete(key));
       loading.set(key, started);
       return started;
     },
     async forms(session, requested) {
-      const path19 = documentKey(requested);
-      const page2 = await store.load(session, path19);
-      const cached = cache.get(keyOf(session, path19));
+      const path20 = documentKey(requested);
+      const page2 = await store.load(session, path20);
+      const cached = cache.get(keyOf(session, path20));
       if (cached && cached.revision === page2.revision) {
         if (!cached.forms) cached.forms = captureForms(page2.html);
         return { revision: page2.revision, forms: cached.forms };
@@ -12780,17 +12866,17 @@ function appendQuery(url, query) {
 function createByUrlSite(base, files) {
   return {
     kind: "by-url",
-    documentUrl: (session, path19, query, renderToken) => appendQuery(`${base}/page/${encodeURIComponent(session)}/${encodeFilePath(path19 ?? ENTRY_DOCUMENT)}?render=${encodeURIComponent(renderToken)}`, query),
-    siteRoot: (session, path19) => `${base}${files.url(session, directoryOf(path19))}`,
+    documentUrl: (session, path20, query, renderToken) => appendQuery(`${base}/page/${encodeURIComponent(session)}/${encodeFilePath(path20 ?? ENTRY_DOCUMENT)}?render=${encodeURIComponent(renderToken)}`, query),
+    siteRoot: (session, path20) => `${base}${files.url(session, directoryOf(path20))}`,
     filesUrl: (session) => `${base}${files.url(session, "")}`,
     fileUrl: (session, relativePath) => `${base}${files.url(session, relativePath)}`
   };
 }
 function createCarriedSite(base) {
-  const documentBase = (session, path19) => `${base}/document?session=${encodeURIComponent(session)}${path19 ? `&path=${encodeURIComponent(path19)}` : ""}`;
+  const documentBase = (session, path20) => `${base}/document?session=${encodeURIComponent(session)}${path20 ? `&path=${encodeURIComponent(path20)}` : ""}`;
   return {
     kind: "carried",
-    documentUrl: (session, path19, query, renderToken) => appendQuery(`${documentBase(session, path19)}&render=${encodeURIComponent(renderToken)}`, query),
+    documentUrl: (session, path20, query, renderToken) => appendQuery(`${documentBase(session, path20)}&render=${encodeURIComponent(renderToken)}`, query),
     siteRoot: () => null,
     filesUrl: () => null,
     fileUrl: (session, relativePath) => `${base}/document?session=${encodeURIComponent(session)}&file=${encodeURIComponent(relativePath)}`
@@ -12907,18 +12993,18 @@ function checkScope(value) {
   if (value === null || value === void 0 || value === "") return { ok: true, scope: null };
   if (typeof value !== "string") return { ok: false, message: "A scope is a folder path as text, or null" };
   if (value.length > LIMITS.scopeChars) return { ok: false, message: `A scope is at most ${LIMITS.scopeChars} characters` };
-  const path19 = value.endsWith("/") ? value.slice(0, -1) : value;
-  if (path19.startsWith("/") || /^[A-Za-z]:/.test(path19)) return { ok: false, message: "A scope is relative to the session's folder, not absolute" };
-  if (path19.includes("\\")) return { ok: false, message: "A scope separates folders with /, not \\" };
-  if (CONTROL.test(path19)) return { ok: false, message: "A scope cannot contain control characters" };
-  const segments = path19.split("/");
+  const path20 = value.endsWith("/") ? value.slice(0, -1) : value;
+  if (path20.startsWith("/") || /^[A-Za-z]:/.test(path20)) return { ok: false, message: "A scope is relative to the session's folder, not absolute" };
+  if (path20.includes("\\")) return { ok: false, message: "A scope separates folders with /, not \\" };
+  if (CONTROL.test(path20)) return { ok: false, message: "A scope cannot contain control characters" };
+  const segments = path20.split("/");
   if (segments.length > LIMITS.scopeSegments) return { ok: false, message: `A scope is at most ${LIMITS.scopeSegments} folders deep` };
   for (const segment of segments) {
     if (segment === "" || segment === ".") return { ok: false, message: "A scope has no empty or . folder names" };
     if (segment === "..") return { ok: false, message: "A scope cannot climb out with .." };
   }
   if (segments[0] === "~") return { ok: false, message: "A scope is relative to the session's folder, not the home folder" };
-  return { ok: true, scope: path19 };
+  return { ok: true, scope: path20 };
 }
 function isCanonicalScope(value) {
   if (typeof value !== "string" || value === "") return false;
@@ -13074,7 +13160,7 @@ they need to answer, and what the page shows does the explaining.`;
 }
 function forms(input) {
   const L = input.limits;
-  const trap = formatSubmissionMessage({ title: "<the page's heading>", action: "confirm", answers: [], files: [] }, (path19) => path19);
+  const trap = formatSubmissionMessage({ title: "<the page's heading>", action: "confirm", answers: [], files: [] }, (path20) => path20);
   return `## Forms
 
 Every \`<form>\` in the document is captured and delivered to your session as
@@ -13121,7 +13207,7 @@ current revision is not delivered; the reader's text is kept in the shell.
 
 The message you receive looks like:
 
-${indent(formatSubmissionMessage({ title: "<the form's data-title or the h1>", action: "Approve", answers: [{ name: "approach", label: "Which approach", value: "second" }, { name: "else", label: "Anything else", value: "" }], files: [] }, (path19) => path19))}
+${indent(formatSubmissionMessage({ title: "<the form's data-title or the h1>", action: "Approve", answers: [{ name: "approach", label: "Which approach", value: "second" }, { name: "else", label: "Anything else", value: "" }], files: [] }, (path20) => path20))}
 
 ### The dialog trap
 
@@ -13166,11 +13252,11 @@ function uploads(input) {
   const L = input.limits;
   const sample = formatSubmissionMessage(
     { title: "<the form's title>", action: "Send", answers: [], files: [{ field: null, name: "report.pdf", path: `${UPLOAD_DIR}/20260908-161200-3f9a1c-report.pdf`, sizeBytes: 48213 }] },
-    (path19) => `<root>/${path19}`
+    (path20) => `<root>/${path20}`
   );
   const recording = formatSubmissionMessage(
     { title: "<the form's title>", action: null, answers: [], files: [{ field: null, name: "recording.webm", path: `${UPLOAD_DIR}/20260925-101500-1a2b3c-recording.webm`, sizeBytes: 38114, transcript: "Go with the second option, but keep the old export." }] },
-    (path19) => `<root>/${path19}`
+    (path20) => `<root>/${path20}`
   );
   const recorder = input.voice ? `elsewhere a click on it opens the host's recording bar (up to ${L.voiceDefaultSeconds} s), and the recording becomes the input's file` : "elsewhere, since this host has no transcription, it stays a plain file picker";
   return `## Files the reader sends you
@@ -14265,9 +14351,9 @@ function renderSeed(seed, title2) {
 
 // ../pages-core/src/agent/commands.ts
 var INIT_LINES = Object.freeze({
-  new: (path19) => `NEW      \u2014 no page yet; write the whole document at ${path19}`,
-  seeded: (path19) => `NEW      \u2014 created from the operator's seed at ${path19}; rewrite it for this task`,
-  existing: (path19) => `EXISTING \u2014 the page exists at ${path19}; read it before editing`,
+  new: (path20) => `NEW      \u2014 no page yet; write the whole document at ${path20}`,
+  seeded: (path20) => `NEW      \u2014 created from the operator's seed at ${path20}; rewrite it for this task`,
+  existing: (path20) => `EXISTING \u2014 the page exists at ${path20}; read it before editing`,
   skip: (reason) => `SKIP     \u2014 this session has no page: ${reason}. Answer in chat and stay off the page.`,
   local: (url) => `Local: ${url} (this machine only, for your own check)`
 });
@@ -14280,8 +14366,8 @@ function ineligibleReason(record) {
 }
 async function pageUrl(ctx, sessionId) {
   const origin = await ctx.serving.origin();
-  const path19 = `${ctx.serving.base()}/page?session=${encodeURIComponent(sessionId)}`;
-  return origin ? { url: `${origin}${path19}`, relative: false } : { url: path19, relative: true };
+  const path20 = `${ctx.serving.base()}/page?session=${encodeURIComponent(sessionId)}`;
+  return origin ? { url: `${origin}${path20}`, relative: false } : { url: path20, relative: true };
 }
 async function checkUrl(ctx, sessionId) {
   const [origin, check] = await Promise.all([ctx.serving.origin(), ctx.serving.checkOrigin ? ctx.serving.checkOrigin() : Promise.resolve(null)]);
@@ -14290,8 +14376,8 @@ async function checkUrl(ctx, sessionId) {
 }
 async function homeUrl(ctx) {
   const origin = await ctx.serving.origin();
-  const path19 = `${ctx.serving.base()}/home`;
-  return origin ? `${origin}${path19}` : path19;
+  const path20 = `${ctx.serving.base()}/home`;
+  return origin ? `${origin}${path20}` : path20;
 }
 async function guideInputFrom(ctx) {
   const { provider } = ctx;
@@ -14705,28 +14791,28 @@ function compileNode(schema, mode, at, depth) {
     if (schema.items === void 0) throw new Error(`${at}: an array needs items`);
     items = compileNode(schema.items, mode, `${at}[]`, depth + 1);
   }
-  const node = (value, path19) => {
-    if (value === void 0) return invalid(path19, "Missing value", "missing_key");
-    if (constValue !== void 0 && JSON.stringify(value) !== JSON.stringify(constValue)) return invalid(path19, `Expected ${JSON.stringify(constValue)}`);
-    if (enumValues !== void 0 && !enumValues.some((option) => JSON.stringify(option) === JSON.stringify(value))) return invalid(path19, "Not one of the allowed values");
-    if (types.length > 0 && !types.some((type) => matchesType(type, value))) return invalid(path19, `Expected ${types.join(" or ")}`, "invalid_type");
+  const node = (value, path20) => {
+    if (value === void 0) return invalid(path20, "Missing value", "missing_key");
+    if (constValue !== void 0 && JSON.stringify(value) !== JSON.stringify(constValue)) return invalid(path20, `Expected ${JSON.stringify(constValue)}`);
+    if (enumValues !== void 0 && !enumValues.some((option) => JSON.stringify(option) === JSON.stringify(value))) return invalid(path20, "Not one of the allowed values");
+    if (types.length > 0 && !types.some((type) => matchesType(type, value))) return invalid(path20, `Expected ${types.join(" or ")}`, "invalid_type");
     if (typeof value === "string") {
-      if (minLength !== void 0 && value.length < minLength) return invalid(path19, `At least ${minLength} characters`);
-      if (maxLength !== void 0 && value.length > maxLength) return invalid(path19, `At most ${maxLength} characters`, "too_large");
-      if (pattern && !pattern.test(value)) return invalid(path19, "Invalid format");
+      if (minLength !== void 0 && value.length < minLength) return invalid(path20, `At least ${minLength} characters`);
+      if (maxLength !== void 0 && value.length > maxLength) return invalid(path20, `At most ${maxLength} characters`, "too_large");
+      if (pattern && !pattern.test(value)) return invalid(path20, "Invalid format");
       return valid(value);
     }
     if (typeof value === "number") {
-      if (minimum !== void 0 && value < minimum) return invalid(path19, `At least ${minimum}`);
-      if (maximum !== void 0 && value > maximum) return invalid(path19, `At most ${maximum}`);
+      if (minimum !== void 0 && value < minimum) return invalid(path20, `At least ${minimum}`);
+      if (maximum !== void 0 && value > maximum) return invalid(path20, `At most ${maximum}`);
       return valid(value);
     }
     if (Array.isArray(value)) {
-      if (minItems !== void 0 && value.length < minItems) return invalid(path19, `At least ${minItems} items`);
-      if (maxItems !== void 0 && value.length > maxItems) return invalid(path19, `At most ${maxItems} items`, "too_large");
+      if (minItems !== void 0 && value.length < minItems) return invalid(path20, `At least ${minItems} items`);
+      if (maxItems !== void 0 && value.length > maxItems) return invalid(path20, `At most ${maxItems} items`, "too_large");
       const out = [];
       for (let index = 0; index < value.length; index += 1) {
-        const parsed = items ? items(value[index], `${path19}[${index}]`) : valid(value[index]);
+        const parsed = items ? items(value[index], `${path20}[${index}]`) : valid(value[index]);
         if (!parsed.ok) return parsed;
         out.push(parsed.value);
       }
@@ -14735,15 +14821,15 @@ function compileNode(schema, mode, at, depth) {
     if (isJsonObject(value) && properties) {
       const out = {};
       for (const key of Object.keys(value)) {
-        if (!properties.has(key) && mode === "params") return invalid(pathForKey(path19, key), "Unknown key", "unknown_key");
+        if (!properties.has(key) && mode === "params") return invalid(pathForKey(path20, key), "Unknown key", "unknown_key");
       }
       for (const [key, child] of properties) {
         const present = Object.prototype.hasOwnProperty.call(value, key);
         if (!present) {
-          if (required.has(key)) return invalid(pathForKey(path19, key), "Missing required key", "missing_key");
+          if (required.has(key)) return invalid(pathForKey(path20, key), "Missing required key", "missing_key");
           continue;
         }
-        const parsed = child(value[key], pathForKey(path19, key));
+        const parsed = child(value[key], pathForKey(path20, key));
         if (!parsed.ok) return parsed;
         out[key] = parsed.value;
       }
@@ -15002,9 +15088,9 @@ function completeInvocation(invocation, result2) {
 
 // ../pages-core/src/domain/tokens/action-token.ts
 function mintActionToken(args, key) {
-  const path19 = documentKey(args.path);
+  const path20 = documentKey(args.path);
   const base = { v: 1, scope: "action", session: args.session, revision: args.revision, iat: args.now, exp: args.now + LIMITS.actionTokenMs };
-  return { token: signPayload(path19 ? { ...base, path: path19 } : base, key), payload: { ...base, path: path19 } };
+  return { token: signPayload(path20 ? { ...base, path: path20 } : base, key), payload: { ...base, path: path20 } };
 }
 function verifyActionToken(token, key, now) {
   const payload = openScoped(token, key, now, "action", LIMITS.actionTokenMs);
@@ -15018,19 +15104,19 @@ function openScoped(token, key, now, scope, maxLifetimeMs) {
   if (payload.v !== 1 || payload.scope !== scope || !isSessionIdentity(payload.session) || !isRevision(payload.revision) || !lifetimeValid({ iat: payload.iat, exp: payload.exp }, now, maxLifetimeMs)) return null;
   const allowed = /* @__PURE__ */ new Set(["v", "scope", "session", "revision", "iat", "exp", "path"]);
   if (Object.keys(payload).some((field) => !allowed.has(field))) return null;
-  let path19 = null;
+  let path20 = null;
   if (payload.path !== void 0) {
     if (!isDocumentPath(payload.path) || documentKey(payload.path) === null) return null;
-    path19 = payload.path;
+    path20 = payload.path;
   }
-  return { session: payload.session, revision: payload.revision, path: path19, iat: payload.iat, exp: payload.exp };
+  return { session: payload.session, revision: payload.revision, path: path20, iat: payload.iat, exp: payload.exp };
 }
 
 // ../pages-core/src/domain/tokens/answer-token.ts
 function mintAnswerToken(args, key) {
-  const path19 = documentKey(args.path);
+  const path20 = documentKey(args.path);
   const base = { v: 1, scope: "answer", issuedTo: args.issuedTo, target: args.target, revision: args.revision, iat: args.now, exp: args.now + LIMITS.answerTokenMs };
-  return { token: signPayload(path19 ? { ...base, path: path19 } : base, key), payload: { ...base, path: path19 } };
+  return { token: signPayload(path20 ? { ...base, path: path20 } : base, key), payload: { ...base, path: path20 } };
 }
 function verifyAnswerToken(token, key, now) {
   if (typeof token !== "string" || token.length === 0 || token.length > LIMITS.tokenChars) return null;
@@ -15039,12 +15125,12 @@ function verifyAnswerToken(token, key, now) {
   if (payload.v !== 1 || payload.scope !== "answer" || !isSessionIdentity(payload.issuedTo) || !isSessionId(payload.target) || !isRevision(payload.revision) || !lifetimeValid({ iat: payload.iat, exp: payload.exp }, now, LIMITS.answerTokenMs)) return null;
   const allowed = /* @__PURE__ */ new Set(["v", "scope", "issuedTo", "target", "revision", "iat", "exp", "path"]);
   if (Object.keys(payload).some((field) => !allowed.has(field))) return null;
-  let path19 = null;
+  let path20 = null;
   if (payload.path !== void 0) {
     if (!isDocumentPath(payload.path) || documentKey(payload.path) === null) return null;
-    path19 = payload.path;
+    path20 = payload.path;
   }
-  return { v: 1, scope: "answer", issuedTo: payload.issuedTo, target: payload.target, path: path19, revision: payload.revision, iat: payload.iat, exp: payload.exp };
+  return { v: 1, scope: "answer", issuedTo: payload.issuedTo, target: payload.target, path: path20, revision: payload.revision, iat: payload.iat, exp: payload.exp };
 }
 
 // ../pages-core/src/domain/json/canonical.ts
@@ -15591,8 +15677,8 @@ function cooldownKeyFor(pageSession, target) {
 }
 
 // ../pages-core/src/pages/forms.ts
-async function matchSubmissionForm(pages, session, path19, wanted) {
-  const { revision: revision2, forms: forms2 } = await pages.forms(session, path19);
+async function matchSubmissionForm(pages, session, path20, wanted) {
+  const { revision: revision2, forms: forms2 } = await pages.forms(session, path20);
   let wantedIndex;
   if (!wanted.formId && !wanted.formTitle?.trim() && wanted.writtenAgainst === revision2) {
     wantedIndex = forms2.find((form) => form.id === null && form.title === null && wanted.fields.every((field) => form.fields.has(field)))?.index;
@@ -15778,8 +15864,8 @@ async function executeRespond(ctx, target, params2, sender, requestId) {
 
 // ../pages-core/src/serving/bridge/handlers/pages.ts
 var READ_ENVELOPE_BYTES = 4 * 1024;
-function failed(sessionId, path19, code, reason, message) {
-  return { sessionId, path: path19, error: { code, reason, message } };
+function failed(sessionId, path20, code, reason, message) {
+  return { sessionId, path: path20, error: { code, reason, message } };
 }
 async function readableOwner(context, sessionId) {
   const access = await context.serving.sessionFor(sessionId);
@@ -15788,33 +15874,33 @@ async function readableOwner(context, sessionId) {
   if (!record.visible || record.forkOfId !== null || record.parentSessionId !== null) throw new PageError("not_found", "That session is not available", { reason: "no_session" });
   return record;
 }
-function failure2(context, sessionId, path19, error) {
+function failure2(context, sessionId, path20, error) {
   if (!PageError.is(error)) context.serving.log.warn(`pages.read ${sessionId}: ${errorText(error)}`);
   const code = PageError.is(error) ? error.code : "unavailable";
-  if (code === "page_too_large") return failed(sessionId, path19, "response_too_large", "too_large", PUBLIC_MESSAGES.pageTooLarge);
-  if (code === "not_found" || code === "ineligible") return failed(sessionId, path19, "not_found", "no_session", "That session is not available");
-  if (code === "no_page") return failed(sessionId, path19, "not_found", "no_page", PUBLIC_MESSAGES.noPage);
-  return failed(sessionId, path19, "unavailable", "unreachable", PUBLIC_MESSAGES.unreachable);
+  if (code === "page_too_large") return failed(sessionId, path20, "response_too_large", "too_large", PUBLIC_MESSAGES.pageTooLarge);
+  if (code === "not_found" || code === "ineligible") return failed(sessionId, path20, "not_found", "no_session", "That session is not available");
+  if (code === "no_page") return failed(sessionId, path20, "not_found", "no_page", PUBLIC_MESSAGES.noPage);
+  return failed(sessionId, path20, "unavailable", "unreachable", PUBLIC_MESSAGES.unreachable);
 }
 async function resolveEntry(context, wanted) {
   const { serving } = context;
   const sessionId = wanted.sessionId;
   const key = documentKey(wanted.path);
-  const path19 = key ?? ENTRY_DOCUMENT;
+  const path20 = key ?? ENTRY_DOCUMENT;
   try {
     const owner = await readableOwner(context, sessionId);
     let page2;
     try {
       page2 = await serving.pages.load(sessionId, key);
     } catch (error) {
-      if (PageError.is(error) && error.code === "no_page") return { entry: failed(sessionId, path19, "not_found", "no_page", PUBLIC_MESSAGES.noPage) };
-      if (PageError.is(error) && error.code === "not_found") return { entry: failed(sessionId, path19, "not_found", "no_page", "That page has no such document") };
+      if (PageError.is(error) && error.code === "no_page") return { entry: failed(sessionId, path20, "not_found", "no_page", PUBLIC_MESSAGES.noPage) };
+      if (PageError.is(error) && error.code === "not_found") return { entry: failed(sessionId, path20, "not_found", "no_page", "That page has no such document") };
       throw error;
     }
     const archived = page2.archived || owner.archived;
     const shared = {
       sessionId,
-      path: path19,
+      path: path20,
       ...sessionId === context.session.id ? { own: true } : {},
       title: boundTitle(owner.title),
       workspaceId: owner.workspaceId,
@@ -15827,10 +15913,10 @@ async function resolveEntry(context, wanted) {
     const baseHref = serving.strategy.siteRoot(sessionId, key);
     const own2 = sessionId === context.session.id;
     const view = isHome(context);
-    const config = { pageRevision: page2.revision, stale: page2.stale, archived, siteRoot: baseHref, embedded: true, uploads: own2 && context.embeddedBy !== HOME_IDENTITY, documentPath: path19, ownFilesByFrame: false, embedAvailable: view, frame: !view, deferredFiles: page2.site.deferred.map((file) => file.path), swapIdleMs: LIMITS.swapIdleMs };
-    return { shared, page: page2, config, baseHref, scripts: serving.pageScripts.scriptsFor(sessionId, path19) };
+    const config = { pageRevision: page2.revision, stale: page2.stale, archived, siteRoot: baseHref, embedded: true, uploads: own2 && context.embeddedBy !== HOME_IDENTITY, documentPath: path20, ownFilesByFrame: false, embedAvailable: view, frame: !view, deferredFiles: page2.site.deferred.map((file) => file.path), swapIdleMs: LIMITS.swapIdleMs };
+    return { shared, page: page2, config, baseHref, scripts: serving.pageScripts.scriptsFor(sessionId, path20) };
   } catch (error) {
-    return { entry: failure2(context, sessionId, path19, error) };
+    return { entry: failure2(context, sessionId, path20, error) };
   }
 }
 var pagesRead2 = handler({
@@ -15846,9 +15932,9 @@ var pagesRead2 = handler({
     for (const wanted of params2.pages) resolved.push(await resolveEntry(context, wanted));
     for (const [index, outcome] of resolved.entries()) {
       const sessionId = params2.pages[index].sessionId;
-      const path19 = documentKey(params2.pages[index].path) ?? ENTRY_DOCUMENT;
+      const path20 = documentKey(params2.pages[index].path) ?? ENTRY_DOCUMENT;
       if (index > 0 && room < READ_ENVELOPE_BYTES) {
-        add({ sessionId, path: path19, deferred: true });
+        add({ sessionId, path: path20, deferred: true });
         continue;
       }
       if ("entry" in outcome) {
@@ -15863,16 +15949,16 @@ var pagesRead2 = handler({
         const entry = { ...shared, revision: page2.revision, html: html2 };
         const bytes = utf8Bytes(JSON.stringify(entry));
         if (bytes > LIMITS.pagesReadBytes - READ_ENVELOPE_BYTES) {
-          add(failed(sessionId, path19, "response_too_large", "too_large", "That page is too large to show inside another page"));
+          add(failed(sessionId, path20, "response_too_large", "too_large", "That page is too large to show inside another page"));
           continue;
         }
         if (bytes > room && index > 0) {
-          add({ sessionId, path: path19, deferred: true });
+          add({ sessionId, path: path20, deferred: true });
           continue;
         }
         add(entry);
       } catch (error) {
-        add(failure2(context, sessionId, path19, error));
+        add(failure2(context, sessionId, path20, error));
       }
     }
     return { result: { pages } };
@@ -16586,8 +16672,8 @@ var workspacesList2 = handler({
 });
 function displayOf(display) {
   const text = display.trim();
-  const path19 = /^(?:\/|[A-Za-z]:[\\/]|~[\\/]?)/.test(text);
-  const last = path19 ? text.split(/[\\/]/).filter((segment) => segment.length > 0).pop() ?? text : text;
+  const path20 = /^(?:\/|[A-Za-z]:[\\/]|~[\\/]?)/.test(text);
+  const last = path20 ? text.split(/[\\/]/).filter((segment) => segment.length > 0).pop() ?? text : text;
   const bounded = last.slice(0, 1024);
   return bounded.length > 0 ? bounded : "the chosen folder";
 }
@@ -16689,13 +16775,13 @@ function checkEnvelope(value) {
   if (confirmation !== void 0 && confirmation !== null && (typeof confirmation !== "string" || confirmation.length === 0 || confirmation.length > LIMITS.tokenChars)) throw new PageError("invalid_request", "The bridge envelope's confirmation is not a challenge");
   return { actionToken: value.actionToken, request: value.request, confirmation: typeof confirmation === "string" ? confirmation : null };
 }
-async function loadPageState(ctx, session, path19) {
+async function loadPageState(ctx, session, path20) {
   if (session === HOME_IDENTITY) return { revision: await ctx.currentRevision(HOME_IDENTITY, null), stale: false, archived: false, path: null };
   try {
-    const loaded = await ctx.pages.load(session, path19);
-    return { revision: loaded.revision, stale: loaded.stale, archived: loaded.archived, path: path19 };
+    const loaded = await ctx.pages.load(session, path20);
+    return { revision: loaded.revision, stale: loaded.stale, archived: loaded.archived, path: path20 };
   } catch (error) {
-    if (PageError.is(error) && error.code === "no_page") return { revision: EMPTY_REVISION, stale: false, archived: false, path: path19 };
+    if (PageError.is(error) && error.code === "no_page") return { revision: EMPTY_REVISION, stale: false, archived: false, path: path20 };
     throw error;
   }
 }
@@ -19559,13 +19645,13 @@ async function loadUnlessUnwritten(pages, session) {
     throw error;
   }
 }
-async function loadPageView(pages, access, path19) {
+async function loadPageView(pages, access, path20) {
   if (access.kind === "home") {
     const page3 = homePage();
     return { page: page3, revision: page3.revision, source: "live", empty: false, archived: false, stale: false, deferredFiles: [], working: false };
   }
   const id = access.record.id;
-  const page2 = path19 === null ? await loadUnlessUnwritten(pages, id) : await pages.load(id, path19);
+  const page2 = path20 === null ? await loadUnlessUnwritten(pages, id) : await pages.load(id, path20);
   const archived = access.archived;
   const stale = page2?.stale ?? false;
   return {
@@ -19705,9 +19791,9 @@ function chromeActionRoute(ctx) {
 
 // ../pages-core/src/domain/tokens/render-token.ts
 function mintRenderToken(args, key) {
-  const path19 = documentKey(args.path);
+  const path20 = documentKey(args.path);
   const base = { v: 1, scope: "render", session: args.session, revision: args.revision, iat: args.now, exp: args.now + LIMITS.actionTokenMs };
-  return { token: signPayload(path19 ? { ...base, path: path19 } : base, key), payload: { ...base, path: path19 } };
+  return { token: signPayload(path20 ? { ...base, path: path20 } : base, key), payload: { ...base, path: path20 } };
 }
 function verifyRenderToken(token, key, now) {
   const payload = openScoped(token, key, now, "render", LIMITS.actionTokenMs);
@@ -19808,16 +19894,16 @@ function readMethodsFor(ctx) {
   const contributed2 = ctx.contributions.cached().contributors.flatMap((contributor) => contributor.methods.filter((method) => method.effect === "read").map((method) => method.method));
   return [...ctx.registry.readMethods(), ...contributed2];
 }
-function documentUrlFor(ctx, access, path19, query, revision2) {
+function documentUrlFor(ctx, access, path20, query, revision2) {
   const session = identityOf(access);
-  const render = mintRenderToken({ session, revision: revision2, path: path19, now: ctx.now() }, ctx.signingKey).token;
+  const render = mintRenderToken({ session, revision: revision2, path: path20, now: ctx.now() }, ctx.signingKey).token;
   if (access.kind === "home") return `${ctx.serving.base()}/home-document?render=${encodeURIComponent(render)}`;
-  return ctx.strategy.documentUrl(session, path19, query, render);
+  return ctx.strategy.documentUrl(session, path20, query, render);
 }
 async function serveDocument(ctx, request2, args) {
-  const { access, path: path19, query } = args;
+  const { access, path: path20, query } = args;
   const session = identityOf(access);
-  const view = await loadPageView(ctx.pages, access, path19);
+  const view = await loadPageView(ctx.pages, access, path20);
   const etag = etagFor(view.revision);
   if (request2.headers.get(POLL_HEADER) === "1") {
     const headers = baseHeaders("application/json; charset=utf-8");
@@ -19826,20 +19912,20 @@ async function serveDocument(ctx, request2, args) {
     headers.set(SOURCE_HEADER, view.source);
     headers.set(SESSION_HEADER, "live");
     if (ifNoneMatchMatches(request2.headers.get("if-none-match"), etag)) return noBody(304, headers);
-    const body = await pollBody(ctx, request2, access, path19, query, view);
+    const body = await pollBody(ctx, request2, access, path20, query, view);
     return { status: 200, headers, body: new TextEncoder().encode(JSON.stringify(body)) };
   }
   const token = verifyRenderToken(request2.query.get("render"), ctx.signingKey, ctx.now());
-  if (!token || token.session !== session || token.path !== path19) throw new PageError("forbidden", PUBLIC_MESSAGES.tokenInvalid);
+  if (!token || token.session !== session || token.path !== path20) throw new PageError("forbidden", PUBLIC_MESSAGES.tokenInvalid);
   if (token.revision !== view.revision) throw new PageError("stale_page", PUBLIC_MESSAGES.stalePage);
   const config = {
     pageRevision: view.revision,
     stale: view.stale,
     archived: view.archived,
-    siteRoot: access.kind === "home" ? null : ctx.strategy.siteRoot(session, path19),
+    siteRoot: access.kind === "home" ? null : ctx.strategy.siteRoot(session, path20),
     embedded: false,
     uploads: access.kind !== "home",
-    documentPath: path19 ?? ENTRY_DOCUMENT,
+    documentPath: path20 ?? ENTRY_DOCUMENT,
     ownFilesByFrame: false,
     embedAvailable: true,
     // A page shown whole, on its own URL or as the built-in home. 07 R5.93 (B-0189)
@@ -19847,20 +19933,20 @@ async function serveDocument(ctx, request2, args) {
     deferredFiles: view.deferredFiles,
     swapIdleMs: LIMITS.swapIdleMs
   };
-  const contributorScripts = await ctx.pageScripts.scriptsFor(access.kind === "home" ? null : session, path19 ?? ENTRY_DOCUMENT);
+  const contributorScripts = await ctx.pageScripts.scriptsFor(access.kind === "home" ? null : session, path20 ?? ENTRY_DOCUMENT);
   let page2 = view.page?.html ?? EMPTY_DOCUMENT;
-  if (view.page && access.kind !== "home" && ctx.strategy.kind === "by-url" && request2.headers.get(HAND_OVER_HEADER) === "1") page2 = await versionOwnFiles(page2, pageFileIo(ctx.provider, session), directoryOf(path19));
+  if (view.page && access.kind !== "home" && ctx.strategy.kind === "by-url" && request2.headers.get(HAND_OVER_HEADER) === "1") page2 = await versionOwnFiles(page2, pageFileIo(ctx.provider, session), directoryOf(path20));
   const html2 = injectKernel(withNotice(page2, args.notice ?? null), { kernel: KERNEL_RUNTIME, config, baseHref: null, contributorScripts });
   return { status: 200, headers: documentHeaders(view.revision), body: new TextEncoder().encode(html2) };
 }
-async function pollBody(ctx, request2, access, path19, query, view) {
+async function pollBody(ctx, request2, access, path20, query, view) {
   const session = identityOf(access);
-  const action = mintActionToken({ session, revision: view.revision, path: path19, now: ctx.now() }, ctx.signingKey);
+  const action = mintActionToken({ session, revision: view.revision, path: path20, now: ctx.now() }, ctx.signingKey);
   return {
     revision: view.revision,
     actionToken: action.token,
     expiresAt: action.payload.exp,
-    documentUrl: documentUrlFor(ctx, access, path19, query, view.revision),
+    documentUrl: documentUrlFor(ctx, access, path20, query, view.revision),
     working: view.working,
     source: view.source,
     empty: view.empty,
@@ -19894,12 +19980,12 @@ function parseRange(header, size) {
   if (start >= size || start > end) return null;
   return { offset: start, length: end - start + 1 };
 }
-async function serveOwnFile(provider, request2, session, path19) {
-  if (!isOwnFilePath(path19) || isDocumentPath(path19)) throw new PageError("not_found", PUBLIC_MESSAGES.notFound);
-  const stat = await provider.files.stat(session, path19).catch(() => null);
+async function serveOwnFile(provider, request2, session, path20) {
+  if (!isOwnFilePath(path20) || isDocumentPath(path20)) throw new PageError("not_found", PUBLIC_MESSAGES.notFound);
+  const stat = await provider.files.stat(session, path20).catch(() => null);
   if (!stat || stat.kind !== "file") throw new PageError("not_found", PUBLIC_MESSAGES.notFound);
   const etag = `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
-  const headers = fileHeaders(contentTypeFor(path19));
+  const headers = fileHeaders(contentTypeFor(path20));
   headers.set("etag", etag);
   if (ifNoneMatchMatches(request2.headers.get("if-none-match"), etag)) return noBody(304, headers);
   const range = parseRange(request2.headers.get("range"), stat.size);
@@ -19909,7 +19995,7 @@ async function serveOwnFile(provider, request2, session, path19) {
   }
   const wanted = range ?? { offset: 0, length: stat.size };
   if (wanted.length > LIMITS.shellFetchBytes) throw new PageError("request_too_large", `A file is served in ranges of at most ${LIMITS.shellFetchBytes} bytes`);
-  const bytes = stat.size === 0 ? new Uint8Array(0) : await provider.files.read(session, path19, range ? wanted : void 0);
+  const bytes = stat.size === 0 ? new Uint8Array(0) : await provider.files.read(session, path20, range ? wanted : void 0);
   headers.set("content-length", String(bytes.byteLength));
   if (range) {
     headers.set("content-range", `bytes ${wanted.offset}-${wanted.offset + bytes.byteLength - 1}/${stat.size}`);
@@ -19930,10 +20016,10 @@ function documentRoute(ctx) {
         requirePageSession(access2);
         return await serveOwnFile(ctx.provider, request2, id, file);
       }
-      const { path: path19, query } = documentAddressFrom(request2.query);
+      const { path: path20, query } = documentAddressFrom(request2.query);
       const access = await ctx.sessionFor(id);
       requirePageSession(access);
-      return await serveDocument(ctx, request2, { access, path: path19, query });
+      return await serveDocument(ctx, request2, { access, path: path20, query });
     } catch (error) {
       return documentFailure(ctx, request2, error, "GET /document");
     }
@@ -19973,21 +20059,21 @@ function documentSessionRoute(ctx) {
       const token = requireActionToken(ctx, body.actionToken);
       const session = requireSessionToken(token, "The built-in home page has no other documents.");
       if (body.path !== ENTRY_DOCUMENT && !isDocumentPath(body.path)) throw new PageError("invalid_params", "That is not a document of this page.");
-      const path19 = documentKey(body.path);
+      const path20 = documentKey(body.path);
       const query = checkDocumentQuery(body.query);
       if (!query.ok) throw new PageError("invalid_params", `That link's query cannot be carried: ${query.message}.`);
       release = acquireBudget(ctx, token);
       const access = await ctx.sessionFor(session);
       requirePageSession(access);
-      const view = await loadPageView(ctx.pages, access, path19);
-      const minted = mintActionToken({ session, revision: view.revision, path: path19, now: ctx.now() }, ctx.signingKey);
+      const view = await loadPageView(ctx.pages, access, path20);
+      const minted = mintActionToken({ session, revision: view.revision, path: path20, now: ctx.now() }, ctx.signingKey);
       const answer = {
         ok: true,
         actionToken: minted.token,
         pageRevision: view.revision,
         expiresAt: minted.payload.exp,
-        documentUrl: documentUrlFor(ctx, access, path19, query.query, view.revision),
-        path: path19 ?? ENTRY_DOCUMENT,
+        documentUrl: documentUrlFor(ctx, access, path20, query.query, view.revision),
+        path: path20 ?? ENTRY_DOCUMENT,
         query: query.query,
         source: view.source,
         empty: view.empty,
@@ -20139,10 +20225,10 @@ function manifestRoute(ctx) {
 
 // ../pages-core/src/serving/shell-route.ts
 async function buildShellConfig(ctx, request2, args) {
-  const { access, path: path19, query, view } = args;
+  const { access, path: path20, query, view } = args;
   const session = access.kind === "home" ? HOME_IDENTITY : access.record.id;
   const base = ctx.serving.base();
-  const action = mintActionToken({ session, revision: view.revision, path: path19, now: ctx.now() }, ctx.signingKey);
+  const action = mintActionToken({ session, revision: view.revision, path: path20, now: ctx.now() }, ctx.signingKey);
   const settings = ctx.settings();
   const voice2 = await voiceAvailability(ctx, request2);
   return {
@@ -20150,8 +20236,8 @@ async function buildShellConfig(ctx, request2, args) {
     actionToken: action.token,
     pageRevision: view.revision,
     expiresAt: action.payload.exp,
-    documentUrl: documentUrlFor(ctx, access, path19, query, view.revision),
-    documentPath: path19 ?? ENTRY_DOCUMENT,
+    documentUrl: documentUrlFor(ctx, access, path20, query, view.revision),
+    documentPath: path20 ?? ENTRY_DOCUMENT,
     documentQuery: query,
     routes: {
       submit: `${base}/submit`,
@@ -20195,11 +20281,11 @@ function shellRoute(ctx) {
       requireReader(request2);
       const id = request2.query.get("session");
       if (!isSessionId(id)) throw new PageError("invalid_request", PUBLIC_MESSAGES.invalidSession);
-      const { path: path19, query } = documentAddressFrom(request2.query);
+      const { path: path20, query } = documentAddressFrom(request2.query);
       const access = await ctx.sessionFor(id);
       requirePageSession(access);
-      const view = await loadPageView(ctx.pages, access, path19);
-      const config = await buildShellConfig(ctx, request2, { access, path: path19, query, view, title: access.record.title });
+      const view = await loadPageView(ctx.pages, access, path20);
+      const config = await buildShellConfig(ctx, request2, { access, path: path20, query, view, title: access.record.title });
       const nonce = shellNonce(ctx);
       const body = renderShell({ nonce, config, head: await shellHead(ctx, access) });
       const headers = shellHeaders(nonce);
@@ -20478,10 +20564,10 @@ async function mountPages(serving, provider, options) {
     random,
     log: provider.log,
     sessionFor,
-    async currentRevision(session, path19) {
+    async currentRevision(session, path20) {
       if (session === HOME_IDENTITY) return homePage().revision;
-      if (path19 === null) return (await loadUnlessUnwritten(pages, session))?.revision ?? EMPTY_REVISION;
-      return (await pages.load(session, path19)).revision;
+      if (path20 === null) return (await loadUnlessUnwritten(pages, session))?.revision ?? EMPTY_REVISION;
+      return (await pages.load(session, path20)).revision;
     }
   };
   const dispatcher = createDispatcher(ctx);
@@ -20516,7 +20602,7 @@ async function mountPages(serving, provider, options) {
       ledger.forget(sessionId);
       selections.forget(sessionId);
     },
-    workspaceIdFor: (path19) => workspaceIdFor(path19, signingKey),
+    workspaceIdFor: (path20) => workspaceIdFor(path20, signingKey),
     async close() {
       stopWatching();
     }
@@ -20527,9 +20613,9 @@ async function mountPages(serving, provider, options) {
 var encoder2 = new TextEncoder();
 
 // src/daemon/serving/files-route.ts
-import fs6 from "node:fs";
+import fs7 from "node:fs";
 import fsp4 from "node:fs/promises";
-import path15 from "node:path";
+import path16 from "node:path";
 var TYPES2 = {
   html: "text/html; charset=utf-8",
   htm: "text/html; charset=utf-8",
@@ -20567,7 +20653,7 @@ var TYPES2 = {
   xml: "application/xml",
   webmanifest: "application/manifest+json"
 };
-var contentTypeFor2 = (file) => TYPES2[path15.extname(file).slice(1).toLowerCase()] ?? "application/octet-stream";
+var contentTypeFor2 = (file) => TYPES2[path16.extname(file).slice(1).toLowerCase()] ?? "application/octet-stream";
 async function serveOwnFile2(req, res, root, rel) {
   const abs = await confine(root, rel);
   let st = null;
@@ -20624,7 +20710,7 @@ async function serveOwnFile2(req, res, root, rel) {
     return;
   }
   await new Promise((resolve) => {
-    const stream = fs6.createReadStream(abs, { start, end });
+    const stream = fs7.createReadStream(abs, { start, end });
     stream.on("error", () => {
       res.destroy();
       resolve();
@@ -20938,7 +21024,7 @@ function createServingHost(listener, deps) {
 }
 
 // src/daemon/provider.ts
-import path16 from "node:path";
+import path17 from "node:path";
 
 // src/daemon/start.ts
 import { spawn as spawn3 } from "node:child_process";
@@ -21000,14 +21086,14 @@ async function startBackground(d, cwd, args) {
 }
 
 // src/daemon/open.ts
-import fs7 from "node:fs";
+import fs8 from "node:fs";
 import os2 from "node:os";
 import { spawn as spawn4 } from "node:child_process";
 var asq = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 var shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 var TERMINAL_NAMES = { ghostty: "Ghostty", terminal: "Terminal" };
 function pickTerminal(setting) {
-  return setting ?? (fs7.existsSync("/Applications/Ghostty.app") ? "ghostty" : "terminal");
+  return setting ?? (fs8.existsSync("/Applications/Ghostty.app") ? "ghostty" : "terminal");
 }
 function terminalScript(terminal, command, cwd) {
   return terminal === "ghostty" ? [
@@ -21106,7 +21192,7 @@ function openUrl(url, log, waitMs = OPEN_WAIT_MS) {
     }, waitMs);
   });
 }
-var deepLinkInstalled = () => process.platform === "darwin" ? fs7.existsSync(`${os2.homedir()}/Applications/Claude Code URL Handler.app`) : process.platform === "linux";
+var deepLinkInstalled = () => process.platform === "darwin" ? fs8.existsSync(`${os2.homedir()}/Applications/Claude Code URL Handler.app`) : process.platform === "linux";
 var resumeDeepLink = (cwd, sessionId) => `claude-cli://open?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(`/resume ${sessionId}`)}`;
 var realOpener = (log) => ({
   terminal: (t, command, cwd) => openInTerminal(t, command, cwd, log),
@@ -21332,7 +21418,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
         await must(id);
         const rootPath = d.pageRoot(id);
         await d.files.list(id, "");
-        return { rootPath, pathForAgent: (rel) => path16.join(rootPath, rel) };
+        return { rootPath, pathForAgent: (rel) => path17.join(rootPath, rel) };
       },
       async respond(id, waitId2, payload) {
         await must(id);
@@ -21437,7 +21523,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
 }
 
 // src/daemon/control/api.ts
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import http3 from "node:http";
 var BODY_LIMIT2 = 8 * 1024 * 1024;
 var ControlServer = class {
@@ -21459,13 +21545,13 @@ var ControlServer = class {
   listen(socketPath2) {
     this.path = socketPath2;
     try {
-      fs8.unlinkSync(socketPath2);
+      fs9.unlinkSync(socketPath2);
     } catch {
     }
     return new Promise((resolve, reject) => {
       this.server.once("error", reject);
       this.server.listen(socketPath2, () => {
-        fs8.chmodSync(socketPath2, 384);
+        fs9.chmodSync(socketPath2, 384);
         this.server.off("error", reject);
         resolve();
       });
@@ -21476,7 +21562,7 @@ var ControlServer = class {
       this.server.closeAllConnections?.();
       this.server.close(() => {
         try {
-          fs8.unlinkSync(this.path);
+          fs9.unlinkSync(this.path);
         } catch {
         }
         r();
@@ -21789,7 +21875,7 @@ function readJson2(req) {
 }
 
 // src/shared/daemon-start.ts
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 function pidAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -21799,24 +21885,24 @@ function pidAlive(pid) {
   }
 }
 function takeLock(home3) {
-  fs9.mkdirSync(home3, { recursive: true, mode: 448 });
+  fs10.mkdirSync(home3, { recursive: true, mode: 448 });
   const lock = lockPath(home3);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = fs9.openSync(lock, fs9.constants.O_WRONLY | fs9.constants.O_CREAT | fs9.constants.O_EXCL, 384);
-      fs9.writeSync(fd, String(process.pid));
-      fs9.closeSync(fd);
+      const fd = fs10.openSync(lock, fs10.constants.O_WRONLY | fs10.constants.O_CREAT | fs10.constants.O_EXCL, 384);
+      fs10.writeSync(fd, String(process.pid));
+      fs10.closeSync(fd);
       return true;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
       let pid = NaN;
       try {
-        pid = Number(fs9.readFileSync(lock, "utf8").trim());
+        pid = Number(fs10.readFileSync(lock, "utf8").trim());
       } catch {
       }
       if (Number.isFinite(pid) && pidAlive(pid)) return false;
       try {
-        fs9.unlinkSync(lock);
+        fs10.unlinkSync(lock);
       } catch {
       }
     }
@@ -21825,7 +21911,7 @@ function takeLock(home3) {
 }
 function releaseLock(home3) {
   try {
-    fs9.unlinkSync(lockPath(home3));
+    fs10.unlinkSync(lockPath(home3));
   } catch {
   }
 }
@@ -21853,7 +21939,7 @@ var Daemon = class {
     ensureDir(this.home);
     this.log = createLog(opts.logToStderr ? null : logPath(this.home));
     for (const name of PRIVATE_NAMES) {
-      const from = path17.join(this.home, name), to = path17.join(privateDir(this.home), name);
+      const from = path18.join(this.home, name), to = path18.join(privateDir(this.home), name);
       const r = moveIfAbsent(from, to);
       if (r === "moved") this.log.info(`moved ${name} into ${privateDir(this.home)}`);
       else if (r === "both") this.log.warn(`${from} exists beside ${to}: using ${to}; the loose copy is not read and not merged \u2014 remove or inspect it`);
@@ -21895,6 +21981,8 @@ var Daemon = class {
     this.bridges.onDrop = (sid) => this.onBridgeDrop(sid);
     this.bridges.onEvict = (sid, how) => this.onBridgeEvicted(sid, how);
     for (const e of this.registry.all()) this.waits.restore(e.id);
+    this.pushedTo = new Pushed(sessionsDir(this.home), (sid, err) => this.log.warn(`session ${sid}: the note of where its answers went could not be written: ${err.message}`));
+    this.pushedTo.load(this.registry.all().map((e) => e.id), opts.bootMs ?? Date.now() - os3.uptime() * 1e3, this.pidAlive, opts.processStarts ?? processStarts, (sid) => new Set(this.queue.unacked(sid).map((q) => q.deliveryId)));
   }
   opts;
   home;
@@ -21932,12 +22020,13 @@ var Daemon = class {
   /**
    * The Claude Code process each unacked delivery was last pushed to (its bridge's parent pid), until it is acked,
    * released or that process is gone: Claude Code may hold it in its own queue, which nothing can take back, so no
-   * other process gets it meanwhile (B-0239). Not durable: after a daemon restart every bridge attaches again.
+   * other process gets it meanwhile (B-0239). Kept beside the answer, so a daemon restart forgets it no more; a note
+   * from before the machine's boot, or whose pid names a process started after it, is not read (B-0244).
    */
-  pushedTo = /* @__PURE__ */ new Map();
+  pushedTo;
   sweep = null;
   pageRoot(id) {
-    return path17.join(pagesDir(this.home), id);
+    return path18.join(pagesDir(this.home), id);
   }
   pageUrl(id) {
     return `${this.origin()}/page?session=${encodeURIComponent(id)}`;
@@ -21946,7 +22035,7 @@ var Daemon = class {
     return this.settings.publicOrigin ?? `http://127.0.0.1:${this.listener.port}`;
   }
   cliSpelling(role) {
-    return `node ${path17.join(this.pluginRoot, "bin", "unife-pages.js")} ${role}`;
+    return `node ${path18.join(this.pluginRoot, "bin", "unife-pages.js")} ${role}`;
   }
   async start() {
     await this.listener.listen(this.settings.listen.host, this.settings.listen.port);
@@ -22241,13 +22330,13 @@ var Daemon = class {
       if (!steers && q.mode === "steer") continue;
       if (this.heldElsewhere(q.deliveryId, holder.parentPid)) continue;
       const sent = this.bridges.push(sid, q.mode === "steer" ? { type: "steer", deliveryId: q.deliveryId, text: q.text } : { type: "deliver", deliveryId: q.deliveryId, text: q.text, ...q.settings ? { settings: q.settings } : {} });
-      if (sent && holder.parentPid > 0) this.pushedTo.set(q.deliveryId, { sessionId: sid, pid: holder.parentPid });
+      if (sent && holder.parentPid > 0) this.pushedTo.set(q.deliveryId, sid, holder.parentPid);
     }
   }
   /** A delivery pushed to the session's bridge outside a drain (a steer): the process it went to is noted the same way. */
   notePushed(deliveryId, sid) {
     const pid = this.bridges.get(sid)?.parentPid ?? 0;
-    if (pid > 0) this.pushedTo.set(deliveryId, { sessionId: sid, pid });
+    if (pid > 0) this.pushedTo.set(deliveryId, sid, pid);
   }
   heldElsewhere(deliveryId, pid) {
     const p = this.pushedTo.get(deliveryId);
@@ -22269,11 +22358,7 @@ var Daemon = class {
    * queue (B-0239): the rest go to the session's holder at once.
    */
   releasePushed(sid, pid, keep) {
-    let n = 0;
-    for (const [did, p] of this.pushedTo) if (p.sessionId === sid && p.pid === pid && !keep.has(did)) {
-      this.pushedTo.delete(did);
-      n++;
-    }
+    const n = this.pushedTo.drop((did, p) => p.sessionId === sid && p.pid === pid && !keep.has(did)).length;
     if (n) {
       this.log.info(`session ${sid}: ${n} answer(s) released by pid ${pid}`);
       this.drainQueue(sid);
@@ -22282,22 +22367,18 @@ var Daemon = class {
   }
   /** The processes that held an unacked delivery and are gone: their deliveries go to the session's holder, their ack-only bearers go (B-0239). */
   sweepPushed() {
-    const sids = /* @__PURE__ */ new Set();
-    for (const [did, p] of this.pushedTo) if (!this.pidAlive(p.pid)) {
-      this.pushedTo.delete(did);
-      sids.add(p.sessionId);
-    }
+    const sids = new Set(this.pushedTo.drop((_did, p) => !this.pidAlive(p.pid)).map(([, p]) => p.sessionId));
     this.bridges.sweepAckOnly(this.pidAlive);
     for (const sid of sids) this.drainQueue(sid);
   }
   async forgetSession(id, why) {
     this.bridges.detach(id);
-    for (const [did, p] of this.pushedTo) if (p.sessionId === id) this.pushedTo.delete(did);
+    this.pushedTo.drop((_did, p) => p.sessionId === id);
     this.waits.forget(id);
     this.rows.forget(id);
     this.registry.delete(id);
-    fs10.rmSync(path17.join(sessionsDir(this.home), id), { recursive: true, force: true });
-    fs10.rmSync(this.pageRoot(id), { recursive: true, force: true });
+    fs11.rmSync(path18.join(sessionsDir(this.home), id), { recursive: true, force: true });
+    fs11.rmSync(this.pageRoot(id), { recursive: true, force: true });
     await this.server?.forgetSession(id);
     this.log.info(`session ${id}: forgotten (${why})`);
   }
@@ -22342,28 +22423,28 @@ function kindOf(k) {
 function hasFiles(dir) {
   let names;
   try {
-    names = fs10.readdirSync(dir, { withFileTypes: true });
+    names = fs11.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
     return e.code !== "ENOENT";
   }
-  return names.some((d) => !d.isDirectory() || hasFiles(path17.join(dir, d.name)));
+  return names.some((d) => !d.isDirectory() || hasFiles(path18.join(dir, d.name)));
 }
 function defaultClaudeDir() {
   const p = claudeConfigDir();
-  return p && fs10.existsSync(p) ? p : null;
+  return p && fs11.existsSync(p) ? p : null;
 }
 
 // src/daemon/main.ts
 async function runDaemon(argv = process.argv.slice(2)) {
   const home3 = stateHome();
-  const here = path18.dirname(fileURLToPath(import.meta.url));
-  const pluginRoot = process.env.UNIFE_PAGES_PLUGIN_ROOT ?? path18.resolve(here, "..");
+  const here = path19.dirname(fileURLToPath(import.meta.url));
+  const pluginRoot = process.env.UNIFE_PAGES_PLUGIN_ROOT ?? path19.resolve(here, "..");
   const version = readVersion(pluginRoot);
   if (process.env.UNIFE_PAGES_LOCK_HELD !== "1" && !takeLock(home3)) {
     process.stderr.write("another daemon is starting or running\n");
     process.exit(0);
   }
-  fs11.writeFileSync(lockPath(home3), String(process.pid), { mode: 384 });
+  fs12.writeFileSync(lockPath(home3), String(process.pid), { mode: 384 });
   const d = new Daemon({ home: home3, pluginRoot, version, logToStderr: argv.includes("--stderr") });
   try {
     await d.start();
@@ -22380,7 +22461,7 @@ async function runDaemon(argv = process.argv.slice(2)) {
 }
 function readVersion(pluginRoot) {
   try {
-    return String(JSON.parse(fs11.readFileSync(path18.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")).version ?? "0.0.0");
+    return String(JSON.parse(fs12.readFileSync(path19.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")).version ?? "0.0.0");
   } catch {
     return "0.0.0";
   }

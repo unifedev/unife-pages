@@ -8,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.22",
+  pluginVersion: "0.6.23",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -805,7 +805,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.22";
+var PLUGIN_VERSION = "0.6.23";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -881,6 +881,7 @@ function register(on) {
   on("session.end", async ($, e, next) => {
     state.previousId = e.sessionId;
     const id = state.endedId = state.sessionId;
+    if (id && state.supersededId === id) return next(e);
     const detaching = post($, "detach", { reason: e.reason, ...e.resume?.id ? { resumeId: e.resume.id } : {} }).then((r) => {
       if (id && !r?.ok) keepMissed(id, { ended: e.reason });
     }, () => {

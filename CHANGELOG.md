@@ -1,8 +1,34 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 761fd28): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` f2f9e0c): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.23 — 2026-10-30
+
+On Claude Code, an answer taken across a `/clear` now runs once and reads delivered even when the page server
+restarted in between (B-0244), and a terminal that lost its page to another terminal no longer reports the
+conversation ended when it leaves it (B-0249). `@unifedev/claude-pages` 0.6.23; `@unifedev/pages-core` stays 0.6.8
+and the bb plugin `@unifedev/thread-pages` 1.14.8: neither changes.
+
+### Fixed
+
+- **Claude Code: an answer runs once across a page-server restart.** If you answered on the page while Claude Code
+  was busy, typed `/clear`, and the page server restarted before Claude Code ran the answer in the new conversation,
+  the page server no longer knew which Claude Code had it. When the old conversation's end had not reached it either,
+  it refused Claude Code's confirmation: the old page kept the answer as queued, and resuming that conversation later
+  ran it a second time. The page server now writes down, beside each waiting answer, which Claude Code process it
+  went to, so a restart keeps that: the confirmation counts, the page reads delivered, and the answer runs once. The
+  same note keeps an answer one terminal already holds from going to a second terminal after a restart. A note from
+  before the computer last started is ignored, since that process number may belong to another program by then. An
+  older Unife Pages plugin still gets the earlier behaviour. Tests: `packages/claude-pages/test/daemon/control.test.ts`.
+- **Claude Code: a terminal that lost its page no longer reports the conversation ended.** When you open one
+  conversation in two terminals, the second takes the page. If you then typed `/clear`, `/resume` or `/branch` in the
+  first terminal, 0.6.21 and 0.6.22 told the page server that the conversation had ended, though the second terminal
+  was still in it. Most of the time the server ignored this; if the second terminal was reconnecting at that moment,
+  the conversation's activity showed a false "session ended: clear". The first terminal now reports nothing about a
+  conversation another terminal holds when it leaves it (B-0249). Tests:
+  `packages/claude-pages/test/mod/mod.test.ts`, `test/daemon/control.test.ts`.
 
 ## 0.6.22 — 2026-10-30
 
