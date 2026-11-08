@@ -8,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.28",
+  pluginVersion: "0.6.29",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -51,6 +51,7 @@ var state = {
   commandWaiter: null,
   reasoningLevel: null,
   stopNoted: false,
+  startValue: void 0,
   bridgeDeferred: false
 };
 function keepMissed(id, what) {
@@ -426,7 +427,8 @@ function runBridge($, extra = {}, ifFree = false) {
         ...extra.forkOf ? ["--fork-of", extra.forkOf] : [],
         ...extra.resumedFrom ? ["--resumed-from", extra.resumedFrom] : [],
         ...ifFree ? ["--if-free"] : [],
-        ...telling.length ? ["--missed", JSON.stringify(telling)] : []
+        ...telling.length ? ["--missed", JSON.stringify(telling)] : [],
+        ...state.startValue ? ["--start-value", state.startValue] : []
       ];
       child = $.process.spawn({ argv });
       state.bridge = child;
@@ -453,6 +455,7 @@ function runBridge($, extra = {}, ifFree = false) {
     state.bridge = null;
     state.token = null;
     if (state.sessionId !== sid || state.endedId === sid) return;
+    if (state.bridgeDeferred) return;
     if (state.supersededId === sid) $.clock.after(SUPERSEDED_TRY_MS, () => {
       void sendAcks($).then(() => flushReleases($));
       if (state.sessionId === sid) runBridge($, extra, true);
@@ -487,6 +490,7 @@ function handle($, line) {
   switch (m.type) {
     case "hello": {
       state.token = m.sessionToken;
+      state.startValue = null;
       state.ackToken = null;
       if (state.sessionId) state.helloed.add(state.sessionId);
       if (state.supersededId === state.sessionId) state.supersededId = null;
@@ -576,6 +580,10 @@ function handle($, line) {
     case "status":
       $.ui.log(`unife-pages: ${m.text}`, { to: "debug" });
       return;
+    case "deferred":
+      state.startValue = null;
+      state.bridgeDeferred = true;
+      return;
     default:
       return;
   }
@@ -657,14 +665,15 @@ async function sendAcks($) {
 }
 function submitPlain($, deliveryId, text) {
   $.ui.toast("Answer from your page");
-  void submitTaken($, text).then(
-    () => ack($, deliveryId, {}),
-    (e) => {
-      $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
-      release($, forgetDelivery(deliveryId));
-    }
-  );
+  void submitTaken($, text).then(() => ack($, deliveryId, {}), (e) => notSubmitted($, deliveryId, e));
 }
+function notSubmitted($, deliveryId, e) {
+  $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
+  if (e instanceof Dropped) release($, forgetDelivery(deliveryId));
+  else ack($, deliveryId, { failed: { fields: [], reason: e.message } });
+}
+var Dropped = class extends Error {
+};
 async function postSettings($) {
   const body = {};
   try {
@@ -800,8 +809,7 @@ async function submitWithSettings($, delivery) {
     await taken;
     ack($, deliveryId, {});
   } catch (e) {
-    $.ui.log(`unife-pages: delivery failed: ${e.message}`, { to: "debug" });
-    release($, forgetDelivery(deliveryId));
+    notSubmitted($, deliveryId, e);
   }
 }
 function submitTaken($, text) {
@@ -825,7 +833,7 @@ function submitTaken($, text) {
         state.stopNoted = true;
         $.ui.log(STOPPED_LINE);
       }
-      notTaken(new Error(`not taken, Claude Code dropped it: ${drop}`));
+      notTaken(new Dropped(`not taken, Claude Code dropped it: ${drop}`));
     }, notTaken);
   });
 }
@@ -855,7 +863,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.28";
+var PLUGIN_VERSION = "0.6.29";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -875,6 +883,12 @@ async function emptyJob($) {
 async function startBridge($, source) {
   if (state.bridgeAlive) return;
   if ((source === void 0 || source === "startup") && await emptyJob($)) {
+    if (state.startValue === void 0) state.startValue = await $.env.get("UNIFE_PAGES_START") || null;
+    if (state.startValue) {
+      state.bridgeDeferred = false;
+      runBridge($);
+      return;
+    }
     state.bridgeDeferred = true;
     void nodePathFor($);
     return;

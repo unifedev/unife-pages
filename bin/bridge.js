@@ -140,6 +140,7 @@ var parentPid = Number(argOf("parent-pid")) || process.ppid;
 var clearedFrom = argOf("cleared-from");
 var forkOf = argOf("fork-of");
 var resumedFrom = argOf("resumed-from");
+var startValue = argOf("start-value");
 var ifFree = process.argv.includes("--if-free");
 var missed = (() => {
   try {
@@ -214,7 +215,7 @@ function connect() {
   return new Promise((resolve) => {
     const pluginDirs = (process.env.CLAUDE_CODE_PLUGIN_DIRS ?? "").split(path4.delimiter).map((d) => d.trim()).filter(Boolean);
     const own = pluginVersion();
-    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...ifFree ? { ifFree: true } : {}, ...missed ? { missed } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {} };
+    const body = { sessionId: sid, cwd, pluginRoot, pluginVersion: own, parentPid, ...clearedFrom ? { clearedFrom } : {}, ...forkOf ? { forkOf } : {}, ...resumedFrom ? { resumedFrom } : {}, ...ifFree ? { ifFree: true } : {}, ...missed ? { missed } : {}, ...pluginDirs.length ? { pluginDirs } : {}, ...process.env.BB_THREAD_ID ? { underHost: "bb", underHostId: process.env.BB_THREAD_ID } : {}, ...startValue ? { startValue } : {} };
     const text = JSON.stringify(body);
     const req = http.request({
       socketPath: sock,
@@ -224,6 +225,11 @@ function connect() {
     }, (res) => {
       if (res.statusCode === 409 && ifFree) {
         busy(res).then(() => resolve("busy"), () => resolve("busy"));
+        return;
+      }
+      if (res.statusCode === 403 && body.startValue) {
+        res.resume();
+        process.stdout.write(JSON.stringify({ type: "deferred" }) + "\n", () => resolve("deferred"));
         return;
       }
       if (res.statusCode !== 200) {
@@ -245,7 +251,10 @@ function connect() {
             if (m.type !== "ping") process.stdout.write(line + "\n");
             if (m.type === "ended") ended = true;
             if (m.type === "superseded") superseded = true;
-            if (m.type === "hello") missed = void 0;
+            if (m.type === "hello") {
+              missed = void 0;
+              startValue = void 0;
+            }
             maybeHandOver(m, own);
           } catch {
           }
@@ -281,7 +290,7 @@ setInterval(() => {
 var startedAt = 0;
 for (let attempt = 0; ; attempt++) {
   const r = await connect();
-  if (ended || superseded || r === "busy") process.exit(0);
+  if (ended || superseded || r === "busy" || r === "deferred") process.exit(0);
   if (handingOver) {
     await exited(handingOver, 8e3);
     handingOver = 0;

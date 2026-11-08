@@ -1,8 +1,58 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 5e97de1): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 17bda3d): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.14.11 (bb plugin) — 2026-11-08
+
+The bb plugin's release of the 0.6.29 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.11`): it carries pages-core 0.6.12, whose only
+change is the wording of two reasons bb never gives, so its pages work as in 1.14.10.
+
+## 0.6.29 — 2026-11-08
+
+Claude Code now offers the new-session page: every folder the page server lists has a page before its agent starts,
+and the reader's first message from it starts that agent (unife-claude-new-session-page). `unife-pages open
+--workspace [<folder>]` lands on the new-session page of a folder no agent has run in yet. A session the page server
+starts no longer takes its first prompt from `claude`'s command line, so a prompt that looks like an option stays
+text, and a page reply that begins with `/` is answered as not sent instead of being pushed again at every idle.
+
+`@unifedev/pages-core` 0.6.12, `@unifedev/claude-pages` 0.6.29, the bb plugin `@unifedev/thread-pages` 1.14.11. No
+agent text changed.
+
+### Added
+
+- **Claude Code: the new-session page.** `workspaces.newSession` offers `page?workspace=<id>` for every listed folder
+  whose on-disk path is still the one stored. The reader's first message from it starts `claude --bg` there, and the
+  page becomes that session's. Tests: `packages/claude-pages/test/daemon/new-session.test.ts`,
+  `test/daemon/first-delivery.test.ts`.
+- **Claude Code: `unife-pages open --workspace [<folder>]`,** for the person's own terminal. It opens or prints the
+  sign-in link to the new-session page of `<folder>` (default: the current one), which the page server lists from
+  then on, kept in `opened-folders.json`. A folder that is missing, not a folder or unreadable is refused, naming it,
+  and no link is minted. `--workspace` with `--session` is the usage text. A folder's identity is its form on disk, so
+  one name typed in another letter case or Unicode form is one workspace. Tests:
+  `packages/claude-pages/test/cli/open-workspace.test.ts`, `test/cli/open-workspace-forms.test.ts`.
+- **pages-core words two provider reasons for the page:** `untrusted_workspace` ("This folder is not trusted yet:
+  open it once in the agent's own app and accept, then send again.") and `not_submitted` ("The agent did not take
+  this message, so it was not sent."). Test: `packages/pages-core/test/domain/provider-reasons.test.ts`.
+
+### Fixed
+
+- **Claude Code: a start prompt is no longer read as `claude` options**
+  (unife-claude-start-prompt-read-as-flags). `sessions.start` (the new-session page, the home's Start, any page's
+  `sessions.start`) passed the prompt to `claude --bg` as its last argument, so a prompt such as
+  `--permission-mode=bypassPermissions` changed how the session ran. The start now runs `claude --bg` with no prompt
+  argument and delivers the text as the session's first queued message, the way every page reply arrives. Settings go
+  as one `--flag=value` token each, only those the provider lists, and the page server's own values in one inline
+  `--settings` token with a one-time value it accepts once, from the session the start matched. Tests:
+  `packages/claude-pages/test/daemon/start-argv.test.ts`, `test/bridge/start-value.test.ts`,
+  `test/mod/start-value.test.ts`.
+- **Claude Code: a page reply that begins with `/` is no longer pushed again at every idle**
+  (unife-claude-slash-reply-redelivered). Claude Code refuses such a text as a user prompt; the plugin took the
+  refusal as "not taken yet", so the answer was offered again at every idle and the page stayed at `queued`. It now
+  acks the refusal as a failed delivery, never pushed again, and a page call still waiting answers `unavailable` with
+  reason `not_submitted`.
 
 ## 1.14.10 (bb plugin) — 2026-11-08
 

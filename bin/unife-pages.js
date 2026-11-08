@@ -160,7 +160,9 @@ var USAGE = `unife-pages \u2014 Unife Pages for Claude Code
 agent (inside a session, run through Bash):
   unife-pages init | guide | status | home [--clear] | grants [--revoke <from> <to> | --revoke-all]
 person (your own terminal):
-  unife-pages open [--print] [--session <id>] [--origin <declared origin>]   mint a sign-in link for a phone or another machine (a browser on this machine presses Sign in on the page)
+  unife-pages open [--print] [--workspace [<folder>]] [--session <id>] [--origin <declared origin>]
+                                                                            mint a sign-in link for a phone or another machine (a browser on this machine presses Sign in on the page);
+                                                                            --workspace lands on the new-session page of <folder> (default: this one), which the page server knows from then on
   unife-pages forget <session id>                                           drop a session's page and state
   unife-pages daemon start|stop|status|log`;
 async function api(io, method, p, body, tries = 20) {
@@ -206,7 +208,13 @@ async function main(argv, io) {
     const print = rest.includes("--print");
     const session = flag("session");
     const origin = flag("origin");
-    const body = { to: session ? `/page?session=${encodeURIComponent(session)}` : "/home", print, ...origin ? { origin } : {} };
+    const w = rest.indexOf("--workspace");
+    const folder = w < 0 ? void 0 : rest[w + 1] !== void 0 && !rest[w + 1].startsWith("--") ? rest[w + 1] : ".";
+    if (folder !== void 0 && session || rest.some((t) => t.startsWith("--workspace="))) {
+      io.err(USAGE);
+      return 1;
+    }
+    const body = { to: session ? `/page?session=${encodeURIComponent(session)}` : "/home", print, ...origin ? { origin } : {}, ...folder !== void 0 ? { workspace: path4.resolve(io.cwd ?? process.cwd(), folder) } : {} };
     const r = await api(io, "POST", "/v1/bootstrap", body);
     if (r.status !== 200) {
       io.err(`open refused (${r.status}): ${r.text}`);
