@@ -1,8 +1,47 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` b9e7d6a): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 53536a4): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.32 — 2026-11-09
+
+Fixes for `@unifedev/claude-pages` 0.6.32 (unife-claude-session-titles, unife-claude-slash-first-message-lost,
+unife-claude-bg-env-from-service-starter, unife-open-empty-origin, unife-claude-resume-stopped-agent-on-send). No agent
+text changed. pages-core stays 0.6.13 and the bb plugin `@unifedev/thread-pages` 1.14.12.
+
+### Fixed
+
+- **Claude Code: a session's title is the name Claude Code gives it, followed.** The daemon took a session's title
+  from `claude agents` only while its entry had none, so the first name it read stayed: a session started from a page
+  with no title, which Claude Code lists by its short id until it has a conversation, kept that id as its title, and a
+  `/rename` never reached the pages. Now the title follows the `name` `claude agents` lists at each read; a session it
+  does not list, or lists with no name, keeps its last title, and a rename does not move the session up the list. A
+  registry already holding an id as a title is corrected at the next read. Test:
+  `packages/claude-pages/test/daemon/session-title.test.ts`.
+- **Claude Code: a first message beginning with `/` is refused before anything starts.** From a new-session page (or
+  `sessions.start`), a first message whose text begins with `/` after leading whitespace answered `started`; one agent
+  started, then Claude Code refused the text (its submit check takes no slash command as the user's words), and the
+  reader was left with an empty agent and their text gone. Now such a start answers `unavailable` with reason
+  `not_submitted`, as a reply to a running session does: nothing starts and the page stays a new-session page. Test: `packages/claude-pages/test/daemon/new-session.test.ts`.
+- **Claude Code: a session started from a page is not taken for a bb thread's.** A `claude --bg` session gets the
+  environment of whoever started Claude Code's background service, not of its own call. With the service started from
+  a bb thread, a session started from a page carried that thread's `BB_THREAD_ID`: it was marked as running inside bb,
+  got no page instruction, and `unife-pages init` named a thread it was not in. Each start's own settings now set
+  `BB_THREAD_ID` empty, which the session reads as unset. Test: `packages/claude-pages/test/daemon/start-argv.test.ts`.
+- **Claude Code: `unife-pages open --origin ''` is refused as an undeclared origin.** The CLI dropped an empty
+  `--origin`, so `open --print --session <id> --origin ''` and `open --workspace <folder> --address --print --origin ''`
+  (a launcher whose origin variable is unset) exited 0 and printed a loopback link a remote reader cannot open. Now a
+  given `--origin` always reaches the daemon, which refuses `''` as any origin `settings.json` does not declare: exit 1,
+  nothing on stdout, `origin not declared` on stderr. No `--origin` still gives the loopback link; `--origin` with no
+  value is still the usage text, exit 1. Test: `packages/claude-pages/test/cli/cli.test.ts`.
+- **Claude Code: a reply to a stopped background agent makes it run.** A reply to a background session that was
+  stopped (by `claude stop`, by Claude Code after an hour idle, or by a machine's sleep or restart) answered `queued`
+  and waited for someone to `claude attach` it, so it was never answered. Now the daemon also resumes such a session,
+  under the same id, and the reply is delivered as its next message. One resume at a time per session, and only of a
+  session `claude agents` lists with no process, so a running session is never copied; a resume that fails is said on
+  the session's activity and in the log, and the reply stays queued. Test:
+  `packages/claude-pages/test/daemon/resume.test.ts`.
 
 ## 1.14.12 (bb plugin) — 2026-11-09
 

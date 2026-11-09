@@ -1,10 +1,10 @@
 // src/daemon/main.ts
-import fs13 from "node:fs";
+import fs14 from "node:fs";
 import path19 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/daemon/daemon.ts
-import fs12 from "node:fs";
+import fs13 from "node:fs";
 import os3 from "node:os";
 import path18 from "node:path";
 
@@ -248,15 +248,20 @@ function resolveClaude() {
 function claudeAgents(opts = {}) {
   const cacheMs = opts.cacheMs ?? 4e3, killMs = opts.killMs ?? 15e3;
   let cache = null;
+  let cacheBegun = 0;
   let failedAt = null;
+  let failedBegun = 0;
   let inflight = null;
-  const read = async () => {
+  const read = async (begun) => {
     const command = opts.command ?? await resolveClaude();
     return new Promise((resolve) => {
       let out = "";
       let child;
       const fail = () => {
-        failedAt = Date.now();
+        if (begun >= failedBegun) {
+          failedAt = Date.now();
+          failedBegun = begun;
+        }
         resolve(null);
       };
       try {
@@ -290,24 +295,30 @@ function claudeAgents(opts = {}) {
             return;
           }
           const rows = parsed.filter((r) => !!r && typeof r.sessionId === "string");
-          failedAt = null;
-          cache = { at: Date.now(), rows };
-          resolve(cache);
+          const fresh = { at: Date.now(), rows };
+          if (begun >= cacheBegun) {
+            failedAt = null;
+            cache = fresh;
+            cacheBegun = begun;
+          }
+          resolve(fresh);
         } catch {
           fail();
         }
       });
     });
   };
-  return () => {
+  return ({ since } = {}) => {
     const now = Date.now();
-    if (cache && now - cache.at < cacheMs) return Promise.resolve(cache);
-    if (failedAt !== null && now - failedAt < cacheMs) return Promise.resolve(null);
-    if (inflight) return inflight;
-    inflight = read().finally(() => {
-      inflight = null;
-    });
-    return inflight;
+    const after = (begun) => since === void 0 || begun >= since;
+    if (cache && now - cache.at < cacheMs && after(cacheBegun)) return Promise.resolve(cache);
+    if (failedAt !== null && now - failedAt < cacheMs && after(failedBegun)) return Promise.resolve(null);
+    if (inflight && after(inflight.begun)) return inflight.read;
+    const own2 = { begun: now, read: read(now).finally(() => {
+      if (inflight === own2) inflight = null;
+    }) };
+    inflight = own2;
+    return own2.read;
   };
 }
 function stateFromAgent(row) {
@@ -651,6 +662,199 @@ var Starts = class {
   }
 };
 
+// src/daemon/resume.ts
+import fs4 from "node:fs";
+
+// src/daemon/start.ts
+import { spawn as spawn2 } from "node:child_process";
+
+// src/daemon/providers.ts
+var PROVIDERS = [{
+  id: "claude-code",
+  displayName: "Claude Code",
+  available: true,
+  default: true,
+  models: [
+    { id: "sonnet", displayName: "Sonnet", default: true },
+    { id: "opus", displayName: "Opus", default: false },
+    { id: "haiku", displayName: "Haiku", default: false }
+  ],
+  reasoningLevels: ["low", "medium", "high", "xhigh", "max"].map((id) => ({ id, displayName: id })),
+  permissionModes: [
+    { id: "default", displayName: "Default", default: true },
+    { id: "acceptEdits", displayName: "Accept edits", default: false },
+    { id: "plan", displayName: "Plan", default: false },
+    { id: "bypassPermissions", displayName: "Bypass permissions", default: false },
+    { id: "dontAsk", displayName: "Don't ask", default: false },
+    { id: "auto", displayName: "Auto", default: false }
+  ],
+  settings: { model: "session", reasoningLevel: "session" }
+}];
+var MODEL_FAMILY_RE = /^claude-(opus|sonnet|haiku)-[^[\]]*$/;
+function currentSettings(body, provider = PROVIDERS[0]) {
+  const out = {};
+  const models = new Set(provider.models.map((m) => m.id));
+  if (typeof body.model === "string" && models.has(body.model)) out.model = body.model;
+  else if (typeof body.modelId === "string" && (body.model === void 0 || body.model === "default")) {
+    const family = MODEL_FAMILY_RE.exec(body.modelId)?.[1];
+    if (family && models.has(family)) out.model = family;
+  }
+  if (typeof body.reasoningLevel === "string" && provider.reasoningLevels?.some((l) => l.id === body.reasoningLevel)) out.reasoningLevel = body.reasoningLevel;
+  return Object.keys(out).length ? out : void 0;
+}
+
+// src/daemon/start.ts
+var stripAnsi = (s) => s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+function run(argv, opts) {
+  return new Promise((resolve, reject) => {
+    const [cmd, ...args] = argv;
+    let out = "";
+    let child;
+    try {
+      child = spawn2(cmd, args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"], env: opts.env ?? childEnv(process.env) });
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    const t = setTimeout(() => child.kill(), opts.timeoutMs);
+    child.stdout?.on("data", (d) => {
+      out += d;
+    });
+    child.stderr?.on("data", (d) => {
+      out += d;
+    });
+    child.on("error", (e) => {
+      clearTimeout(t);
+      reject(e);
+    });
+    child.on("close", (code) => {
+      clearTimeout(t);
+      resolve({ code, out });
+    });
+  });
+}
+var startSettings = (env) => `--settings=${JSON.stringify({ env: { ...env, BB_THREAD_ID: "" } })}`;
+function unlisted(args) {
+  const row = PROVIDERS[0];
+  const out = [];
+  if (args.model !== void 0 && !row.models.some((m) => m.id === args.model)) out.push("model");
+  if (args.reasoningLevel !== void 0 && !row.reasoningLevels?.some((l) => l.id === args.reasoningLevel)) out.push("reasoningLevel");
+  if (args.permissionMode !== void 0 && !row.permissionModes?.some((m) => m.id === args.permissionMode)) out.push("permissionMode");
+  return out;
+}
+async function startBackground(d, cwd, args, env) {
+  const refused = unlisted(args);
+  if (refused.length) throw new ProviderError("unsupported", `this host lists no such ${refused.join(", ")}`, "settings", { detail: { unsupported: refused } });
+  const argv = [
+    d.claude ?? "claude",
+    "--bg",
+    "--plugin-dir",
+    d.pluginRoot,
+    ...args.title ? [`--name=${args.title}`] : [],
+    ...args.model ? [`--model=${args.model}`] : [],
+    ...args.reasoningLevel ? [`--effort=${args.reasoningLevel}`] : [],
+    ...args.permissionMode ? [`--permission-mode=${args.permissionMode}`] : [],
+    startSettings(env)
+  ];
+  const { out } = await (d.runner ?? run)(argv, { cwd, timeoutMs: 2e4, env: childEnv(process.env) });
+  const text = stripAnsi(out);
+  if (/Workspace not trusted|not trusted/i.test(text)) throw new ProviderError("unavailable", "open the folder once in Claude Code", "untrusted_workspace");
+  const short = /backgrounded\s*[·•-]?\s*([0-9a-f]{8})/i.exec(text)?.[1];
+  if (!short) throw new ProviderError("other", `no session id printed: ${text.trim().slice(0, 200)}`);
+  const deadline = Date.now() + 1e4;
+  let row;
+  for (; ; ) {
+    row = ((await d.agents())?.rows ?? []).find((r) => r.id === short || r.sessionId.startsWith(short));
+    if (row || Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!row) throw new ProviderError("other", "the started session did not appear in `claude agents`");
+  return { id: row.sessionId, shortId: short };
+}
+
+// src/daemon/resume.ts
+var RESUMABLE_ID = /^[0-9a-f][0-9a-f-]*$/i;
+var Resumes = class {
+  constructor(d) {
+    this.d = d;
+  }
+  d;
+  inflight = /* @__PURE__ */ new Map();
+  /**
+   * Resumes `id` when it is a stopped background session, unless a resume of it is in flight. Never throws; the caller
+   * does not wait for it (the page's call has its `queued`).
+   */
+  kick(id) {
+    if (this.inflight.has(id)) return Promise.resolve();
+    const r = { timer: null };
+    this.inflight.set(id, r);
+    return this.resume(id, r, Date.now()).catch((err) => this.failed(id, r, err instanceof Error ? err.message : String(err)));
+  }
+  /** Whether a resume of `id` is in flight: a hello from `id` with a spent start value is that resumed session's. */
+  pending(id) {
+    return this.inflight.has(id);
+  }
+  /** The session's bridge attached (the resumed one, or any other), or the session is forgotten: its resume is over. */
+  end(id) {
+    const r = this.inflight.get(id);
+    if (r) this.settle(id, r);
+  }
+  async resume(id, r, since) {
+    const e = this.d.registry.get(id);
+    if (!e || e.kind !== "background" || !RESUMABLE_ID.test(id)) {
+      this.settle(id, r);
+      return;
+    }
+    const read = await this.d.agents({ since });
+    if (this.inflight.get(id) !== r) return;
+    if (!read) {
+      this.d.log.warn(`session ${id}: not resumed: \`claude agents\` could not be read; the message stays queued`);
+      this.settle(id, r);
+      return;
+    }
+    const rows = read.rows.filter((x) => x.sessionId === id);
+    const stopped = rows.length > 0 && rows.every((x) => typeof x.pid !== "number" && ["stopped", "failed"].includes(stateFromAgent(x)));
+    if (!stopped || this.d.bridges.isOnline(id) || !this.d.queue.unacked(id).length) {
+      this.settle(id, r);
+      return;
+    }
+    const cwd = e.cwd || rows.find((x) => x.cwd)?.cwd;
+    if (!cwd) throw new Error("no folder is known for it");
+    if (!isDir(cwd)) throw new Error(`its folder ${cwd} is gone`);
+    this.d.log.info(`session ${id}: stopped with a message queued; resuming it`);
+    const { code, out } = await (this.d.runner ?? run)([await resolveClaude(), "--bg", "--resume", id], { cwd, timeoutMs: 2e4, env: childEnv(process.env) });
+    if (this.inflight.get(id) !== r) return;
+    const text = stripAnsi(out).trim();
+    const short = /backgrounded\s*[·•-]?\s*([0-9a-f]{8})/i.exec(text)?.[1];
+    if (!short) throw new Error(`claude exited ${code}: ${text.slice(0, 200) || "no output"}`);
+    if (!id.startsWith(short)) throw new Error(`it started under another id (${short})`);
+    r.timer = setTimeout(() => {
+      if (this.inflight.get(id) !== r) return;
+      this.settle(id, r);
+      this.d.events.add(id, "delivery", false, "The message waits for the resumed session to connect");
+      this.d.log.warn(`session ${id}: resumed, but no bridge attached within ${this.d.firstDeliveryMs} ms; the message stays queued`);
+    }, this.d.firstDeliveryMs);
+    r.timer.unref();
+  }
+  failed(id, r, why) {
+    if (this.inflight.get(id) !== r) return;
+    this.settle(id, r);
+    this.d.events.add(id, "delivery", false, "The session could not be resumed; the message waits for it to run", why);
+    this.d.log.warn(`session ${id}: could not resume it: ${why}; the message stays queued`);
+  }
+  settle(id, r) {
+    if (this.inflight.get(id) === r) this.inflight.delete(id);
+    if (r.timer) clearTimeout(r.timer);
+  }
+};
+function isDir(p) {
+  try {
+    return fs4.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 // src/daemon/queue.ts
 import path8 from "node:path";
 import { randomUUID } from "node:crypto";
@@ -707,7 +911,7 @@ var Queue = class {
 };
 
 // src/daemon/pushed.ts
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import path9 from "node:path";
 import { spawnSync } from "node:child_process";
 var START_GRACE_MS = 1e3;
@@ -719,13 +923,13 @@ function processStarts(pids, onFail, procRoot = process.platform === "linux" ? "
 function procStarts(pids, root, onFail) {
   const out = /* @__PURE__ */ new Map();
   try {
-    const uptime = Number(fs4.readFileSync(path9.join(root, "uptime"), "utf8").split(" ")[0]);
+    const uptime = Number(fs5.readFileSync(path9.join(root, "uptime"), "utf8").split(" ")[0]);
     if (!Number.isFinite(uptime)) return null;
     const now = Date.now();
     for (const pid of pids) {
       let stat;
       try {
-        stat = fs4.readFileSync(path9.join(root, String(pid), "stat"), "utf8");
+        stat = fs5.readFileSync(path9.join(root, String(pid), "stat"), "utf8");
       } catch (e) {
         if (e.code === "ENOENT" || e.code === "ESRCH") continue;
         throw e;
@@ -818,7 +1022,7 @@ var Pushed = class {
     for (const [did, e] of this.map) if (e.sessionId === sid) own2[did] = { pid: e.pid, atMs: e.atMs };
     try {
       if (Object.keys(own2).length) writeJsonSync(this.file(sid), own2);
-      else fs4.rmSync(this.file(sid), { force: true });
+      else fs5.rmSync(this.file(sid), { force: true });
     } catch (e) {
       this.onWriteError(sid, e);
     }
@@ -826,7 +1030,7 @@ var Pushed = class {
 };
 
 // src/daemon/rows.ts
-import fs5 from "node:fs";
+import fs6 from "node:fs";
 import path10 from "node:path";
 var cursorOf = (seq) => String(seq).padStart(12, "0");
 var CURSOR_RE = /^\d{1,12}$/;
@@ -863,7 +1067,7 @@ var Rows = class {
     const s = this.sessions.get(id);
     if (s) return s.rows.length > 0;
     try {
-      return fs5.statSync(this.file(id)).size > 0;
+      return fs6.statSync(this.file(id)).size > 0;
     } catch (e) {
       return e.code !== "ENOENT";
     }
@@ -1567,9 +1771,9 @@ var Contributors = class {
 };
 
 // src/daemon/supervisor.ts
-import { spawn as spawn2 } from "node:child_process";
+import { spawn as spawn3 } from "node:child_process";
 import { randomBytes as randomBytes4 } from "node:crypto";
-import fs6 from "node:fs";
+import fs7 from "node:fs";
 import path14 from "node:path";
 var DECLARATION_FILE = "unife-pages.json";
 var SCAN_MS = 3e4;
@@ -1580,7 +1784,7 @@ function installedPluginDirs(claudeDir) {
   if (!claudeDir) return [];
   const read = (file) => {
     try {
-      return JSON.parse(fs6.readFileSync(file, "utf8"));
+      return JSON.parse(fs7.readFileSync(file, "utf8"));
     } catch {
       return {};
     }
@@ -1598,7 +1802,7 @@ function readDeclaration(pluginDir, log) {
   const file = path14.join(pluginDir, DECLARATION_FILE);
   let raw;
   try {
-    raw = JSON.parse(fs6.readFileSync(file, "utf8"));
+    raw = JSON.parse(fs7.readFileSync(file, "utf8"));
   } catch (e) {
     if (e.code !== "ENOENT") log.warn(`contributors: ${file} is not JSON`);
     return null;
@@ -1614,7 +1818,7 @@ function readDeclaration(pluginDir, log) {
   if (typeof c.process !== "string" || path14.isAbsolute(c.process) || c.process.split(/[\\/]/).includes("..")) return refuse("process must be a path inside the plugin folder");
   if (c.args !== void 0 && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) return refuse("args must be strings");
   const entry = path14.join(pluginDir, c.process);
-  if (!fs6.existsSync(entry)) return refuse(`${c.process} does not exist`);
+  if (!fs7.existsSync(entry)) return refuse(`${c.process} does not exist`);
   return { namespace: c.namespace, pluginDir, process: entry, args: c.args ?? [] };
 }
 var Supervisor = class {
@@ -1689,7 +1893,7 @@ var Supervisor = class {
     };
     const found = /* @__PURE__ */ new Map();
     for (const dir of [...installedPluginDirs(this.o.claudeDir), ...this.extraDirs]) {
-      if (!fs6.existsSync(dir)) continue;
+      if (!fs7.existsSync(dir)) continue;
       const d = readDeclaration(dir, { info: this.o.log.info, warn: warnOnce });
       if (!d) continue;
       const first = found.get(d.namespace);
@@ -1730,7 +1934,7 @@ var Supervisor = class {
   }
   spawn(c) {
     const { declared: d } = c;
-    const child = spawn2(this.o.node ?? process.execPath, [d.process, ...d.args], {
+    const child = spawn3(this.o.node ?? process.execPath, [d.process, ...d.args], {
       cwd: d.pluginDir,
       env: { ...childEnv(process.env), UNIFE_PAGES_HOME: this.o.home, UNIFE_PAGES_CONTROL_SOCKET: this.o.socket, UNIFE_PAGES_CONTRIBUTOR_TOKEN: c.token },
       stdio: ["ignore", "ignore", "pipe"]
@@ -21304,7 +21508,7 @@ async function mountPages(serving, provider, options) {
 var encoder2 = new TextEncoder();
 
 // src/daemon/serving/files-route.ts
-import fs7 from "node:fs";
+import fs8 from "node:fs";
 import fsp4 from "node:fs/promises";
 import path16 from "node:path";
 var TYPES2 = {
@@ -21401,7 +21605,7 @@ async function serveOwnFile2(req, res, root, rel) {
     return;
   }
   await new Promise((resolve) => {
-    const stream = fs7.createReadStream(abs, { start, end });
+    const stream = fs8.createReadStream(abs, { start, end });
     stream.on("error", () => {
       res.destroy();
       resolve();
@@ -21715,124 +21919,18 @@ function createServingHost(listener, deps) {
 }
 
 // src/daemon/provider.ts
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 import path17 from "node:path";
 
-// src/daemon/start.ts
-import { spawn as spawn3 } from "node:child_process";
-
-// src/daemon/providers.ts
-var PROVIDERS = [{
-  id: "claude-code",
-  displayName: "Claude Code",
-  available: true,
-  default: true,
-  models: [
-    { id: "sonnet", displayName: "Sonnet", default: true },
-    { id: "opus", displayName: "Opus", default: false },
-    { id: "haiku", displayName: "Haiku", default: false }
-  ],
-  reasoningLevels: ["low", "medium", "high", "xhigh", "max"].map((id) => ({ id, displayName: id })),
-  permissionModes: [
-    { id: "default", displayName: "Default", default: true },
-    { id: "acceptEdits", displayName: "Accept edits", default: false },
-    { id: "plan", displayName: "Plan", default: false },
-    { id: "bypassPermissions", displayName: "Bypass permissions", default: false },
-    { id: "dontAsk", displayName: "Don't ask", default: false },
-    { id: "auto", displayName: "Auto", default: false }
-  ],
-  settings: { model: "session", reasoningLevel: "session" }
-}];
-var MODEL_FAMILY_RE = /^claude-(opus|sonnet|haiku)-[^[\]]*$/;
-function currentSettings(body, provider = PROVIDERS[0]) {
-  const out = {};
-  const models = new Set(provider.models.map((m) => m.id));
-  if (typeof body.model === "string" && models.has(body.model)) out.model = body.model;
-  else if (typeof body.modelId === "string" && (body.model === void 0 || body.model === "default")) {
-    const family = MODEL_FAMILY_RE.exec(body.modelId)?.[1];
-    if (family && models.has(family)) out.model = family;
-  }
-  if (typeof body.reasoningLevel === "string" && provider.reasoningLevels?.some((l) => l.id === body.reasoningLevel)) out.reasoningLevel = body.reasoningLevel;
-  return Object.keys(out).length ? out : void 0;
-}
-
-// src/daemon/start.ts
-var stripAnsi = (s) => s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
-function run(argv, opts) {
-  return new Promise((resolve, reject) => {
-    const [cmd, ...args] = argv;
-    let out = "";
-    let child;
-    try {
-      child = spawn3(cmd, args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"], env: opts.env ?? childEnv(process.env) });
-    } catch (e) {
-      reject(e);
-      return;
-    }
-    const t = setTimeout(() => child.kill(), opts.timeoutMs);
-    child.stdout?.on("data", (d) => {
-      out += d;
-    });
-    child.stderr?.on("data", (d) => {
-      out += d;
-    });
-    child.on("error", (e) => {
-      clearTimeout(t);
-      reject(e);
-    });
-    child.on("close", (code) => {
-      clearTimeout(t);
-      resolve({ code, out });
-    });
-  });
-}
-function unlisted(args) {
-  const row = PROVIDERS[0];
-  const out = [];
-  if (args.model !== void 0 && !row.models.some((m) => m.id === args.model)) out.push("model");
-  if (args.reasoningLevel !== void 0 && !row.reasoningLevels?.some((l) => l.id === args.reasoningLevel)) out.push("reasoningLevel");
-  if (args.permissionMode !== void 0 && !row.permissionModes?.some((m) => m.id === args.permissionMode)) out.push("permissionMode");
-  return out;
-}
-async function startBackground(d, cwd, args, env) {
-  const refused = unlisted(args);
-  if (refused.length) throw new ProviderError("unsupported", `this host lists no such ${refused.join(", ")}`, "settings", { detail: { unsupported: refused } });
-  const argv = [
-    d.claude ?? "claude",
-    "--bg",
-    "--plugin-dir",
-    d.pluginRoot,
-    ...args.title ? [`--name=${args.title}`] : [],
-    ...args.model ? [`--model=${args.model}`] : [],
-    ...args.reasoningLevel ? [`--effort=${args.reasoningLevel}`] : [],
-    ...args.permissionMode ? [`--permission-mode=${args.permissionMode}`] : [],
-    ...env ? [`--settings=${JSON.stringify({ env })}`] : []
-  ];
-  const { out } = await (d.runner ?? run)(argv, { cwd, timeoutMs: 2e4, env: childEnv(process.env) });
-  const text = stripAnsi(out);
-  if (/Workspace not trusted|not trusted/i.test(text)) throw new ProviderError("unavailable", "open the folder once in Claude Code", "untrusted_workspace");
-  const short = /backgrounded\s*[·•-]?\s*([0-9a-f]{8})/i.exec(text)?.[1];
-  if (!short) throw new ProviderError("other", `no session id printed: ${text.trim().slice(0, 200)}`);
-  const deadline = Date.now() + 1e4;
-  let row;
-  for (; ; ) {
-    row = ((await d.agents())?.rows ?? []).find((r) => r.id === short || r.sessionId.startsWith(short));
-    if (row || Date.now() > deadline) break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  if (!row) throw new ProviderError("other", "the started session did not appear in `claude agents`");
-  return { id: row.sessionId, shortId: short };
-}
-
 // src/daemon/open.ts
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import os2 from "node:os";
 import { spawn as spawn4 } from "node:child_process";
 var asq = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 var shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 var TERMINAL_NAMES = { ghostty: "Ghostty", terminal: "Terminal" };
 function pickTerminal(setting) {
-  return setting ?? (fs8.existsSync("/Applications/Ghostty.app") ? "ghostty" : "terminal");
+  return setting ?? (fs9.existsSync("/Applications/Ghostty.app") ? "ghostty" : "terminal");
 }
 function terminalScript(terminal, command, cwd) {
   return terminal === "ghostty" ? [
@@ -21931,7 +22029,7 @@ function openUrl(url, log, waitMs = OPEN_WAIT_MS) {
     }, waitMs);
   });
 }
-var deepLinkInstalled = () => process.platform === "darwin" ? fs8.existsSync(`${os2.homedir()}/Applications/Claude Code URL Handler.app`) : process.platform === "linux";
+var deepLinkInstalled = () => process.platform === "darwin" ? fs9.existsSync(`${os2.homedir()}/Applications/Claude Code URL Handler.app`) : process.platform === "linux";
 var resumeDeepLink = (cwd, sessionId) => `claude-cli://open?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(`/resume ${sessionId}`)}`;
 var realOpener = (log) => ({
   terminal: (t, command, cwd) => openInTerminal(t, command, cwd, log),
@@ -22062,6 +22160,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
         const applied = next ? { settings: next.applied } : {};
         if (!e.online) {
           d.queue.append(id, text, "queue", next?.settings);
+          if (e.kind === "background") void d.resumes.kick(id);
           return { delivery: "queued", ...applied };
         }
         if (mode === "steer" && e.liveState !== "idle" && !next) {
@@ -22087,6 +22186,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
         const cwd = d.workspaces.pathOf(args.workspaceId);
         if (!cwd) throw new ProviderError("not_found", "no such workspace", "workspace");
         const prompt2 = args.attachments?.length ? withPaths(args.prompt, args.attachments) : args.prompt;
+        if (/^\s*\//.test(prompt2)) throw new ProviderError("unavailable", "the host does not take a message beginning with /", "not_submitted");
         const startArgs = {
           prompt: prompt2,
           ...args.title ? { title: args.title } : {},
@@ -22172,7 +22272,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
         const p = d.workspaces.pathOf(id);
         if (!p) return null;
         try {
-          return onDisk(p) === p && fs9.statSync(p).isDirectory() ? { path: p, machine: null } : null;
+          return onDisk(p) === p && fs10.statSync(p).isDirectory() ? { path: p, machine: null } : null;
         } catch {
           return null;
         }
@@ -22253,7 +22353,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
 }
 
 // src/daemon/control/api.ts
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import http3 from "node:http";
 var BODY_LIMIT2 = 8 * 1024 * 1024;
 var ControlServer = class {
@@ -22275,13 +22375,13 @@ var ControlServer = class {
   listen(socketPath2) {
     this.path = socketPath2;
     try {
-      fs10.unlinkSync(socketPath2);
+      fs11.unlinkSync(socketPath2);
     } catch {
     }
     return new Promise((resolve, reject) => {
       this.server.once("error", reject);
       this.server.listen(socketPath2, () => {
-        fs10.chmodSync(socketPath2, 384);
+        fs11.chmodSync(socketPath2, 384);
         this.server.off("error", reject);
         resolve();
       });
@@ -22292,7 +22392,7 @@ var ControlServer = class {
       this.server.closeAllConnections?.();
       this.server.close(() => {
         try {
-          fs10.unlinkSync(this.path);
+          fs11.unlinkSync(this.path);
         } catch {
         }
         r();
@@ -22477,7 +22577,8 @@ ${this.hostStatus(sessionId)}`;
       });
       const taken = typeof body.startValue === "string" && await this.d.starts.accept(body.startValue, id, void 0, () => !closed && !ctx.res.destroyed);
       if (closed || ctx.res.destroyed) return;
-      if (!taken) {
+      if (!taken && this.d.resumes.pending(id)) this.d.log.info(`session ${id}: a spent start value, from the session being resumed: attached`);
+      else if (!taken) {
         this.d.log.info(`session ${id}: a start value was not taken; its bridge waits for the session's first turn`);
         return json3(ctx.res, 403, { error: "start value not taken", deferred: true });
       }
@@ -22661,7 +22762,7 @@ function readJson2(req) {
 }
 
 // src/shared/daemon-start.ts
-import fs11 from "node:fs";
+import fs12 from "node:fs";
 function pidAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -22671,24 +22772,24 @@ function pidAlive(pid) {
   }
 }
 function takeLock(home3) {
-  fs11.mkdirSync(home3, { recursive: true, mode: 448 });
+  fs12.mkdirSync(home3, { recursive: true, mode: 448 });
   const lock = lockPath(home3);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = fs11.openSync(lock, fs11.constants.O_WRONLY | fs11.constants.O_CREAT | fs11.constants.O_EXCL, 384);
-      fs11.writeSync(fd, String(process.pid));
-      fs11.closeSync(fd);
+      const fd = fs12.openSync(lock, fs12.constants.O_WRONLY | fs12.constants.O_CREAT | fs12.constants.O_EXCL, 384);
+      fs12.writeSync(fd, String(process.pid));
+      fs12.closeSync(fd);
       return true;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
       let pid = NaN;
       try {
-        pid = Number(fs11.readFileSync(lock, "utf8").trim());
+        pid = Number(fs12.readFileSync(lock, "utf8").trim());
       } catch {
       }
       if (Number.isFinite(pid) && pidAlive(pid)) return false;
       try {
-        fs11.unlinkSync(lock);
+        fs12.unlinkSync(lock);
       } catch {
       }
     }
@@ -22697,7 +22798,7 @@ function takeLock(home3) {
 }
 function releaseLock(home3) {
   try {
-    fs11.unlinkSync(lockPath(home3));
+    fs12.unlinkSync(lockPath(home3));
   } catch {
   }
 }
@@ -22809,6 +22910,8 @@ var Daemon = class {
   opener;
   /** The page server's starts in flight and their one-time values (N24). */
   starts = new Starts();
+  /** The resumes of stopped background sessions a reply started, one per session in flight (unife-claude-resume-stopped-agent-on-send). */
+  resumes = new Resumes(this);
   firstDeliveryMs;
   settings;
   server = null;
@@ -22906,7 +23009,7 @@ var Daemon = class {
         const wid = this.workspaces.add(r.cwd);
         if (wid) patch.workspaceId = wid;
       }
-      if (r.name && (!e || !e.title)) patch.title = r.name;
+      if (typeof r.name === "string" && r.name.trim() && r.name !== e?.title) patch.title = r.name;
       if (r.id && (!e || !e.shortId)) patch.shortId = r.id;
       if (r.id && e && e.kind !== "background") patch.kind = "background";
       if (typeof r.pid === "number") patch.pid = r.pid;
@@ -22986,6 +23089,7 @@ var Daemon = class {
       this.registry.replace(rest);
     }
     if (a.missed?.length) this.takeMissed(a.sessionId, a.missed);
+    this.resumes.end(a.sessionId);
     this.events.add(a.sessionId, "attach", true, "bridge attached");
     this.log.info(`session ${a.sessionId}: bridge attached`);
     this.waits.restore(a.sessionId);
@@ -23189,12 +23293,13 @@ var Daemon = class {
   async forgetSession(id, why) {
     this.bridges.detach(id);
     this.starts.clearFor(id);
+    this.resumes.end(id);
     this.pushedTo.drop((_did, p) => p.sessionId === id);
     this.waits.forget(id);
     this.rows.forget(id);
     this.registry.delete(id);
-    fs12.rmSync(path18.join(sessionsDir(this.home), id), { recursive: true, force: true });
-    fs12.rmSync(this.pageRoot(id), { recursive: true, force: true });
+    fs13.rmSync(path18.join(sessionsDir(this.home), id), { recursive: true, force: true });
+    fs13.rmSync(this.pageRoot(id), { recursive: true, force: true });
     await this.server?.forgetSession(id);
     this.log.info(`session ${id}: forgotten (${why})`);
   }
@@ -23239,7 +23344,7 @@ function kindOf(k) {
 function hasFiles(dir) {
   let names;
   try {
-    names = fs12.readdirSync(dir, { withFileTypes: true });
+    names = fs13.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
     return e.code !== "ENOENT";
   }
@@ -23247,7 +23352,7 @@ function hasFiles(dir) {
 }
 function defaultClaudeDir() {
   const p = claudeConfigDir();
-  return p && fs12.existsSync(p) ? p : null;
+  return p && fs13.existsSync(p) ? p : null;
 }
 
 // src/daemon/main.ts
@@ -23260,7 +23365,7 @@ async function runDaemon(argv = process.argv.slice(2)) {
     process.stderr.write("another daemon is starting or running\n");
     process.exit(0);
   }
-  fs13.writeFileSync(lockPath(home3), String(process.pid), { mode: 384 });
+  fs14.writeFileSync(lockPath(home3), String(process.pid), { mode: 384 });
   const d = new Daemon({ home: home3, pluginRoot, version, logToStderr: argv.includes("--stderr") });
   try {
     await d.start();
@@ -23277,7 +23382,7 @@ async function runDaemon(argv = process.argv.slice(2)) {
 }
 function readVersion(pluginRoot) {
   try {
-    return String(JSON.parse(fs13.readFileSync(path19.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")).version ?? "0.0.0");
+    return String(JSON.parse(fs14.readFileSync(path19.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")).version ?? "0.0.0");
   } catch {
     return "0.0.0";
   }

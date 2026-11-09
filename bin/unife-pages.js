@@ -222,7 +222,7 @@ async function main(argv, io) {
       io.err(USAGE);
       return 1;
     }
-    const body = { to: session ? `/page?session=${encodeURIComponent(session)}` : "/home", print, ...origin ? { origin } : {}, ...folder !== void 0 ? { workspace: path4.resolve(io.cwd ?? process.cwd(), folder) } : {} };
+    const body = { to: session ? `/page?session=${encodeURIComponent(session)}` : "/home", print, ...origin !== void 0 ? { origin } : {}, ...folder !== void 0 ? { workspace: path4.resolve(io.cwd ?? process.cwd(), folder) } : {} };
     const r = await api(io, "POST", address ? "/v1/address" : "/v1/bootstrap", body);
     if (r.status !== 200) {
       io.err(`open refused (${r.status}): ${r.text}`);
