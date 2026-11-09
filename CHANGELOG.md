@@ -1,8 +1,24 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 17bda3d): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` e46a161): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.30 — 2026-11-09
+
+A patch for `@unifedev/claude-pages` 0.6.30 (B-0262): no behaviour changed, no agent text changed. pages-core stays
+0.6.12 and the bb plugin `@unifedev/thread-pages` 1.14.11.
+
+### Added
+
+- **Claude Code: `unife-pages open [--print] --session <id> --origin <declared origin>` is a stable interface.** A
+  launcher may run it and read the one line it prints, the sign-in link; changing its arguments or that output is a
+  breaking change, named here. A test runs the built CLI that way and pins the line, the link's redirect to the
+  session's page under the declared origin's `Host`, `421 misdirected` with no cookie under a rewritten `Host`, and an
+  undeclared origin's exit 1 with the reason on stderr. Test: `packages/claude-pages/test/cli/cli.test.ts`.
+- **The claude-pages README says how to run the daemon behind a gateway or tunnel:** declare the origin in
+  `remoteOrigins` (and `publicOrigin` for `init`'s URL), and forward the browser's `Host` unchanged
+  (nginx: `proxy_set_header Host $http_host;`), or the daemon answers `421 misdirected`. TESTING.md says the same.
 
 ## 1.14.11 (bb plugin) — 2026-11-08
 
