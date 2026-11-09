@@ -1469,6 +1469,8 @@ var Contributors = class {
   log;
   declarations;
   held = /* @__PURE__ */ new Map();
+  /** Called on every change of what is held, so the core re-injects at once rather than when its cache runs out (B-0094; 06 R-P14). */
+  onChange = () => void 0;
   use(declarations) {
     this.declarations = declarations;
   }
@@ -1491,6 +1493,7 @@ var Contributors = class {
       this.held.set(r.namespace, { ...r, failures: 0 });
       this.declarations.registered(r.namespace);
       this.log.info(`contributor ${r.namespace}: declared process registered at ${r.endpoint}`);
+      this.onChange();
       return { ok: true };
     }
     if (r.kind === "process") {
@@ -1500,6 +1503,7 @@ var Contributors = class {
       }
       this.held.set(r.namespace, { ...r, failures: 0 });
       this.log.info(`contributor ${r.namespace}: process registered at ${r.endpoint}`);
+      this.onChange();
       return { ok: true };
     }
     if (cur && (cur.kind === "process" || cur.sessionId !== sessionId)) {
@@ -1508,6 +1512,7 @@ var Contributors = class {
     }
     this.held.set(r.namespace, { ...r, ...sessionId ? { sessionId } : {}, failures: 0 });
     this.log.info(`contributor ${r.namespace}: mod registered from session ${sessionId ?? "?"}`);
+    this.onChange();
     return { ok: true };
   }
   /** A mod's registration is its session's to drop; a process's is dropped by a caller with no session identity (its own socket client), never by a session or a bridge (CP-9). */
@@ -1520,17 +1525,24 @@ var Contributors = class {
     if (cur.kind === "process" && by.endpoint !== void 0 && by.endpoint !== cur.endpoint) return false;
     this.held.delete(ns);
     this.log.info(`contributor ${ns}: unregistered`);
+    this.onChange();
     return true;
   }
   /** A declared namespace whose process the daemon stopped for good (U45). */
   drop(ns) {
-    if (this.held.delete(ns)) this.log.info(`contributor ${ns}: dropped with its process`);
+    if (this.held.delete(ns)) {
+      this.log.info(`contributor ${ns}: dropped with its process`);
+      this.onChange();
+    }
   }
   dropSession(sessionId) {
+    let gone = false;
     for (const [ns, h] of this.held) if (h.kind === "mod" && h.sessionId === sessionId) {
       this.held.delete(ns);
+      gone = true;
       this.log.info(`contributor ${ns}: gone with session ${sessionId}`);
     }
+    if (gone) this.onChange();
   }
   failed(ns) {
     const h = this.held.get(ns);
@@ -1539,6 +1551,7 @@ var Contributors = class {
     if (h.failures >= 2) {
       this.held.delete(ns);
       this.log.warn(`contributor ${ns}: endpoint failed twice, registration cleared`);
+      this.onChange();
     }
   }
   succeeded(ns) {
@@ -15792,13 +15805,13 @@ function createContributions(host, options) {
     }
     return Object.freeze({ contributors: Object.freeze(contributors), get: (method) => byMethod.get(method) });
   }
-  function refresh2() {
+  function refresh2(notify) {
     if (!inFlight2) {
       inFlight2 = read().then((next) => {
         const changed = signatureOf(next) !== signatureOf(set);
         set = next;
         readAt = now();
-        if (changed) for (const listener of listeners) listener(next);
+        if (changed && notify) for (const listener of listeners) listener(next);
         return next;
       }).finally(() => {
         inFlight2 = null;
@@ -15809,11 +15822,15 @@ function createContributions(host, options) {
   const fresh = () => now() - readAt < ttlMs;
   return {
     async current() {
-      return fresh() ? set : refresh2();
+      return fresh() ? set : refresh2(true);
     },
     cached() {
-      if (!fresh()) void refresh2().catch(() => void 0);
+      if (!fresh()) void refresh2(true).catch(() => void 0);
       return set;
+    },
+    async reread() {
+      if (inFlight2) await inFlight2.catch(() => void 0);
+      return refresh2(false);
     },
     async invoke(spec2, params2, caller, requestId) {
       if (!host) throw new PageError("unknown_method", `Unknown capability: ${spec2.method}`);
@@ -21249,24 +21266,25 @@ async function mountPages(serving, provider, options) {
   const injector = createInjector(ctx);
   const commands = createCommands(ctx, { injector });
   for (const [role, handler2] of Object.entries(commands)) provider.command.register(role, handler2);
-  async function reinject() {
+  async function inject(reread) {
     try {
+      if (reread) await contributions.reread();
       return [...(await injector.inject()).placements];
     } catch (error) {
       provider.log.warn(`instruction: could not inject: ${errorText(error)}`);
       return [];
     }
   }
-  await reinject();
+  await inject(false);
   const stopWatching = contributions.onChange(() => {
-    void reinject();
+    void inject(false);
   });
   return {
     routes,
     limits: LIMITS,
     commands,
     roster: () => [...registry.descriptors()],
-    reinject,
+    reinject: () => inject(true),
     home: home3,
     async forgetSession(sessionId) {
       await pages.forget(sessionId);
@@ -22315,6 +22333,7 @@ var ControlServer = class {
       return;
     }
     if (req.method === "POST" && p === "/v1/bootstrap") return this.bootstrap(ctx);
+    if (req.method === "POST" && p === "/v1/address") return this.address(ctx);
     if (req.method === "POST" && (x = m(/^\/v1\/command\/([a-z]+)$/))) return this.command(ctx, x[1]);
     if (req.method === "POST" && (x = m(/^\/v1\/sessions\/([^/]+)\/forget$/))) {
       if (ctx.session || ctx.bridge) return json3(res, 403, { error: "forbidden" });
@@ -22329,6 +22348,7 @@ var ControlServer = class {
       const ns = decodeURIComponent(x[1]);
       const token2 = req.headers[CONTRIBUTOR_TOKEN_HEADER];
       const ok = this.d.contributors.unregister(ns, ctx.session ? { sessionId: ctx.session } : ctx.bridge ? { bridge: true } : typeof token2 === "string" ? { token: token2 } : {});
+      if (ok) await this.d.reinjected;
       return json3(res, ok ? 200 : 404, { ok });
     }
     if (req.method === "POST" && p === "/v1/deliveries/release") return this.release(ctx);
@@ -22360,25 +22380,51 @@ var ControlServer = class {
     }
     json3(res, 404, { error: "not_found" });
   }
-  async bootstrap(ctx) {
+  /**
+   * The person's `open` (DR-18): the guard, the origin, `to`, the folder — what `bootstrap` (`open`) and `address`
+   * (`open --address`) share, in this order. `null` when it has answered (refused); else the origin and the path.
+   */
+  async opening(ctx, route) {
     if (ctx.session || ctx.bridge || !ctx.firstOnConnection) {
-      this.d.log.warn("bootstrap refused: a session identity or a reused connection asked for it");
-      return json3(ctx.res, 403, { error: "forbidden" });
+      this.d.log.warn(`${route} refused: a session identity or a reused connection asked for it`);
+      json3(ctx.res, 403, { error: "forbidden" });
+      return null;
     }
     const body = await ctx.body() ?? {};
     const origin = typeof body.origin === "string" && this.d.settings.remoteOrigins.includes(body.origin) ? body.origin : `http://127.0.0.1:${this.d.listener.port}`;
-    if (typeof body.origin === "string" && origin !== body.origin) return json3(ctx.res, 400, { error: "origin not declared" });
+    if (typeof body.origin === "string" && origin !== body.origin) {
+      json3(ctx.res, 400, { error: "origin not declared" });
+      return null;
+    }
     let to = safeTo(body.to);
     if (body.workspace !== void 0) {
       const opened = typeof body.workspace === "string" ? this.d.workspaces.open(body.workspace) : { error: "workspace: not a path" };
-      if ("error" in opened) return json3(ctx.res, 400, { error: opened.error });
-      this.d.log.info("bootstrap: a folder was opened as a workspace");
+      if ("error" in opened) {
+        json3(ctx.res, 400, { error: opened.error });
+        return null;
+      }
+      this.d.log.info(`${route}: a folder was opened as a workspace`);
       to = `/page?workspace=${encodeURIComponent(opened.id)}`;
     }
-    const t = this.d.readers.mint(to);
-    const url = `${origin}/open?t=${t.token}`;
+    return { origin, to, print: body.print === true };
+  }
+  async bootstrap(ctx) {
+    const o = await this.opening(ctx, "bootstrap");
+    if (!o) return;
+    const t = this.d.readers.mint(o.to);
+    const url = `${o.origin}/open?t=${t.token}`;
     this.d.log.info("bootstrap minted");
-    if (body.print === true) return json3(ctx.res, 200, { url });
+    if (o.print) return json3(ctx.res, 200, { url });
+    openUrl(url, this.d.log);
+    json3(ctx.res, 200, { opened: true });
+  }
+  /** `open --address`: the page's own address; no token is minted and no reader state is read or written. */
+  async address(ctx) {
+    const o = await this.opening(ctx, "address");
+    if (!o) return;
+    const url = `${o.origin}${o.to}`;
+    this.d.log.info("address answered");
+    if (o.print) return json3(ctx.res, 200, { url });
     openUrl(url, this.d.log);
     json3(ctx.res, 200, { opened: true });
   }
@@ -22460,6 +22506,7 @@ ${this.hostStatus(sessionId)}`;
     const token = ctx.req.headers[CONTRIBUTOR_TOKEN_HEADER];
     const out = this.d.contributors.register(r, ctx.session ?? void 0, typeof token === "string" ? token : void 0);
     if (!out.ok) return json3(ctx.res, out.status, { error: out.reason });
+    await this.d.reinjected;
     json3(ctx.res, 201, { ok: true });
   }
   async ack(ctx, did) {
@@ -22709,6 +22756,9 @@ var Daemon = class {
       onEnded: (ns) => this.contributors.drop(ns)
     });
     this.contributors.use(this.supervisor);
+    this.contributors.onChange = () => {
+      if (this.server && !this.stopping) this.reinjected = this.server.reinject();
+    };
     this.listener = new ReaderListener({
       readers: this.readers,
       pagesDir: pagesDir(this.home),
@@ -22762,6 +22812,8 @@ var Daemon = class {
   firstDeliveryMs;
   settings;
   server = null;
+  /** The re-injection the last contributor change started; a registration's answer waits for it, so a session started after the answer gets the change (B-0094). */
+  reinjected = Promise.resolve();
   startedAtMs = Date.now();
   /** steer acks carry the appended row's uuid; kept until `send` reads it. */
   steerIds = /* @__PURE__ */ new Map();

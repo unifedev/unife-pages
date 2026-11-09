@@ -160,9 +160,10 @@ var USAGE = `unife-pages \u2014 Unife Pages for Claude Code
 agent (inside a session, run through Bash):
   unife-pages init | guide | status | home [--clear] | grants [--revoke <from> <to> | --revoke-all]
 person (your own terminal):
-  unife-pages open [--print] [--workspace [<folder>]] [--session <id>] [--origin <declared origin>]
+  unife-pages open [--print] [--workspace [<folder>]] [--session <id>] [--origin <declared origin>] [--address]
                                                                             mint a sign-in link for a phone or another machine (a browser on this machine presses Sign in on the page);
                                                                             --workspace lands on the new-session page of <folder> (default: this one), which the page server knows from then on
+                                                                            --address opens or prints the page's own address instead, minting no sign-in link
   unife-pages forget <session id>                                           drop a session's page and state
   unife-pages daemon start|stop|status|log`;
 async function api(io, method, p, body, tries = 20) {
@@ -203,25 +204,32 @@ async function main(argv, io) {
     }
     const flag = (n) => {
       const i = rest.indexOf(`--${n}`);
-      return i >= 0 ? rest[i + 1] : void 0;
+      if (i < 0) return void 0;
+      const v = rest[i + 1];
+      return v !== void 0 && !v.startsWith("--") ? v : null;
     };
     const print = rest.includes("--print");
+    const address = rest.includes("--address");
     const session = flag("session");
     const origin = flag("origin");
+    if (session === null || origin === null) {
+      io.err(USAGE);
+      return 1;
+    }
     const w = rest.indexOf("--workspace");
     const folder = w < 0 ? void 0 : rest[w + 1] !== void 0 && !rest[w + 1].startsWith("--") ? rest[w + 1] : ".";
-    if (folder !== void 0 && session || rest.some((t) => t.startsWith("--workspace="))) {
+    if (folder !== void 0 && session || rest.some((t) => t.startsWith("--workspace=") || t.startsWith("--address="))) {
       io.err(USAGE);
       return 1;
     }
     const body = { to: session ? `/page?session=${encodeURIComponent(session)}` : "/home", print, ...origin ? { origin } : {}, ...folder !== void 0 ? { workspace: path4.resolve(io.cwd ?? process.cwd(), folder) } : {} };
-    const r = await api(io, "POST", "/v1/bootstrap", body);
+    const r = await api(io, "POST", address ? "/v1/address" : "/v1/bootstrap", body);
     if (r.status !== 200) {
       io.err(`open refused (${r.status}): ${r.text}`);
       return 1;
     }
     const a = JSON.parse(r.text);
-    io.out(a.url ?? "opened in your browser; the link is valid for 10 minutes");
+    io.out(a.url ?? (address ? "opened in your browser" : "opened in your browser; the link is valid for 10 minutes"));
     return 0;
   }
   if (cmd === "forget") {

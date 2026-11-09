@@ -1,8 +1,58 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` e46a161): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` b9e7d6a): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.14.12 (bb plugin) — 2026-11-09
+
+The bb plugin's release of the 0.6.31 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.12`): it carries pages-core 0.6.13, whose
+`reinject()` reads the contributors again first, so the instruction placed after a settings change holds the
+contributors bb lists now rather than those of the 10 s cache. Its pages work as in 1.14.11.
+
+## 0.6.31 — 2026-11-09
+
+On Claude Code, `unife-pages open --address` gives a machine's operator a page's own address with no sign-in minted
+(unife-workspace-address-without-signin), and a contributor's instruction fragment reaches the next session at once
+after a page-server start (B-0094).
+
+`@unifedev/pages-core` 0.6.13, `@unifedev/claude-pages` 0.6.31, the bb plugin `@unifedev/thread-pages` 1.14.12. No
+agent text changed.
+
+### Added
+
+- **Claude Code: `unife-pages open … --address`** (unife-workspace-address-without-signin). With any form of `open`
+  (`--workspace [<folder>]`, `--session <id>`, the home, `--origin`), it opens or prints the page's plain address,
+  `<origin>/page?workspace=<id>`, `/page?session=<id>` or `/home`, instead of a sign-in link. The folder is added and
+  the origin checked as without it, with the same refusals and the same person-only guard, but nothing is minted: a
+  link printed earlier stays valid and no reader session is added. A reader without a cookie meets the sign-in page.
+  Without `--print` the browser is opened at the address and the CLI says `opened in your browser`. The daemon answers
+  it on a control route of its own, `POST /v1/address`, so a daemon of an earlier release still running answers
+  `open refused (404)` instead of minting; `unife-pages daemon stop` lets the new one start.
+- **`unife-pages open --workspace <folder> --address --print --origin <declared origin>` is a stable interface,**
+  beside the sign-in form: its arguments and its one line, the folder's page address (`<id>` an opaque workspace id).
+  Changing either is a breaking change, named here. Tests: `packages/claude-pages/test/cli/open-address.test.ts`,
+  `test/cli/cli.test.ts`.
+
+### Fixed
+
+- **Claude Code: a contributor's instruction fragment reaches the next session at once** (B-0094). After a daemon
+  start the instruction was placed before the declared contributors registered, and the core read its contributors
+  again only when a page call or `unife-pages status` asked, so the first sessions after every start or upgrade got the
+  standing instruction without any fragment. Now every change of the daemon's contributor registry (a registration, an
+  unregistration, a mod's session gone, a declared process stopped for good, an endpoint cleared) calls
+  `PagesServer.reinject()`, which reads the contributors again whatever the 10 s cache's age; a registration is
+  answered once the new instruction is placed, and running sessions hear `instruction.changed` as before. On bb,
+  `reinject()` after a settings change now reads the contributors again too. Tests:
+  `packages/claude-pages/test/daemon/contributor-instruction.test.ts`, `packages/pages-core/test/serving/mount.test.ts`,
+  `test/serving/contributed.test.ts`.
+
+### Changed
+
+- **Claude Code: `unife-pages open --session` and `--origin` need a value.** One missing, or followed by another flag
+  (`open --session --print`), is now the usage text, exit 1, and nothing is minted; before, it minted a link to `/home`
+  or to `/page?session=--print`. `--address=<x>` is the usage text too, as `--workspace=<x>` is.
 
 ## 0.6.30 — 2026-11-09
 
