@@ -1,8 +1,94 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 53536a4): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` 9081404): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 1.14.13 (bb plugin) — 2026-11-10
+
+The bb plugin's release of the 0.6.33 tree below under the released identity (`@unifedev/thread-pages`, plugin id
+`thread-pages`, repository `unifedev/bb-thread-pages`, tag `v1.14.13`): it carries pages-core 0.6.14 (a page's
+`sessions.start` checks and names the reasoning level and names the permission mode; Back and Forward between a
+document's fragment steps move it in place), and a contributor that starts after Thread Pages mounts reaches fresh
+threads' instruction at once (unife-bb-contributor-cold-start).
+
+## 0.6.33 — 2026-11-10
+
+Four fixes for `@unifedev/claude-pages` (unife-claude-home-start-folder-realpath,
+unife-claude-start-without-mode-runs-unlisted-default, unife-claude-default-model-from-settings,
+unife-daemon-stop-returns-before-exit), one for
+the bb plugin `@unifedev/thread-pages` (unife-bb-contributor-cold-start), three for `@unifedev/pages-core`
+(unife-sessions-start-reasoning-level-unchecked, unife-sessions-start-dialog-omits-permission-mode,
+unife-shell-back-after-reload), and one to the test and release tooling (unife-instruction-check-spec-source).
+
+`@unifedev/pages-core` 0.6.14, `@unifedev/claude-pages` 0.6.33, the bb plugin `@unifedev/thread-pages` 1.14.13. No
+agent text changed.
+
+### Fixed
+
+- **A page's `sessions.start` confirmation names the permission mode it starts the session with.** A page could pass
+  `permissionMode` (for example `bypassPermissions`) and the reader approved the start without being told the posture
+  it grants. The confirmation now names it as a running session's permission-mode challenge does: its display name
+  with the id where they differ (`…, reasoning high, permission mode “Bypass permissions” (bypassPermissions),
+  environment …`), else the quoted id, also on a host without `providers.list`. A start that names no mode reads as
+  before. Test: `packages/pages-core/test/serving/start-settings.test.ts`.
+- **A page's `sessions.start` with a reasoning level the provider does not list is refused.** `sessions.start`
+  checked `model` and `permissionMode` against `providers.list` but passed `reasoningLevel` to the host unchecked, and
+  its confirmation did not name it; on Claude Code an unlisted value reached `claude --bg` as `--effort`. The level
+  must now be one the chosen model lists (the default model's when the call names none), else one of the provider's;
+  anything else, or any level from a provider that lists none, is `invalid_params` before any dialog, as an unlisted
+  `model` is. The confirmation names the level (`…, model X, reasoning high, environment …`). A host without
+  `providers.list` passes it on as before. Test: `packages/pages-core/test/serving/start-settings.test.ts`.
+- **Back and Forward between a document's fragment steps move it in place, and a link's step survives a reload.**
+  A step made by a `#…` link (a script's click on such a link too) now survives a reload, a new version and another
+  document, and Back or Forward between the steps the shown document made since it loaded moves it in place instead of
+  loading it again. The shell adds the step's history entry first and the kernel moves on the shell's
+  `thread-page:move-fragment` answer (by itself after 500 ms with an older shell), so `location.hash` read right after
+  a link's `click()` is still the old one. A document's own `location` fragment change is a step only while that
+  document stays loaded: after a reload, a new version or another document, Back does not return to it (spec 01
+  R1.12f, 08 A144c). Tests: `packages/pages-core/test/browser/history.mjs`,
+  `packages/pages-core/test/runtime/shell/install.test.ts`, `packages/pages-core/test/runtime/kernel/anchors.test.ts`.
+- **Claude Code: a Start on a listed folder replaced by a symlink starts nothing.** `sessions.start` (the home's
+  Start, any page's start) ran `claude --bg` in the folder stored for the workspace without checking it was still that
+  folder, so one replaced by a symlink while the daemon ran started an agent in the link's target. It now applies the
+  check the new-session page applies (its realpath is still the stored path and it is a directory), through one
+  helper, before anything spawns: a folder replaced by a symlink, removed or made a file answers `not_found`, reason
+  `workspace`. Test: `packages/claude-pages/test/daemon/start-folder.test.ts`.
+- **Claude Code: a start that names no permission mode runs the mode `providers.list` calls the default.** A
+  `sessions.start` without `permissionMode` (a page's start, the new-session page's first message without
+  `settings.permissionMode`) passed no `--permission-mode`, and Claude Code ran the `--bg` session in the person's own
+  default mode (`auto` on a fresh config), not the listed `default`. The start now passes the provider row's default
+  mode, `--permission-mode=default`; a start that names a mode is unchanged. Test:
+  `packages/claude-pages/test/daemon/start-argv.test.ts`.
+- **Claude Code: a start that names no model runs the person's own default model, and the list and the confirmation
+  name it.** `providers.list` named a fixed `sonnet` as the default model while a `sessions.start` without `model` (a
+  page's start, the new-session page's first message without `settings.model`) passed no `--model`, so Claude Code ran
+  the person's own model and the confirmation named another. The default model is now the `model` in Claude Code's
+  user settings (`$CLAUDE_CONFIG_DIR/settings.json`, else `~/.claude/settings.json`), read on every call: that row
+  where the list has it, else one more row as written (`opus[1m]`, a full id). A start that names no model passes it
+  as `--model=<id>`, and the confirmation and the home's picker name it. With no usable setting the list's default is
+  one more row, `default` (Claude Code's own default): the start passes `--model=default` and the confirmation says
+  "model default" (a `model: "default"` setting with no flag would fail the session). A start that names a model is unchanged. Tests:
+  `packages/claude-pages/test/daemon/default-model.test.ts`, `packages/claude-pages/test/daemon/start-argv.test.ts`.
+- **Claude Code: `unife-pages daemon stop` returns once the daemon has exited.** It returned as soon as the daemon
+  accepted the stop, and the daemon exited later (5 s or more while a contributor was slow to end). So `daemon stop`
+  then `daemon start`, as the README says to run after a `settings.json` change, could reach the old daemon (`start`
+  reported it, exit 0, and the old settings stayed in force) or find its lock still held and fail `no daemon running`.
+  `daemon stop` now waits for the daemon's process to exit and prints `daemon stopped` (before: `daemon stopping`);
+  one still there after 30 s prints `daemon pid N is still stopping`, exit 1, and a refused stop
+  `daemon stop refused (<status>)`, exit 1. No daemon running: `no daemon running`, exit 0, as before. It works against
+  a daemon already running. Tests: `packages/claude-pages/test/daemon/stop.test.ts`,
+  `packages/claude-pages/test/cli/daemon-stop.test.ts`.
+
+### Tests
+
+- **The instruction check and the fixtures read the protocol from where it lives now.**
+  `packages/pages-core/scripts/check-instruction-spec.mjs` with no argument read spec 04 from a retired repository
+  and failed `repository not found` whatever the code held; it now reads it from the protocol's current tree, and with
+  no folder named and `PAGES_FIXTURES` unset the fixtures are read from that tree's placed copy, so `pnpm check` passes
+  with the tree placed and no variable; with none placed, the error names the folder and the command that places it.
+  Nothing a page or a reader sees changes. Tests: `packages/pages-core/test/agent/instruction-spec.test.ts`,
+  `packages/pages-core/test/fixtures-dir.test.ts`.
 
 ## 0.6.32 — 2026-11-09
 

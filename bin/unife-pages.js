@@ -155,6 +155,15 @@ var underBbSkip = (threadId) => `SKIP     \u2014 this session has no page here: 
 var CLI_ROLES = ["init", "guide", "status", "home", "grants"];
 
 // src/cli/main.ts
+var STOP_WAIT_MS = 3e4;
+function pidOf(text) {
+  try {
+    const pid = JSON.parse(text)?.pid;
+    return typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? pid : 0;
+  } catch {
+    return 0;
+  }
+}
 var USAGE = `unife-pages \u2014 Unife Pages for Claude Code
 
 agent (inside a session, run through Bash):
@@ -254,14 +263,34 @@ async function main(argv, io) {
       return 0;
     }
     if (sub === "stop") {
+      let r;
       try {
-        await api(io, "POST", "/v1/daemon/stop", void 0, 0);
-        io.out("daemon stopping");
-        return 0;
+        r = await api(io, "GET", "/v1/daemon", void 0, 0);
       } catch {
         io.out("no daemon running");
         return 0;
       }
+      const pid = r.status === 200 ? pidOf(r.text) : 0;
+      if (!pid) {
+        io.err(`daemon stop refused (${r.status}): ${r.text}`);
+        return 1;
+      }
+      try {
+        const s = await api(io, "POST", "/v1/daemon/stop", void 0, 0);
+        if (s.status !== 200) {
+          io.err(`daemon stop refused (${s.status}): ${s.text}`);
+          return 1;
+        }
+      } catch {
+      }
+      for (const end = Date.now() + (io.stopWaitMs ?? STOP_WAIT_MS); pidAlive(pid); await new Promise((w) => setTimeout(w, 50))) {
+        if (Date.now() >= end) {
+          io.err(`daemon pid ${pid} is still stopping`);
+          return 1;
+        }
+      }
+      io.out("daemon stopped");
+      return 0;
     }
     if (sub === "start" || sub === "status") {
       try {
