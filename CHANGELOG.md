@@ -1,8 +1,42 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` 9081404): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` b6808f5): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.34 — 2026-11-10
+
+Two fixes for `@unifedev/claude-pages` (unife-claude-default-permission-mode-from-settings, unife-B-0085), with the
+`@unifedev/pages-core` change that names the default mode in a page's start confirmation, and parse5 8.1.1
+(entities 9.0.0) in pages-core and the Claude Code daemon bundle, with no change in behaviour (unife-parse5-8-1).
+
+`@unifedev/pages-core` 0.6.15, `@unifedev/claude-pages` 0.6.34. No agent text changed. The bb plugin
+`@unifedev/thread-pages` stays 1.14.13 and does not carry pages-core 0.6.15 yet.
+
+### Fixed
+
+- **Claude Code: a start that names no permission mode runs the person's own `permissions.defaultMode`.** 0.6.33 made
+  such a start pass the provider row's listed default, which was always `default`, so a page or home start overrode
+  the `permissions.defaultMode` in `~/.claude/settings.json` (a computer set to `bypassPermissions` got `default`).
+  The row's default mode is now that setting, read from the same user settings file as the `model` (`$CLAUDE_CONFIG_DIR/settings.json`,
+  else `~/.claude/settings.json`, on every call) where it is one of the listed modes, else `default`. `bypassPermissions`
+  counts only where that file has also accepted it (`skipDangerousModePermissionPrompt: true`) and
+  `permissions.disableBypassPermissionsMode` is not `"disable"`; otherwise the start would fail or run another mode
+  than the dialog names, so it runs `default`. The start passes it as `--permission-mode=<id>`, and the home's picker
+  preselects it. Project and managed settings are not read.
+  Test: `packages/claude-pages/test/daemon/default-permission-mode.test.ts`.
+- **A page's `sessions.start` confirmation names the permission mode the session runs in when the call names none.**
+  It named a mode only when the call passed one, so a reader approving a modeless start never saw the posture it would
+  run in. It now names the provider's listed default the same way (`…, permission mode “Bypass permissions”
+  (bypassPermissions), environment …`); a provider that lists no modes, or a host without `providers.list`, reads
+  as before. The bb plugin does not carry it yet. Test: `packages/pages-core/test/serving/start-settings.test.ts`.
+- **Claude Code: a session whose folder was deleted no longer fails every page's session list.** Such a session (a
+  background session `claude agents` still lists, or one in the registry) was reported with an empty `workspaceId`,
+  and the page server refused the whole `sessions.snapshot` (`invalid_result`), so the home and every page's agent
+  switcher listed nothing. It now has the id of its folder as recorded (a folder still there keeps the id it had); a
+  registry an earlier release left with an empty id heals at the daemon's start. The gone folder is not listed by
+  `workspaces.list` and nothing starts there, as before. A session with no folder at all is left out of the list.
+  Test: `packages/claude-pages/test/daemon/gone-folder.test.ts`.
 
 ## 1.14.13 (bb plugin) — 2026-11-10
 

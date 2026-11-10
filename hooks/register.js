@@ -8,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.33",
+  pluginVersion: "0.6.34",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -863,7 +863,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.33";
+var PLUGIN_VERSION = "0.6.34";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();

@@ -578,6 +578,14 @@ var Workspaces = class {
     return id;
   }
   /**
+   * A session's workspace, the folder it works in (B-0085): the id of its folder, listed from now on, while it is there;
+   * once gone, the id the session `had`, else that of the path as recorded, listed nowhere, so `start` there stays
+   * refused. Null only before the server binds the ids, or for a path not absolute.
+   */
+  of(cwd, had = "") {
+    return this.add(cwd) ?? (had || (this.idFor && path7.isAbsolute(cwd) ? this.idFor(cwd) : null));
+  }
+  /**
    * The folder stored for an id while it is still that folder (06 R-P17, `start`): its native realpath is the stored path,
    * so no symlink on the way, and it is a directory. A folder gone, made a file or replaced by a symlink is null, so no
    * agent starts in a link's target. Every stored path is already its native realpath (`add`).
@@ -3914,7 +3922,7 @@ function workspaceIdFor(path21, signingKey) {
   return `ws_${hmacHex(signingKey, "workspace-id", canonical)}`;
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/common/unicode.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/common/unicode.js
 var UNDEFINED_CODE_POINTS = /* @__PURE__ */ new Set([
   65534,
   65535,
@@ -4005,7 +4013,7 @@ function isUndefinedCodePoint(cp) {
   return cp >= 64976 && cp <= 65007 || UNDEFINED_CODE_POINTS.has(cp);
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/common/error-codes.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/common/error-codes.js
 var ERR;
 (function(ERR2) {
   ERR2["controlCharacterInInputStream"] = "control-character-in-input-stream";
@@ -4070,7 +4078,7 @@ var ERR;
   ERR2["eofInElementThatCanContainOnlyText"] = "eof-in-element-that-can-contain-only-text";
 })(ERR || (ERR = {}));
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/tokenizer/preprocessor.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/tokenizer/preprocessor.js
 var DEFAULT_BUFFER_WATERLINE = 1 << 16;
 var Preprocessor = class {
   constructor(handler2) {
@@ -4093,8 +4101,13 @@ var Preprocessor = class {
   get col() {
     return this.pos - this.lineStartPos + Number(this.lastGapPos !== this.pos);
   }
+  /** The index in `html` at which the current code point starts (the high surrogate of a pair). */
+  get codePointStart() {
+    return this.pos - Number(this.lastGapPos === this.pos);
+  }
+  /** The offset of the current code point, before the second unit of a surrogate pair. */
   get offset() {
-    return this.droppedBufferSize + this.pos;
+    return this.droppedBufferSize + this.codePointStart;
   }
   getError(code, cpOffset) {
     const { line, col, offset } = this;
@@ -4123,7 +4136,7 @@ var Preprocessor = class {
   _processSurrogate(cp) {
     if (this.pos !== this.html.length - 1) {
       const nextCp = this.html.charCodeAt(this.pos + 1);
-      if (isSurrogatePair(nextCp)) {
+      if (!isSurrogatePair(cp) && isSurrogatePair(nextCp)) {
         this.pos++;
         this._addGap();
         return getSurrogatePairCodePoint(cp, nextCp);
@@ -4138,14 +4151,21 @@ var Preprocessor = class {
   willDropParsedChunk() {
     return this.pos > this.bufferWaterline;
   }
-  dropParsedChunk() {
+  /**
+   * Drop the parsed input, except for the current code point and the `keep` code units before it. The gap history is
+   * reset, so the kept units must contain no preprocessing gap.
+   */
+  dropParsedChunk(keep = 0) {
     if (this.willDropParsedChunk()) {
-      this.html = this.html.substring(this.pos);
-      this.lineStartPos -= this.pos;
-      this.droppedBufferSize += this.pos;
-      this.pos = 0;
+      const droppedSize = this.offset - this.droppedBufferSize - keep;
+      this.html = this.html.substring(droppedSize);
+      this.lineStartPos -= droppedSize;
+      this.droppedBufferSize += droppedSize;
+      this.pos -= droppedSize;
       this.lastGapPos = -2;
       this.gapStack.length = 0;
+      if (this.pos > keep)
+        this._addGap();
     }
   }
   write(chunk, isLastChunk) {
@@ -4239,7 +4259,7 @@ var Preprocessor = class {
   }
 };
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/common/token.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/common/token.js
 var TokenType;
 (function(TokenType2) {
   TokenType2[TokenType2["CHARACTER"] = 0] = "CHARACTER";
@@ -4261,7 +4281,7 @@ function getTokenAttr(token, attrName) {
   return null;
 }
 
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/decode-codepoint.js
+// ../../node_modules/.pnpm/entities@9.0.0/node_modules/entities/dist/decode-codepoint.js
 var c1 = [
   8364,
   0,
@@ -4308,276 +4328,230 @@ function replaceCodePoint(codePoint) {
   }
   return codePoint;
 }
-function replaceCodePointXML(codePoint) {
-  return isInvalidCodePoint(codePoint) ? 65533 : codePoint;
-}
 
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/internal/decode-shared.js
-var BASE91_INVERSE = /* @__PURE__ */ (() => {
-  const table = new Uint8Array(127);
-  let code = 0;
-  for (let char = 33; char <= 126; char++) {
-    if (char !== 34 && char !== 36 && char !== 92) {
-      table[char] = code++;
-    }
-  }
-  return table;
+// ../../node_modules/.pnpm/entities@9.0.0/node_modules/entities/dist/generated/decode-data-html.js
+var htmlDecodeData = ["Q=\xA8`p0AEligMPacutebrevecircyfrgravelphamacrndogonpfpplyFunctionringscrsigntildeumlBackslashrvwedcyecausernoullistafropfrevescrumpeqCHcyOPYacutepitalDifferentialDyleyscaronedilirconintdotedillanterDotfrhiircleDotMinusPlusTimeslockwiseContourIntegralseCurlyDoubleQuoteQuoteolonengruentinttourIntegralpfroductunterClockwiseContourIntegralrossscrupCapDDotrahdJcyScyZcyaggerrrshvcaronyeltafriacriticalAcuteDotubleAcuteGraveTildemondfferentialDopftDotEqualubleContourIntegralDotwnArrowLeftArrowRightArrowTeeongLeftArrowRightArrowRightArrowRightArrowTeeUpArrowDownArrowVerticalBarwnArrowBarUpArrowBreveLeftRightVectorTeeVectorVectorBarRightTeeVectorVectorBarTeeArrowarrowscrtrokENGTHacutecaronircydotfrgravelementmacrptySmallSquareVerySmallSquareogonpfpsilonqualTildeilibriumscrimtaumlxistsponentialEFcyfrilledSmallSquareVerySmallSquareopfrAlluriertrfscrGJcyTammadbrevecedilircydotfrgopfreaterEqualLessFullEqualGreaterLessSlantEqualTildescrtHARDcyacektcircfrilbertSpaceopfrizontalLinescrtrokumpDownHumpEqualIEcyJligOcyacutecircydotfrgravemacrginaryIpliesntegralrsectionvisibleCommaTimesogonpftascrtildeukcymlJcircyfropfscrercyukcyKHcyJcyappacedilyfropfscrLJcyTacutembdangplacetrfrrcaronedilyeftAngleBracketrrowBarRightArrowCeilingDoubleBracketwnTeeVectorVectorBarFloorRightArrowVectorTeeArrowVectorriangleBarEqualUpDownVectorTeeVectorVectorBarVectorBararrowrightarrowssEqualGreaterFullEqualGreaterLessSlantEqualTildefrleftarrowmidotongLeftArrowRightArrowRightArrowleftarrowrightarrowrightarrowpfwerLeftArrowRightArrowscrhtroktMapcyediumSpacellintrffrinusPlusopfscruNJcyacutecaronedilyegativeMediumSpaceThickSpacenSpaceVeryThinSpacestedGreaterGreaterLessLesswLinefroBreaknBreakingSpacepftCongruentupCapDoubleVerticalBarElementqualTildexistsGreaterEqualFullEqualGreaterLessSlantEqualTildeHumpDownHumpEqualLeftTriangleBarEqualssEqualGreaterLessSlantEqualTildeNestedGreaterGreaterLessLessPrecedesEqualSlantEqualReverseElementightTriangleBarEqualSquareSubsetEqualpersetEqualubsetEqualcceedsEqualSlantEqualTildepersetEqualTildeEqualFullEqualTildeVerticalBarscrtildeuOEligacutecircydblacfrgravemacregaicronopfpenCurlyDoubleQuoteQuoterscrlashtildemesumlverBarraceketParenthesisPartialDcyfrhiilusMinusoincareplanepfrecedesEqualSlantEqualTildeimeoductportionalscriQUOTfropfscrRBarrEGacutengrrtlcaronedilyeverseElementquilibriumUpEquilibriumfrhoightAngleBracketrrowBarLeftArrowCeilingDoubleBracketwnTeeVectorVectorBarFloorTeeArrowVectorriangleBarEqualUpDownVectorTeeVectorVectorBarVectorBararrowopfundImpliesrightarrowscrhuleDelayedSHCHcycyOFTcyacutecaronedilircyfrhortDownArrowLeftArrowRightArrowUpArrowigmamallCircleopfqrtuareIntersectionSubsetEqualpersetEqualUnionscrtarubsetEqualcceedsEqualSlantEqualTildehThatmpersetEqualsetTHORNRADESHcycyabucaronedilyfrhereforetaickSpacenSpaceildeEqualFullEqualTildeopfripleDotscrtrokUacuterrocirbrcyevecircydblacfrgravemacrnderBarraceketParenthesisionPlusogonpfpArrowBarDownArrowDownArrowEquilibriumTeeArrowarrowdownarrowperLeftArrowRightArrowsilonringscrtildeumlVDashbarcydashleerbarticalBarLineSeparatorTildeyThinSpacefropfscrvdashWcircedgefropfscrXfriopfscrYAcyIcyUcyacutecircyfropfscrumlZHcyacutecaronydoteroWidthSpacetafropfscraacutebrevecEdircuteyeligfrgravelefsymphphamacrlgpndanddslopevgelemsdaabcdefghrtvbdsphtzarrogonpfpEacireidosproxeqringscrtympeqtildeumlwconintintbNotackcongepsilonprimesimeqrveewedgebrktbrkcongydquoecausemptyvpsirnoutahweenfrigcapircupodotplustimessqcuptartriangledownupuplusveewedgekarowlacklozengesquaretriangledownleftrightnkk12434ocknequivotopfttomwtiexDLRlrHDUduULRlrVHLRhlrboxdLRlrhDUduminusplustimesuLRlrvHLRhlrprimerevevbarscremiimeolbhsubulletmpEeqcacutepandbrcupcapupdotsretoncapsronedilircupssmdotedilmptyvnterdotfrhcyeckmarkiirEceqlearrowleftrightdRSastcircdashefnintmidscirlubsuitoloneqmmatpfnlementxesngdotintpfrodysrrarrossscrubepetdotudarrlreprsclarrppbrcapcapupdotorsrarrmlyeqprecsuccveewedgerenvearrowleftrightveewedwconintintylctydArrHaraggerlethrrshvbkarowlaccaronydaggerrrotseqegltamptyvfishtrharlriamondsuitsegammasinvideontimesonxjcylcornropollarpfteqdotminusplussquareublebarwedgewnarrowdownarrowsharpoonleftrightrbkarowcornropscryoltroktdotrifuarrharwanglezcyigrarreDDototacutestercaronircolonydotefDotrgravesdotlinterslsdotmacrptysetvsp134ngspogonpfparsllussilonvqcircolonsimlantgtrlessualsestivDDvparslrDotarrscrdotimtahumlroxclistpectationonentialefallingdotseqcyemalefiligligligriligjliglatligtnsnofopfrallkvpartintrac123456823534584556878slownscrgElacutemmadpbrevecircydotelqqslantsccdotollesfrggimeljcylEajnEapproxeqqsimopfravescrimeltccirdotlParquestrapproxrrdoteqlessqlesslesssimvertneqqnEhArrairsplfmiltrdcyrcirwbarcirceartsuitlliprconfrksearowwarowoarrmthtokleftarrowrightarrowpfrbarscrlashtrokybullpheniacutecircyecyxclffrgraveiiintntnfinotajligmacrgelinepartthofpedncarefintieodottcalegersrcallarhkprodocygonpftaprodquestscrinEdotsvvtildeukcymljcircyfrmathopfscrercyukcykappavcedilyfrgreenhcyjcyopfscrlAarrrrtailBarrEgHaracuteemptyvgranmbdangdlepquorrbfsfshklpplsimtltailesbarrbrkracekkeslducaronedililubydcaquorrdharusharsheftarrowtailharpoondownupleftarrowsrightarrowsharpoonssquigarrowthreetimesgqqslantsccdotorgessapproxdoteqgtrqgtrgtrsimfishtloorrgEhardulblkjcylarrcornerhardtrimidotoustachenEapproxeqqsimoangrrbrkngleftarrowrightarrowmapstorightarrowoparrowleftrightparflustimeswastbarzengefparltrarrcornerhardmtrisaquocrhimegqbuortroktccirdothreeimeslarrquestrPariefurdsharuharvertneqqnEmDDotacrletesepstodownleftuprkercommaydasheasuredanglefrhoicrodastcirdotnusbdulcpdrnplusodelspfpscrtposultimapmapnGgtvLeftarrowrightarrowltvRightarrowVDashdashablacutengpEidosproxturalsbspumpecapronedilongdotupydasheArrarhkrowdotquivsearimxistsfrgEeqqslantssimtrhArrarrparisdvjcylArrEarrdreftarrowrightarrowqqslantsssimtriemidopftinEdotvabcnivabcparallelsltolintrcueeceqrArrarrcwightarrowtriesccueerhortmidparallelimeqmidparqsubepeubEeseteqqcceqpEeseteqqtglildelgrianglelefteqrightequmerospvDashHarrapdashgetinfinlArretrierArrtriesimwArrarhkrownearoSacutestcircydashblacivotsoldeligfcirrgonravethbarmintlarrcirrossinetmacregaicrondnusopfparerplusrarrderoffmigoforslopevscrlasholtildemesasumlvbarparallelsimltcyercntiodmilptenkfrhivmmatoneitchforkvlanckhkvusacirbcirdouemnsimtwomointintpfundrEapcueecapproxcurlyeqeqnapproxeqqsimsimimesnEapsimodfalarlinesurfptosimurelscriuncspqfrintopfprimescruaternionsintesteqotrAarrrrtailBarrHaraceutedicemptyvngdelequorrapbfscfshklpplsimtlwtailionalsbarrbrkracekkeslducaronedililubydcaldharquorshealinepartsctgfishtloorrhardulovightarrowtailharpoondownupleftarrowsharpoonsrightarrowssquigarrowthreetimesngsingdotseqlarrharmmoustachenmidoangrrbrkparflustimespargtpolintrarrsaquocrhqbuorthreeimesriefltriuluharxsacutebquocEaproncueedilircnEapsimpolintsimydotbeeArrarhkrowctmiswartminusnxtfrownharpchcyyortmidparallelyigmafvmdoteqgElEneplusrarrlarrmallsetminusshpeparslidletesoftcylbarpfpadesuitrqcapsupssubeseteqpesetequareffrarrscretmnmiletarftarfraightepsilonphinsubEdotedotmultnEeplusrarrseteqqneqqimubpccapproxcurlyeqeqnapproxeqqsimsimmngp123EdotsubedothsolublarrmultnEeplusseteqqneqqimubpwArrarhkrownwarzligtargetubrkcaronedilydotelrecfrhere4foretasymvickapproxsimnspkapsimornildemesbardntoeapbotcirforksaprimeradeiangledownlefteqqrighteqdoteminusplussbtimepeziumscryhcytrokwixtoheadleftarrowrightarrowuArrHaracuterrbrcyevecircydarrblacharfishtrgraveharlrblklcornerroptrimacrlogonpfparrowdownarrowharpoonleftrightlussihlonuparrowsrcornerropingtriscrtdotilderifuarrmlwanglevArrBarvDashangrtrepsilonkappanothingphiiroptorhosigmaubsetneqqpsetneqqthetariangleleftrightcydasheebareqlliprbartfrltrinsubpopfproprtriscrubnEepnEezigzagwcircedbargeqierpfropfpreathscrxcapircupdtrifrhArrarrilArrarrmapnisodotpflustimerArrarrscrqcupuplustriveewedgeyacuteycircyenfricyopfscrucymlzacutecaronydoteetrftafrhcyigrarropfscrwjnjC(D%D($(D'%$$ED($'$'$%$'%E$/D'$F%'D(D&#,%%&&$%$)%+%%$E$F$'$&$(#'D&$(%$&4%($(E'%&%($&$)%*$%$%$+)()')($:&5-($'($%*&&&/%%&)%@$'$F$%&&#%%)$&$&$&$(%%%&$(%$$%&%$E$2.&0,.(.(&'%.$F%$&&&(%6)&+*),---&*/1---)-.&)*+,).%*,&,*'('2+,+)1&'1,)2&'&*('($F%'#&D%D($(E&%$$&$ED($)$'%1(2$'%E$)$'((&+$&%%$%D&$(%-#&$E$3)2$F%'%+$&#'D$$'($$($(%&%$$&$E$$$F$./'*,***'*-*($F$$#)$'%$$'$%$.$&%/$&%'$.'(#'$'$&D(D'%$$&$%D($$%&&*%($%&('+%/,($'%E%%$&$($'E%#(%$$E$F$F%'$'#'$&$'$(%$$E$F$F#'D$$(%'%%%+%%$(%'%$$2(',&,-'*'0).+)1&'('-,)'&*(*)(*/&/('/),))/&')-&'('-%1','*'''-'($E$$%+$($/+-'-',+-'-%E%/(-$&%$%'$$#&$%$-%*$E$+$F$&$$#'$($(%'%$$5+-.)+0%5)+%($E$)%1%%%$&,'(&4&*''+H'(&*-(-L-J-'-M-(&O*H&/2F2((%*(***G*M*(&W,K&+.H.-&1'/3F3(&O2(.I4('H,(().H.-.H(I.(&(+(+,+(&.$FD($$#(D(D'%$$($ED($'%&%($F$6,($$$FE'D(&&D&$)('+&'.#+$%$E$%$$$+$/%%$$%)+(+-+(%&%(&*-%$F%$C'$E$&$F#(D%$(%%%%'%$(%'%$$$%/+-*0$%$%$3)'-&-,(*(0*.,)2&(((&+(+))*0&0((/*,*)0&().&(($&%-$-$&%$$-#)%%$($($$%'%'%&%$$E$0(,(-(*$'$-$F$&%')/))/(+)1()($F$&$%&&)(%)+(+-+(&(%$%$&(+(&&C($'$'%%$%%$$(%'%$$E$+&%%K&)$'(((,(($F$+$F%'C)%%''$'&&D'%$$($ED($'$*)',&(.%&('$'%E$)*&*,%,%.%&((%(%,%/(-%%'&$'$F$(D&#($&$%$'($$%%'&$'*+'+,+(&-$E$F$F$(#($'$E$F$F#F$$$F$F#'$&$&D($'%$$E$F$F$&#'$($(%$$&$0%%$%$&$FC)$($$%D%$E&E&%$D'$$%DD($)&%%&$'&%E$$%&&&$&(&$%$&$&%&&)%*$*$*$*$*$*$*$&%(%*$&&'$&'$'%E$$%$%'%$%%%%%')%D'$F%$%&(%D(D&$*%&#'$*'*'('&*%%'&&)%$&''$'%$$'$()$%(%&%'%%&$&'$E$('&'%&''''(&('&&/.%&(&&&($($.()(+0'0'0(&%%&'$&%%&$E&G%%$F%$&&%'%&'$'$'$&$'$'$'$'$&%'$'$'$&$'$'$'$'$'$'$&&&%'$'$'$&$'$'$'$'$&(&'&(&%'$'$'$&$'$'$'$'$'$'$$($'E'$F%&%%'$%%'$''$&'%%%'$'$($#)%$&&&(&&'%&&&D%&&%$'&&E'%&%&(%$&D'%(E%'($E$&%&('%$$%&$&$'%'..()%*$*&*'*'&$&(&&&'$'(&$'($)$%&($&$'%'))&%%'&&&%E&&F$'%$'%&$F%%'$&$'$$'$))$%&&%%')$%$&(&&'%&&&%&D%')$&+*'(&((F&&.-(%&%&$*%&$(#'$&$(%'%%%%'$$)%&$(%$$$%(&%%(D%%&%($(%D$''$$&'&*''$%$%(%&%$F&)*&&$&$(&&$(%E%$&%(&&(&'&)%/%*'-'..($*%'&&$F&$%%%'$'%%'$$'%&$)$&%)#(%%D(%'$(%%G$%'%$$&$$$'%D$$E'%$&&$$%)%$%$&&$'%&(&($%%'%($$%%%$'%E$&'%%&%%'&'$$(&'%&&**'%'&&&%(%%)$'%&$&%&%%$%E$D&%%$&%&%,&,#0$%$($(%&&&%D$'$G$&%&%&$&$F%'&$'$$*D(($H$($($($'%($G%($($'%'%($'%&%%&$F#%%$$(%&($%$$($'%$$&$$%$%$&$&(%$&%&&)$*$&D'%$E$$%$$'$&$$%$%$%$$%%%''%$&$'$%&$F$'$&%%'$'$D$%%&%%&%'%(%*'%&&&)((&'&&$K%E#'$(%%%'%'&$'&'$$&$'$()&%'%'$E$*&($'%'%.'-%E%'$F%'%'$(%'C)$$E&%$$&E&$%%DD($$%'&%%'%&$'$'&%''''&%%%%&$$%'%&(&%'%$&&&(''&(&'$&%&%E%%$'D($F%%'$'&'$($'$$$%'$'E%#(%$$E$'$F$F%'$'#(($$(%$$E$($&$&$F$F#(%%%'$'$$%$$&$(%)%'%'%%'$'%%$E&%%'$(%'%'%'%'%'&'%%$&&&$'D$'%&%'($&%'&)$$(%'&%%%%$$&%&($%(&(%%$$%*,''..%'-'-1$,+,-'-%$%$&$&(%$&%&&)$*$&D'%&*'&'()''&'&$(%'%D$$%$$''$($%&$&$$%&%)%'%&$(%')'$%%%''%$&$'$%&$'&%%&%.+-')'-%.,(%&&D&&%(%'&&%$&'&$$&'%$'%)%&($%$%&$(%E%$%%'$'$%%&%($%'D$%%&%%&%'%'%'%(%'&$'$'$$*&'$K%E#(D&%%&$'&%$&&)')')%%'$(%$$'$/$E$%D'%$&&&&F&%&($($)$$&%%$($(%E$$$F%'$$%)%&#F%D&D$,(-%D%D&D$-$(%'$'%'%E%$&D&E&%&'%&(%*$D&%F(D$&&&%'%&(F%%%$$'$$%&%''$(%%F%'%'&E%')$$E$E%$&$'D'H&D%&%$&$$'%&%&$$%$&$%$$&$'%D%&%%%$&*(-&$'D'H&D'$%&%$&%($$&$FE$&%(D(F(%)$)$&%(%)$)$$&'('E'D%(%$&&&D'$(E$'%&(D(D%,%&($$%&&&D&D%*)+%%'$($%&%&%((%%%'D'$'F*%,D&%(E&$'D'$'F*%,D$&E'%%%.0%,(1%$$%$&&&%$(%'%E%'%E&D%(%'&D&D'F%'&G%F$'%''$(%%'#%D(%%$&G$%$$'%'%%%%%'$'$'%D$&E'%$$'%$$&$'%&&'%&%$$'%&%(&$&&$F$&%&%&$$%&%$&%(%F$F$%'%%%(%$$&E'%%D(&&)%D&$'#&F$''&&'$&$$%$(&&&&&$&'$E$%&$%'%&$$%*%$$()$'%%%'''$'&'%($'$G%'&'&$$$*%EE&$$%$%%%&%$&$')'*'%'*(&(&'&%&($%%&%&&%%&(''''&$'%%&%'$F%$$(#F$&$F$($F$-'&%&(%E%#(%%%'$'$&$F&&%&%)%%'$'$'%E&%%'%'$(%'$'%'%'%'%'&'%'$%'&%('$'%&%'($&%'&)$$(%'&%%%%$$&%(%&($%%$&'&'''$%%E$$(%'%D$''$($%$&$$,-'(./%(-,+(.(-(-%%%-$'%&%$$()'$'$'&%%&%&&D&&%($&'%%)$'$(%E%$%%&%($$(%'%%'$'$''$)$$#)$'$$%$%%&&%&%$&&%&%%&%&&%)%&%$$&'$'$$'%''$(%E%%%%'%)'$%%$E&&$'%'&$%)(+E$$'($($%$&&&$'$&$'$&$'$&%&'&'$'$/&&%)%%&%%$&$'D$(%$&$'%%E$()&&$$'(D&%(D%&($(&+%'$($(&+%%$&&($&$$'$F%'%'%'$&'$%0+&&%$%&$&&&$'&&'&%'$&'&'&&)%+$)&,$'%'%($%%')'*'%'*(&(&'&%$%%%$F$F$F$&$&&'&&$'&&'(%&'&'&%'$&'&&)%+$)&,$'%'%($$'%''$(%%'D'#)%$$&$(%'%$$&$($E$(('&%(&($%,(&&&%&&&E&$'E&($)%($%%$&%$&&&&&D'&%%$($'%)+'+'/%+$+(0%&&&$&(&'&%&'%)$F&$%&%'$'%1*-#'$&D(%%$'&&D'%$$'%'%&$(%DD($''$%&$()%&&%&$'E$$'%E$)%,%.,(%&%%'$'&%+$()%&&%&%&$F$'%'%%'$$'E%$)#'$&'$$'$(%+&(&*&&'$'(&$'%&('K/D(J/D&('..($%$'$%&&&%%'%'&$$E$'$G'D$F$'$'$F%G(D&F(D$)#($(&%($%'$E$F$$$$%'$F#'%&%%$'$E$'%&$$$'%&$&$&$'%E&&%'$'%&$F%'$(%&$&$(C)&$$'%$D%$E$&$F$F$&E%#)$(%$$&$(%%$E$&$)$F$F$%%%0@0000H8H40H000047P00P@001000@0B0HP@:H9T8P000LB8d@800@I0<110000QQ8400P10030005940@410020000Q02000@0200000@P0101@8000440400000000808000000000@00000000P`0000000040400@0004<000000000008000030000000000P020T400020@0@00000000000000000000000000P0000000400400000400220080000100000000000000000P000000000000P000000@00402000000000@00000000000000000000040000000000000", '\xC6&\xC1\u0102\xC2\u0410\u{1D504}\xC0\u0391\u0100\u2A53\u0104\u{1D538}\u2061\xC5\u{1D49C}\u2254\xC3\xC4\u2216\u2AE7\u2306\u0411\u2235\u212C\u0392\u{1D505}\u{1D539}\u02D8\u212C\u224E\u0427\xA9\u0106\u22D2\u2145\u212D\u010C\xC7\u0108\u2230\u010A\xB8\xB7\u212D\u03A7\u2299\u2296\u2295\u2297\u2232\u201D\u2019\u2237\u2A74\u2261\u222F\u222E\u2102\u2210\u2233\u2A2F\u{1D49E}\u22D3\u224D\u2145\u2911\u0402\u0405\u040F\u2021\u21A1\u2AE4\u010E\u0414\u2207\u0394\u{1D507}\xB4\u02D9\u02DD`\u02DC\u22C4\u2146\u{1D53B}\xA8\u20DC\u2250\u222F\xA8\u21D3\u21D0\u21D4\u2AE4\u27F8\u27FA\u27F9\u21D2\u22A8\u21D1\u21D5\u2225\u2193\u2913\u21F5\u0311\u2950\u295E\u21BD\u2956\u295F\u21C1\u2957\u22A4\u21A7\u21D3\u{1D49F}\u0110\u014A\xD0\xC9\u011A\xCA\u042D\u0116\u{1D508}\xC8\u2208\u0112\u25FB\u25AB\u0118\u{1D53C}\u0395\u2A75\u2242\u21CC\u2130\u2A73\u0397\xCB\u2203\u2147\u0424\u{1D509}\u25FC\u25AA\u{1D53D}\u2200\u2131\u2131\u0403>\u0393\u03DC\u011E\u0122\u011C\u0413\u0120\u{1D50A}\u22D9\u{1D53E}\u2265\u22DB\u2267\u2AA2\u2277\u2A7E\u2273\u{1D4A2}\u226B\u042A\u02C7^\u0124\u210C\u210B\u210D\u2500\u210B\u0126\u224E\u224F\u0415\u0132\u0401\xCD\xCE\u0418\u0130\u2111\xCC\u2111\u012A\u2148\u21D2\u222C\u222B\u22C2\u2063\u2062\u012E\u{1D540}\u0399\u2110\u0128\u0406\xCF\u0134\u0419\u{1D50D}\u{1D541}\u{1D4A5}\u0408\u0404\u0425\u040C\u039A\u0136\u041A\u{1D50E}\u{1D542}\u{1D4A6}\u0409<\u0139\u039B\u27EA\u2112\u219E\u013D\u013B\u041B\u27E8\u2190\u21E4\u21C6\u2308\u27E6\u2961\u21C3\u2959\u230A\u2194\u294E\u22A3\u21A4\u295A\u22B2\u29CF\u22B4\u2951\u2960\u21BF\u2958\u21BC\u2952\u21D0\u21D4\u22DA\u2266\u2276\u2AA1\u2A7D\u2272\u{1D50F}\u22D8\u21DA\u013F\u27F5\u27F7\u27F6\u27F8\u27FA\u27F9\u{1D543}\u2199\u2198\u2112\u21B0\u0141\u226A\u2905\u041C\u205F\u2133\u{1D510}\u2213\u{1D544}\u2133\u039C\u040A\u0143\u0147\u0145\u041D\u200B\u200B\u200B\u200B\u226B\u226A\n\u{1D511}\u2060\xA0\u2115\u2AEC\u2262\u226D\u2226\u2209\u2260\u2242\u0338\u2204\u226F\u2271\u2267\u0338\u226B\u0338\u2279\u2A7E\u0338\u2275\u224E\u0338\u224F\u0338\u22EA\u29CF\u0338\u22EC\u226E\u2270\u2278\u226A\u0338\u2A7D\u0338\u2274\u2AA2\u0338\u2AA1\u0338\u2280\u2AAF\u0338\u22E0\u220C\u22EB\u29D0\u0338\u22ED\u228F\u0338\u22E2\u2290\u0338\u22E3\u2282\u20D2\u2288\u2281\u2AB0\u0338\u22E1\u227F\u0338\u2283\u20D2\u2289\u2241\u2244\u2247\u2249\u2224\u{1D4A9}\xD1\u039D\u0152\xD3\xD4\u041E\u0150\u{1D512}\xD2\u014C\u03A9\u039F\u{1D546}\u201C\u2018\u2A54\u{1D4AA}\xD8\xD5\u2A37\xD6\u203E\u23DE\u23B4\u23DC\u2202\u041F\u{1D513}\u03A6\u03A0\xB1\u210C\u2119\u2ABB\u227A\u2AAF\u227C\u227E\u2033\u220F\u2237\u221D\u{1D4AB}\u03A8"\u{1D514}\u211A\u{1D4AC}\u2910\xAE\u0154\u27EB\u21A0\u2916\u0158\u0156\u0420\u211C\u220B\u21CB\u296F\u211C\u03A1\u27E9\u2192\u21E5\u21C4\u2309\u27E7\u295D\u21C2\u2955\u230B\u22A2\u21A6\u295B\u22B3\u29D0\u22B5\u294F\u295C\u21BE\u2954\u21C0\u2953\u21D2\u211D\u2970\u21DB\u211B\u21B1\u29F4\u0429\u0428\u042C\u015A\u2ABC\u0160\u015E\u015C\u0421\u{1D516}\u2193\u2190\u2192\u2191\u03A3\u2218\u{1D54A}\u221A\u25A1\u2293\u228F\u2291\u2290\u2292\u2294\u{1D4AE}\u22C6\u22D0\u22D0\u2286\u227B\u2AB0\u227D\u227F\u220B\u2211\u22D1\u2283\u2287\u22D1\xDE\u2122\u040B\u0426	\u03A4\u0164\u0162\u0422\u{1D517}\u2234\u0398\u205F\u200A\u2009\u223C\u2243\u2245\u2248\u{1D54B}\u20DB\u{1D4AF}\u0166\xDA\u219F\u2949\u040E\u016C\xDB\u0423\u0170\u{1D518}\xD9\u016A_\u23DF\u23B5\u23DD\u22C3\u228E\u0172\u{1D54C}\u2191\u2912\u21C5\u2195\u296E\u22A5\u21A5\u21D1\u21D5\u2196\u2197\u03D2\u03A5\u016E\u{1D4B0}\u0168\xDC\u22AB\u2AEB\u0412\u22A9\u2AE6\u22C1\u2016\u2016\u2223|\u2758\u2240\u200A\u{1D519}\u{1D54D}\u{1D4B1}\u22AA\u0174\u22C0\u{1D51A}\u{1D54E}\u{1D4B2}\u{1D51B}\u039E\u{1D54F}\u{1D4B3}\u042F\u0407\u042E\xDD\u0176\u042B\u{1D51C}\u{1D550}\u{1D4B4}\u0178\u0416\u0179\u017D\u0417\u017B\u200B\u0396\u2128\u2124\u{1D4B5}\xE1\u0103\u223E\u223E\u0333\u223F\xE2\xB4\u0430\xE6\u2061\u{1D51E}\xE0\u2135\u2135\u03B1\u0101\u2A3F&\u2227\u2A55\u2A5C\u2A58\u2A5A\u2220\u29A4\u2220\u2221\u29A8\u29A9\u29AA\u29AB\u29AC\u29AD\u29AE\u29AF\u221F\u22BE\u299D\u2222\xC5\u237C\u0105\u{1D552}\u2248\u2A70\u2A6F\u224A\u224B\'\u2248\u224A\xE5\u{1D4B6}*\u2248\u224D\xE3\xE4\u2233\u2A11\u2AED\u224C\u03F6\u2035\u223D\u22CD\u22BD\u2305\u2305\u23B5\u23B6\u224C\u0431\u201E\u2235\u2235\u29B0\u03F6\u212C\u03B2\u2136\u226C\u{1D51F}\u22C2\u25EF\u22C3\u2A00\u2A01\u2A02\u2A06\u2605\u25BD\u25B3\u2A04\u22C1\u22C0\u290D\u29EB\u25AA\u25B4\u25BE\u25C2\u25B8\u2423\u2592\u2591\u2593\u2588=\u20E5\u2261\u20E5\u2310\u{1D553}\u22A5\u22A5\u22C8\u2557\u2554\u2556\u2553\u2550\u2566\u2569\u2564\u2567\u255D\u255A\u255C\u2559\u2551\u256C\u2563\u2560\u256B\u2562\u255F\u29C9\u2555\u2552\u2510\u250C\u2500\u2565\u2568\u252C\u2534\u229F\u229E\u22A0\u255B\u2558\u2518\u2514\u2502\u256A\u2561\u255E\u253C\u2524\u251C\u2035\u02D8\xA6\u{1D4B7}\u204F\u223D\u22CD\\\u29C5\u27C8\u2022\u2022\u224E\u2AAE\u224F\u224F\u0107\u2229\u2A44\u2A49\u2A4B\u2A47\u2A40\u2229\uFE00\u2041\u02C7\u2A4D\u010D\xE7\u0109\u2A4C\u2A50\u010B\xB8\u29B2\xA2\xB7\u{1D520}\u0447\u2713\u2713\u03C7\u25CB\u29C3\u02C6\u2257\u21BA\u21BB\xAE\u24C8\u229B\u229A\u229D\u2257\u2A10\u2AEF\u29C2\u2663\u2663:\u2254\u2254,@\u2201\u2218\u2201\u2102\u2245\u2A6D\u222E\u{1D554}\u2210\xA9\u2117\u21B5\u2717\u{1D4B8}\u2ACF\u2AD1\u2AD0\u2AD2\u22EF\u2938\u2935\u22DE\u22DF\u21B6\u293D\u222A\u2A48\u2A46\u2A4A\u228D\u2A45\u222A\uFE00\u21B7\u293C\u22DE\u22DF\u22CE\u22CF\xA4\u21B6\u21B7\u22CE\u22CF\u2232\u2231\u232D\u21D3\u2965\u2020\u2138\u2193\u2010\u22A3\u290F\u02DD\u010F\u0434\u2146\u2021\u21CA\u2A77\xB0\u03B4\u29B1\u297F\u{1D521}\u21C3\u21C2\u22C4\u22C4\u2666\u2666\xA8\u03DD\u22F2\xF7\xF7\u22C7\u22C7\u0452\u231E\u230D$\u{1D555}\u02D9\u2250\u2251\u2238\u2214\u22A1\u2306\u2193\u21CA\u21C3\u21C2\u2910\u231F\u230C\u{1D4B9}\u0455\u29F6\u0111\u22F1\u25BF\u25BE\u21F5\u296F\u29A6\u045F\u27FF\u2A77\u2251\xE9\u2A6E\u011B\u2256\xEA\u2255\u044D\u0117\u2147\u2252\u{1D522}\u2A9A\xE8\u2A96\u2A98\u2A99\u23E7\u2113\u2A95\u2A97\u0113\u2205\u2205\u2205\u2003\u2004\u2005\u014B\u2002\u0119\u{1D556}\u22D5\u29E3\u2A71\u03B5\u03B5\u03F5\u2256\u2255\u2242\u2A96\u2A95=\u225F\u2261\u2A78\u29E5\u2253\u2971\u212F\u2250\u2242\u03B7\xF0\xEB\u20AC!\u2203\u2130\u2147\u2252\u0444\u2640\uFB03\uFB00\uFB04\u{1D523}\uFB01fj\u266D\uFB02\u25B1\u0192\u{1D557}\u2200\u22D4\u2AD9\u2A0D\xBD\u2153\xBC\u2155\u2159\u215B\u2154\u2156\xBE\u2157\u215C\u2158\u215A\u215D\u215E\u2044\u2322\u{1D4BB}\u2267\u2A8C\u01F5\u03B3\u03DD\u2A86\u011F\u011D\u0433\u0121\u2265\u22DB\u2265\u2267\u2A7E\u2A7E\u2AA9\u2A80\u2A82\u2A84\u22DB\uFE00\u2A94\u{1D524}\u226B\u22D9\u2137\u0453\u2277\u2A92\u2AA5\u2AA4\u2269\u2A8A\u2A8A\u2A88\u2A88\u2269\u22E7\u{1D558}`\u210A\u2273\u2A8E\u2A90>\u2AA7\u2A7A\u22D7\u2995\u2A7C\u2A86\u2978\u22D7\u22DB\u2A8C\u2277\u2273\u2269\uFE00\u2269\uFE00\u21D4\u200A\xBD\u210B\u044A\u2194\u2948\u21AD\u210F\u0125\u2665\u2665\u2026\u22B9\u{1D525}\u2925\u2926\u21FF\u223B\u21A9\u21AA\u{1D559}\u2015\u{1D4BD}\u210F\u0127\u2043\u2010\xED\u2063\xEE\u0438\u0435\xA1\u21D4\u{1D526}\xEC\u2148\u2A0C\u222D\u29DC\u2129\u0133\u012B\u2111\u2110\u2111\u0131\u22B7\u01B5\u2208\u2105\u221E\u29DD\u0131\u222B\u22BA\u2124\u22BA\u2A17\u2A3C\u0451\u012F\u{1D55A}\u03B9\u2A3C\xBF\u{1D4BE}\u2208\u22F9\u22F5\u22F4\u22F3\u2208\u2062\u0129\u0456\xEF\u0135\u0439\u{1D527}\u0237\u{1D55B}\u{1D4BF}\u0458\u0454\u03BA\u03F0\u0137\u043A\u{1D528}\u0138\u0445\u045C\u{1D55C}\u{1D4C0}\u21DA\u21D0\u291B\u290E\u2266\u2A8B\u2962\u013A\u29B4\u2112\u03BB\u27E8\u2991\u27E8\u2A85\xAB\u2190\u21E4\u291F\u291D\u21A9\u21AB\u2939\u2973\u21A2\u2AAB\u2919\u2AAD\u2AAD\uFE00\u290C\u2772{[\u298B\u298F\u298D\u013E\u013C\u2308{\u043B\u2936\u201C\u201E\u2967\u294B\u21B2\u2264\u2190\u21A2\u21BD\u21BC\u21C7\u2194\u21C6\u21CB\u21AD\u22CB\u22DA\u2264\u2266\u2A7D\u2A7D\u2AA8\u2A7F\u2A81\u2A83\u22DA\uFE00\u2A93\u2A85\u22D6\u22DA\u2A8B\u2276\u2272\u297C\u230A\u{1D529}\u2276\u2A91\u21BD\u21BC\u296A\u2584\u0459\u226A\u21C7\u231E\u296B\u25FA\u0140\u23B0\u23B0\u2268\u2A89\u2A89\u2A87\u2A87\u2268\u22E6\u27EC\u21FD\u27E6\u27F5\u27F7\u27FC\u27F6\u21AB\u21AC\u2985\u{1D55D}\u2A2D\u2A34\u2217_\u25CA\u25CA\u29EB(\u2993\u21C6\u231F\u21CB\u296D\u200E\u22BF\u2039\u{1D4C1}\u21B0\u2272\u2A8D\u2A8F[\u2018\u201A\u0142<\u2AA6\u2A79\u22D6\u22CB\u22C9\u2976\u2A7B\u2996\u25C3\u22B4\u25C2\u294A\u2966\u2268\uFE00\u2268\uFE00\u223A\xAF\u2642\u2720\u2720\u21A6\u21A6\u21A7\u21A4\u21A5\u25AE\u2A29\u043C\u2014\u2221\u{1D52A}\u2127\xB5\u2223*\u2AF0\xB7\u2212\u229F\u2238\u2A2A\u2ADB\u2026\u2213\u22A7\u{1D55E}\u2213\u{1D4C2}\u223E\u03BC\u22B8\u22B8\u22D9\u0338\u226B\u20D2\u226B\u0338\u21CD\u21CE\u22D8\u0338\u226A\u20D2\u226A\u0338\u21CF\u22AF\u22AE\u2207\u0144\u2220\u20D2\u2249\u2A70\u0338\u224B\u0338\u0149\u2249\u266E\u266E\u2115\xA0\u224E\u0338\u224F\u0338\u2A43\u0148\u0146\u2247\u2A6D\u0338\u2A42\u043D\u2013\u2260\u21D7\u2924\u2197\u2197\u2250\u0338\u2262\u2928\u2242\u0338\u2204\u2204\u{1D52B}\u2267\u0338\u2271\u2271\u2267\u0338\u2A7E\u0338\u2A7E\u0338\u2275\u226F\u226F\u21CE\u21AE\u2AF2\u220B\u22FC\u22FA\u220B\u045A\u21CD\u2266\u0338\u219A\u2025\u2270\u219A\u21AE\u2270\u2266\u0338\u2A7D\u0338\u2A7D\u0338\u226E\u2274\u226E\u22EA\u22EC\u2224\u{1D55F}\xAC\u2209\u22F9\u0338\u22F5\u0338\u2209\u22F7\u22F6\u220C\u220C\u22FE\u22FD\u2226\u2226\u2AFD\u20E5\u2202\u0338\u2A14\u2280\u22E0\u2AAF\u0338\u2280\u2AAF\u0338\u21CF\u219B\u2933\u0338\u219D\u0338\u219B\u22EB\u22ED\u2281\u22E1\u2AB0\u0338\u{1D4C3}\u2224\u2226\u2241\u2244\u2244\u2224\u2226\u22E2\u22E3\u2284\u2AC5\u0338\u2288\u2282\u20D2\u2288\u2AC5\u0338\u2281\u2AB0\u0338\u2285\u2AC6\u0338\u2289\u2283\u20D2\u2289\u2AC6\u0338\u2279\xF1\u2278\u22EA\u22EC\u22EB\u22ED\u03BD#\u2116\u2007\u22AD\u2904\u224D\u20D2\u22AC\u2265\u20D2>\u20D2\u29DE\u2902\u2264\u20D2<\u20D2\u22B4\u20D2\u2903\u22B5\u20D2\u223C\u20D2\u21D6\u2923\u2196\u2196\u2927\u24C8\xF3\u229B\u229A\xF4\u043E\u229D\u0151\u2A38\u2299\u29BC\u0153\u29BF\u{1D52C}\u02DB\xF2\u29C1\u29B5\u03A9\u222E\u21BA\u29BE\u29BB\u203E\u29C0\u014D\u03C9\u03BF\u29B6\u2296\u{1D560}\u29B7\u29B9\u2295\u2228\u21BB\u2A5D\u2134\u2134\xAA\xBA\u22B6\u2A56\u2A57\u2A5B\u2134\xF8\u2298\xF5\u2297\u2A36\xF6\u233D\u2225\xB6\u2225\u2AF3\u2AFD\u2202\u043F%.\u2030\u22A5\u2031\u{1D52D}\u03C6\u03D5\u2133\u260E\u03C0\u22D4\u03D6\u210F\u210E\u210F+\u2A23\u229E\u2A22\u2214\u2A25\u2A72\xB1\u2A26\u2A27\xB1\u2A15\u{1D561}\xA3\u227A\u2AB3\u2AB7\u227C\u2AAF\u227A\u2AB7\u227C\u2AAF\u2AB9\u2AB5\u22E8\u227E\u2032\u2119\u2AB5\u2AB9\u22E8\u220F\u232E\u2312\u2313\u221D\u221D\u227E\u22B0\u{1D4C5}\u03C8\u2008\u{1D52E}\u2A0C\u{1D562}\u2057\u{1D4C6}\u210D\u2A16?\u225F"\u21DB\u21D2\u291C\u290F\u2964\u223D\u0331\u0155\u221A\u29B3\u27E9\u2992\u29A5\u27E9\xBB\u2192\u2975\u21E5\u2920\u2933\u291E\u21AA\u21AC\u2945\u2974\u21A3\u219D\u291A\u2236\u211A\u290D\u2773}]\u298C\u298E\u2990\u0159\u0157\u2309}\u0440\u2937\u2969\u201D\u201D\u21B3\u211C\u211B\u211C\u211D\u25AD\xAE\u297D\u230B\u{1D52F}\u21C1\u21C0\u296C\u03C1\u03F1\u2192\u21A3\u21C1\u21C0\u21C4\u21CC\u21C9\u219D\u22CC\u02DA\u2253\u21C4\u21CC\u200F\u23B1\u23B1\u2AEE\u27ED\u21FE\u27E7\u2986\u{1D563}\u2A2E\u2A35)\u2994\u2A12\u21C9\u203A\u{1D4C7}\u21B1]\u2019\u2019\u22CC\u22CA\u25B9\u22B5\u25B8\u29CE\u2968\u211E\u015B\u201A\u227B\u2AB4\u2AB8\u0161\u227D\u2AB0\u015F\u015D\u2AB6\u2ABA\u22E9\u2A13\u227F\u0441\u22C5\u22A1\u2A66\u21D8\u2925\u2198\u2198\xA7;\u2929\u2216\u2216\u2736\u{1D530}\u2322\u266F\u0449\u0448\u2223\u2225\xAD\u03C3\u03C2\u03C2\u223C\u2A6A\u2243\u2243\u2A9E\u2AA0\u2A9D\u2A9F\u2246\u2A24\u2972\u2190\u2216\u2A33\u29E4\u2223\u2323\u2AAA\u2AAC\u2AAC\uFE00\u044C/\u29C4\u233F\u{1D564}\u2660\u2660\u2225\u2293\u2293\uFE00\u2294\u2294\uFE00\u228F\u2291\u228F\u2291\u2290\u2292\u2290\u2292\u25A1\u25A1\u25AA\u25AA\u2192\u{1D4C8}\u2216\u2323\u22C6\u2606\u2605\u03F5\u03D5\xAF\u2282\u2AC5\u2ABD\u2286\u2AC3\u2AC1\u2ACB\u228A\u2ABF\u2979\u2282\u2286\u2AC5\u228A\u2ACB\u2AC7\u2AD5\u2AD3\u227B\u2AB8\u227D\u2AB0\u2ABA\u2AB6\u22E9\u227F\u2211\u266A\u2283\xB9\xB2\xB3\u2AC6\u2ABE\u2AD8\u2287\u2AC4\u27C9\u2AD7\u297B\u2AC2\u2ACC\u228B\u2AC0\u2283\u2287\u2AC6\u228B\u2ACC\u2AC8\u2AD4\u2AD6\u21D9\u2926\u2199\u2199\u292A\xDF\u2316\u03C4\u23B4\u0165\u0163\u0442\u20DB\u2315\u{1D531}\u2234\u2234\u03B8\u03D1\u03D1\u2248\u223C\u2009\u2248\u223C\xFE\u02DC\xD7\u22A0\u2A31\u2A30\u222D\u2928\u22A4\u2336\u2AF1\u{1D565}\u2ADA\u2929\u2034\u2122\u25B5\u25BF\u25C3\u22B4\u225C\u25B9\u22B5\u25EC\u225C\u2A3A\u2A39\u29CD\u2A3B\u23E2\u{1D4C9}\u0446\u045B\u0167\u226C\u219E\u21A0\u21D1\u2963\xFA\u2191\u045E\u016D\xFB\u0443\u21C5\u0171\u296E\u297E\u{1D532}\xF9\u21BF\u21BE\u2580\u231C\u231C\u230F\u25F8\u016B\xA8\u0173\u{1D566}\u2191\u2195\u21BF\u21BE\u228E\u03C5\u03D2\u03C5\u21C8\u231D\u231D\u230E\u016F\u25F9\u{1D4CA}\u22F0\u0169\u25B5\u25B4\u21C8\xFC\u29A7\u21D5\u2AE8\u2AE9\u22A8\u299C\u03F5\u03F0\u2205\u03D5\u03D6\u221D\u2195\u03F1\u03C2\u228A\uFE00\u2ACB\uFE00\u228B\uFE00\u2ACC\uFE00\u03D1\u22B2\u22B3\u0432\u22A2\u2228\u22BB\u225A\u22EE||\u{1D533}\u22B2\u2282\u20D2\u2283\u20D2\u{1D567}\u221D\u22B3\u{1D4CB}\u2ACB\uFE00\u228A\uFE00\u2ACC\uFE00\u228B\uFE00\u299A\u0175\u2A5F\u2227\u2259\u2118\u{1D534}\u{1D568}\u2118\u2240\u2240\u{1D4CC}\u22C2\u25EF\u22C3\u25BD\u{1D535}\u27FA\u27F7\u03BE\u27F8\u27F5\u27FC\u22FB\u2A00\u{1D569}\u2A01\u2A02\u27F9\u27F6\u{1D4CD}\u2A06\u2A04\u25B3\u22C1\u22C0\xFD\u044F\u0177\u044B\xA5\u{1D536}\u0457\u{1D56A}\u{1D4CE}\u044E\xFF\u017A\u017E\u0437\u017C\u2128\u03B6\u{1D537}\u0436\u21DD\u{1D56B}\u{1D4CF}\u200D\u200C'];
+
+// ../../node_modules/.pnpm/entities@9.0.0/node_modules/entities/dist/internal/decode-data-format.js
+var META_BIAS = 35;
+var HEADER_BIAS = 48;
+var HEADER_LENGTH = 6;
+var CHOICE_BITS_PER_CHAR = 6;
+var BUCKET_HASH_1 = 2654435761;
+var BUCKET_HASH_2 = 2246822507;
+var PAIR_TABLE_SIZE = 1024;
+var CHAR_REMAP = (() => {
+  const remap = new Uint8Array(128);
+  for (let code = 48; code <= 57; code++)
+    remap[code] = code - 47;
+  for (let code = 65; code <= 90; code++)
+    remap[code] = code - 54;
+  for (let code = 97; code <= 122; code++)
+    remap[code] = code - 60;
+  return remap;
 })();
-function decodeTrieDict(input, resultLength, atomCount, dict1AtomCount, ngramCount, dictSize) {
-  const base = 91;
-  const inputLength = input.length;
-  const twoCharBias = dictSize * (base - 1);
-  let pos = 0;
-  const readSlotCode = () => {
-    const c12 = BASE91_INVERSE[input.charCodeAt(pos++)];
-    return c12 < dictSize ? c12 : c12 * base - twoCharBias + BASE91_INVERSE[input.charCodeAt(pos++)];
+function exactKey(text, nameStart, length) {
+  return text.charCodeAt(nameStart) << 25 | text.charCodeAt(nameStart + 1) << 18 | text.charCodeAt(nameStart + length - 2) << 11 | CHAR_REMAP[text.charCodeAt(nameStart + length - 1)] << 5 | length;
+}
+function pairIndex(c0, c12) {
+  return (c0 * 3 << 3 ^ c12) & PAIR_TABLE_SIZE - 1;
+}
+function bucketOne(key, buckets) {
+  return (Math.imul(key, BUCKET_HASH_1) >>> 16) * buckets >>> 16;
+}
+function bucketTwo(key, buckets) {
+  return (Math.imul(key, BUCKET_HASH_2) >>> 16) * buckets >>> 16;
+}
+function initDecodeData(packed) {
+  const [data, values] = packed;
+  const nameCount = data.charCodeAt(0) - HEADER_BIAS << 6 | data.charCodeAt(1) - HEADER_BIAS;
+  const suffixesLength = data.charCodeAt(2) - HEADER_BIAS << 6 | data.charCodeAt(3) - HEADER_BIAS;
+  const buckets = data.charCodeAt(4) - HEADER_BIAS << 6 | data.charCodeAt(5) - HEADER_BIAS;
+  const metaStart = HEADER_LENGTH + suffixesLength;
+  const choicesStart = metaStart + 2 * nameCount;
+  const slotCount = 2 * buckets;
+  const keys = new Int32Array(slotCount);
+  const slotMidOff = new Uint16Array(slotCount);
+  const slotValue = new Uint16Array(slotCount);
+  const lengthBits = new Uint32Array(PAIR_TABLE_SIZE);
+  const middleOffsets = /* @__PURE__ */ new Map();
+  const middles = [];
+  let name = "";
+  let suffixOffset = HEADER_LENGTH;
+  let valueOffset = 0;
+  for (let index = 0; index < nameCount; index++) {
+    const meta0 = data.charCodeAt(metaStart + 2 * index) - META_BIAS;
+    const meta1 = data.charCodeAt(metaStart + 2 * index + 1) - META_BIAS;
+    const prefixLength = meta0 & 31;
+    const length = prefixLength + (meta1 & 31);
+    const valueLength2 = (meta1 >> 5) + 1;
+    name = name.slice(0, prefixLength) + data.slice(suffixOffset, suffixOffset + length - prefixLength);
+    suffixOffset += length - prefixLength;
+    const key = exactKey(name, 0, length);
+    const choice = data.charCodeAt(choicesStart + Math.floor(index / CHOICE_BITS_PER_CHAR)) - HEADER_BIAS & 1 << index % CHOICE_BITS_PER_CHAR;
+    let slot = 2 * (choice === 0 ? bucketOne : bucketTwo)(key, buckets);
+    if (keys[slot] !== 0)
+      slot += 1;
+    keys[slot] = key;
+    if (length > 4) {
+      const middle = name.slice(2, length - 2);
+      const existing = middleOffsets.get(middle);
+      if (existing === void 0) {
+        middleOffsets.set(middle, middles.length);
+        slotMidOff[slot] = middles.length;
+        for (let middleIndex = 0; middleIndex < middle.length; middleIndex += 2) {
+          middles.push(middle.charCodeAt(middleIndex) | middle.charCodeAt(middleIndex + 1) << 16);
+        }
+      } else {
+        slotMidOff[slot] = existing;
+      }
+    }
+    const pair = pairIndex(name.charCodeAt(0), name.charCodeAt(1));
+    lengthBits[pair] |= length <= 16 ? 1 << length - 2 : 32768;
+    if ((meta0 & 32) !== 0) {
+      lengthBits[pair] |= 1 << length - 2 + 16;
+    }
+    slotValue[slot] = valueOffset << 2 | valueLength2 - 1 | (meta0 & 32) >> 4;
+    valueOffset += valueLength2;
+  }
+  return {
+    keys,
+    buckets,
+    slotMidOff,
+    slotValue,
+    values,
+    lengthBits,
+    middles: new Uint32Array(middles)
   };
-  const dict2AtomCount = atomCount - dict1AtomCount;
-  const slotCount = atomCount + ngramCount;
-  const single = new Int32Array(slotCount);
-  single.fill(-1, dict1AtomCount, dictSize);
-  single.fill(-1, dictSize + dict2AtomCount, slotCount);
-  const start = new Int32Array(slotCount);
-  const length = new Int32Array(slotCount);
-  function decodeDelta(count, off) {
-    let previous = 0;
-    let slot = off;
-    const end = off + count;
-    while (slot < end) {
-      const code = BASE91_INVERSE[input.charCodeAt(pos++)];
-      if (code < 89) {
-        previous += code;
-        single[slot++] = previous;
-      } else if (code === 89) {
-        let runLength = BASE91_INVERSE[input.charCodeAt(pos++)] + 2;
-        while (runLength--)
-          single[slot++] = ++previous;
-      } else {
-        const next = BASE91_INVERSE[input.charCodeAt(pos++)];
-        previous += 89 + // eslint-disable-next-line unicorn/prefer-minimal-ternary -- branches read a different number of side-effecting input bytes
-        (next < 90 ? next * base + BASE91_INVERSE[input.charCodeAt(pos++)] : BASE91_INVERSE[input.charCodeAt(pos++)] * 8281 + BASE91_INVERSE[input.charCodeAt(pos++)] * base + BASE91_INVERSE[input.charCodeAt(pos++)]);
-        single[slot++] = previous;
-      }
-    }
-  }
-  decodeDelta(dict1AtomCount, 0);
-  decodeDelta(dict2AtomCount, dictSize);
-  const references = new Int32Array(ngramCount * 2);
-  let poolSize = 0;
-  let ngramIndex = 0;
-  function readNgramReferences(count, startSlot) {
-    for (let index = 0; index < count; index++) {
-      const slot = startSlot + index;
-      const a = readSlotCode();
-      const b = readSlotCode();
-      references[ngramIndex * 2] = a;
-      references[ngramIndex * 2 + 1] = b;
-      ngramIndex += 1;
-      start[slot] = poolSize;
-      const entryLength = (single[a] < 0 ? length[a] : 1) + (single[b] < 0 ? length[b] : 1);
-      length[slot] = entryLength;
-      poolSize += entryLength;
-    }
-  }
-  readNgramReferences(ngramCount - dictSize + dict1AtomCount, dictSize + dict2AtomCount);
-  readNgramReferences(dictSize - dict1AtomCount, dict1AtomCount);
-  const pool = new Uint16Array(poolSize);
-  let write = 0;
-  for (let index = 0; index < ngramIndex; index++) {
-    for (let half = 0; half < 2; half++) {
-      const source = references[index * 2 + half];
-      const value = single[source];
-      if (value < 0) {
-        let read = start[source];
-        const readEnd = read + length[source];
-        while (read < readEnd)
-          pool[write++] = pool[read++];
-      } else {
-        pool[write++] = value;
-      }
-    }
-  }
-  const out = new Uint16Array(resultLength);
-  let outIndex = 0;
-  while (pos < inputLength) {
-    let slot = BASE91_INVERSE[input.charCodeAt(pos++)];
-    if (slot >= dictSize) {
-      slot = slot * base - twoCharBias + BASE91_INVERSE[input.charCodeAt(pos++)];
-    }
-    const value = single[slot];
-    if (value < 0) {
-      let read = start[slot];
-      const readEnd = read + length[slot];
-      while (read < readEnd)
-        out[outIndex++] = pool[read++];
-    } else {
-      out[outIndex++] = value;
-    }
-  }
-  return out;
 }
 
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/generated/decode-data-html.js
-var htmlDecodeTree = /* @__PURE__ */ decodeTrieDict("!}.&u%}'&}*'~!6*)%&,~!J~!J~%L~y<~!R,~~%Lu~~#GD~~#|)1#%}^%}2%+#.##%##%}&%##%'#%##&%#%#'%#&#%#&#'#%%#&#%##%#)%''%&%#%#'%#%%#%%}%%%#%#&(23#%%#&-%0%('1#(##%#'##+%'*.:1}#%#6-+(%'%%#%%%}#L'2351&('%}&/N'(0(/*-%(%%}#'+&T%7.2}#&%&#%#36/5##%&%%#&#%%#))2%%##%&&'0~!#*+&'%1~!%).'3q?&%'1~!.##%6(~!+%%%(Gw'rT~!E#<nA%#jZ~!H%(~!42##~!*31&~!G%U~#)5~#`3~!J~!Z~%]~%Y~%C~!q~!u~#kz~%#~!6'~!D~!U~!?~#T~!c%~!G#'~%7|~!G~!J~!G&~#pb~(Df}#%}*&}#%##%##%##&#-}&'#'&%#.++}%mI,#,@&(}*%}*'%&##&#%##%}&0}#.},U},%}+%}&%}#%##&}B%(}(%}+%)})%##%#&}&%##%&}<%}>%#%&}*%}(%}9%}/%})%}*%}*%}?&}&%}3%}&*#%})%#%#)}#&#-#+*%E%%'%'#%}#*V##&##I}#&&##%&%#&&Qf%%))w/0+&%#(#.%-''''++++7}>%4'',##1,#%#&%##&#'##&#*#9)%&%}#*}%,#+P(%A&%#'&##wSD',9E00#y#@}(+}&%&>~!#~!X}#*}(&&}(&}(,%}%&#+&}#&}I%#%}%)#(},'%#*}4%%#%}(''}#/##(##),%-##%%)#&}(.}&%#&}%%}*&#%},&&}&%}#%*'#%})%}D&}&%}-&}6&#&}-,%}#%})-(~+`~,=?~I9'9%~!,#%})%})%}@%}?%}(~!?~#<~#pP~#BG~#=1#%K+~#?#~%;)~#A~#mF1~#A'~'X%'~#lR~#N~'N~#r~#m#-~#i'?%#'%~#B%##%,%#~#_%#0%~#]732~,w~2+#:&#%&'0%&>%}#>##F+)#%&&#(+_}4&}-%}(&}@&}O7Fdf0@+/v4}&WU##&/0#&'('B#%}.%}'+#%}#%%&#&%#%##+#&#)#6#'#.},%}c%},%#%##%&#&%#&~#>'*-.%##%##%}#%%}%'~#)D1}#%*&~#_%%'(~#S2%'.}#~#=##*'*-%}&'%'##&&~'E%.#&~#M4}%%##&'%#~#O1##%&#'+~#<B%##%%'%+~#;#@%}#&%#&&%#(~#H1}'%'##&&~#?A}&'~#D#%32}'&&&&~#[}'(#%}'~#;C})&}%%#%~#=&%,3}%'(#%%~#^'#&&)#%'~#Y%-~#d-%'~#^%%&#&&&}#~#b~2t*&'~&(~&@~0%~e~3}%*''0})&}+~!9##-}#%-hD*)1fC#%/&/fB#40~!+#)*4~!+~!K'&:~!/*7~!.#~!H~!L':~%x&~!H#~!*~%1~!I#~!+A~#p'~!F~~#-#~,,(~.Z~!V~%;'B'mq-W~!N~%I%#&&#&}#%},%%}'%}+X#%}#&}(%}'%}<%}#%}%%'}'%}:~![)9@~%>~#UA%-%##&~!C%~!-.9:~!1~!-^2/:a~!y,D*J#-5)/4~%23,~#G~!L1~!0X3`~!2+~!!0-~&E~!W~!o,>Y&]~%cZx_&~#O*9#A#'#+I'%#)~!0B*-5A+-((F&*M#)(-7-5+'-3a5Vi~!Y~!?+[)%3),ERHm~!+:D,VG.+)?fB%%*(%)'(#&80%1'8`K8?`+'Z#&O&'H5#*9)A%%5&3))0%39+.*7#()&&*=4@**L)<'_&*+..;(#*+)./&0#3)%')-8(4ixD(&.}%,('aI:,)%,k2231T)I'#/-W7,/'Q#.'Y24+h')37</31&83##&0#),H(?'&?/1##%#&&#%''-%&&&#(&''&#.-'%#%%(,')*'&#&#'##%(%(#%('#&##%%%%('%#%#%%#%#&%##h>w+v<ayvyvcg.uuhKr}g/v|g>u9i[~>g5uI~=RvdwEg;v/g;uk!!TTSx]@RT!U!#!@VBRUU!'UTe-d0c`e&gSdicedFcrdTaqb.kYcAohdYd@a3e+d}dMdtd.aJ#bqcK`dle/e.e'dwdPdodddjbEb}ogd^ofdpduc6j?l%d{drdqc)d7bacOdQ%T#Y)X.sR[yH>6Vyv3[xwLu>vo'!*.[yBacahoj>6Rew3[xqdZa#!a&#^(X-[yG>6Vyu3[xvg3sEr|g.u/Ri9db0T#^(Xa)!-[y;>6Vylg4wKs{JwNZt3@3r=c4Z([xlg;wKt!cpq's@v7A'*a(a+!-a#[y<3Dt?3Dt'>6Vym3[xmg9rxsNJwLZt4~?r?db1T#`-!(Xa,!0[yS>6Vz%NuQs.g4wKtnJwNZtS@3r>c4Z([y%g;wKtrdga8!a(!#&T*Y-Xa#!a0<or[yc3Dtq>6Vz43[y3JwNZtf@3s!Ju}!%Dti:pm3c_%X#tjB5pkd6q!r]u?voC'*-a.a2!0a&a+[yI3DtI3Ds~3DtH>6Vyw3[xx;:s#~<5pKJwNZtE@3r~d`a)!a2T#a.(!+U.X1[yT3Dt`3Dtv>6Vz&3[y&g9rxwzcxstPu.<rAJwLZtT~?r@dZa%!a.&^*Za(/Reu[ya>6Vz23[y1g3sEr}wkg{NuQRg{ci(U#5@b`~,cg#U(2WnH5wugcRh7dX#T(Y,a'Ta!!a,[yZ<]mj>6Vz,3[y+Pv#5ReZKu+=,%!H}7ABwkaS?Rh:BcW(X#<]mrj:ubv/ARekdg%!(!a.*Ta(Y.X1!#sP>Rl*Dt6[y>>6Vyo3Wf*jOvuumvuRgRJuq*!:9<B@bX~3jVv&v@s@5Re[d/rQt{uAvo&a&a*)a2!,0Wf!3Dt0=Bs'>6Re}3[xy~<5s%JwJZt1~Gs)c;&!#2sJkNuXvzq7rxu,Re8dka4!a8(aEZ+a@Y.X1Xa)[yd=Bs(3DtP>6Vz53[y4cX#X&Re:avRe9~<5s&JwJZtQ~Gs*i^rzvdRg+Jv{%!2sbB@bX}kdga,!Za?&^*T1/!a'Dt+[y6>6Vyf3Wf%g/u;s4hGu6?Rh-JvZ,!c%#&RoX54Rivj7uyvf8RgTKvZB%*!2sGh<vu5Rgq<=C::9bb~#dZ#T&Ta6Y.X*Dt>[y93Wf)coZ(T,6VyifluvRgC@95@B@bX~/hFu34cC#T,k/unq8w8Q5RkUklwQuzunq8w8Q5Rk8d/rJu?v8w9)-&!a0a;a&aIWejg3sEr/h1s<DtDJvyZqY5aws3Jvy!&Wei~Hr1:au5@Bag>23E~5c:Z&bX};kKv?w&unuVu5Rjc;>bs)#~@:Rh.=ay<a]C;b`}Vd6s/t{uAvoaxa()!a,a7%-a#a2Dt,[yF2Wo[>6Vyt3[xuNuPRi&NuPwpi#RoWh?vf8Ri%Jv]!%Ri:KvxD!.'2WeAjZu`q9rxu,Re7woeAg-unLq(qA_/*2Wg_g3u5q^9:4E}/jTrxrzv=Wkkd~0UX#^^Xa-a1a5T&a=U1a'*aEa]!a*aPaA-adok[y54Rn>;:p3~Dp5g9rpsFNvZqjg3uJp4~<5p0Pw;5qlJwNZt*@3p1Pw:5p/Ou!5p2JvG'!6Vye=<qnJvh_[xhg3v,Rh3kOwOw-sDuev/Re^dha[a%!%!a+#Ta7)-5TaCaO!aka!a)sf[yb2>Rl!9ARiq5E}Qg=ucRkBE|oJrJ_@Wk~@Wk{JrJ_@Wk|@WkyJrJ_@Wk}@WkzJvO_[y2g-vMRmiKuYC!)&>Ri;>Ri<@3RkNc](X#@9Rk=g5vuRmhKvDB!+'=]meg3u4Rmgd)#Y'Vz3CARmfd`a+!%T'!+#Ta1Ta6TaM-sTDt9[yA9sYd'%Y#s[[xpj:ueunaXRgEjRq,v-vuqdd2'`#6Rev<32@5>:2<E}5xIo9a*X#Y(;5RePJvD_g>vyRgNj8w)v8<wggs:RgXiZt|vjx,hSq3ah!-(~@:Ro/Ou!5RhWj^v(pyw8unRhUdx-UY#^Ua.a3a70!)%UX1TaDa)'omRiRRhE[y:3Dsz=Br,>6Vyj3[xkg6ruwjcqsrPw;5r*Ku]D'Zt-@3r(~?r.i[vwv]dU1a--U#`a4(g/vsRhPOu!5RhLj:rmu9Wo!~@:wdh@g/vsRiTjXuvvNr}:RhBj^v(pyw8unRn]dz1UYa'a+^Y(!aETZalaRY.Ta?a4[yDJw1!#qLsW>6Vyrfzq-pLflpwRe|Js>%!Dt@3Dt&Jvy_[xs~HrnjMuwpsw'RecKu+D#'!t<~Grl~?rjg5u-x,gwp{ah!-(~@:Rg~Ou!5Rh'jXuvvNr}:Rh#cW#X/c;&!#2sLi[v7u7RgpJv)(!iLrxu,Re6j7v@s@5Se[e7d`aW!Za(a`T.a#!a3!&aDa-!9)Dt_=6s+3[x~~DR|h~DS6avhGun5RkZj3w)v-]mkKunB!&*]kb97R|i<ARk<c:Z(6Vy}Juh'!wziMRoS:F|vkLuauJv5vtvQRh1d='T+Y#VyO~DR|jcF#T'7R|g97R|kJv3'!ay<Rj,Jvh&!:ReXcsa6*a+#a#_aIRf9aLRf?c,Z&Rf5Rf7c.Z&Rf;Rf>cQ#%T'p-Rf8Rf=ct#%'(*!,p,Rf4p+Rf6Rf:Rf<d~'Ua%U*^UYa(!a,-!#a4YaTalaEX0a8a<Weo3Dt/3Dsx=Br93Wen~Dr;~<5p<JwNZt2@3p=Pw:5p;Ou!5r3c7&!#:p>3Ds}KvGB)_6Vyk2sM=<r7x'eovA(!hFu1ARf}cV#X&@r5j6rvwQa^Rf3c=Za'wkghJv__g;unRggA53B9=b^}%j6uduo5Jq;!(hIv%2Re`Ou4ARe_e%a#^^^Xa&!a*a2!&a6YaP!*ad!#a:aE/5Rn?[y@>6Vyp;:pE~DrY~<5pBJwNZt8@3pCh=rt3rWPw:5pAJup_[xoNuPpF9c!#'45pD5ARn)d8#X'X*3@rU72s]h>v<<sSjJpqvewOJq/(!hNw'5ReBk0s2u3w/w'5ReE5@Jq.!a+JQ!&WeU23d(#Y&RjG5]jBk!u7w&u0udARjEe#+^^^Ub#!a2/a`Z(agT1!a-a;|@TaG!aS[yV=Re~fow'RguNuPRe?bz#'>RoUWeL>:Cbb|?JwPZtVg6ruRmzJvD'!6Vz(g/vmRh~Jvy_[y(g9voRgyx*cy(#2>Ri2B9b]~9kIw9u7rluJu3Rg]dI#a%UY'@=p%CAx.gQZ&RhwwygtRm{x5g_Z'+ABqR9Woa=Bp&dV#^*Xa'!&@o{g4v]Rk;Jv{!%Rk[wkkiA5RkiwwfUB=x,fUuqC&*!>RfTg8v0RfV~ARfSd;rJsAuAv9wR'ae+/aO!a@aza/a#[yQ@Wg!2Wemg3sEr0JvB_g>uvReWg2v+Re=KupB_+[y!2AbY~-~Hr2AJwD!(h<~El>h<~El?Kun@+_:9b`}Kg-v/Ri3g;vtwyk_9]k_d=&T#*U.6qh@Ab`|K9:H|CJv[!&3Dtex'fDwC%!Rf[9WlMd[(^X,!a%Z06Vz!@WgBg=v~Rgvg,QRe@awd,#Y+jTv|Q~EfWj]uNr|~FRfXdy#Y&^Ua%!aO.!(a)Ua;=!a@aKap!a-,a!Ta]a[rSa]p?[y82sK=Bq~;:p:~<5p8Pw:5p7d'#Y'Wf(;RnRi[u4w&RgJJvG'!6Vyh=<r#ijuuv/sIKuYD'ZtG@3p9~Gr&d2#`(g<vtRgFj`u5w&rqpxRf2CJuY!+:wfnTOu!5Rg}jNs1ucv&RfwJvA!&3@q|BDcC#T,k/unq8w8Q5RkTklwQuzunq8w8Q5Rk9dga#!a'!a=#a0!:+Tb*b@aO.a4!aba8aFJv^}?!VyR~Dr<g;u%Rn.~<5p[x'e`wNZtR@3p]Pw:5pZhNvjBp.woe_g5u-r4JwF!%DtO3:ooc7&!#:p^3DtpLuGw(!+%)Dtk6Vz#2sd=<r8d'#Y([y#<x3gJt`w@!)%}MRiowzikRij=]ilxAf3,U(#B2Rf#g0v-Rm[ck{`U#]giKv3>)!&6Ri154s,KuGB_%@r68r:dJ|t`#X(9<E|u2@H|rx3gJu?w'!+'1Nu7Reg4=H~+9<wxgY95Rm]xLggZ-`(X}U2:Ri4h<uOawRmsJv__5@bb{jbV~3dka#a'a]!,#a+U=a>b6a3b%!/aKa/)!arwve^VyJ;:pR~DpTg3uJpS~<5pOPw;5qmPw:5pNOu!5pQJvG'!6Vyx=<qoJvA!{~Jup!%@qk7Rn/KvyD!}''[xz;>wkh'?Rh,x8gyt`w5D!&),(SgyccRgztJ@3pPB5p#d'(Y#<]mmifubw&RgoJvE&!82s^JvF&!8Rf,ADb]~;x=h'rNu]vK!,%'*0RnORh)4Rh*AqQg-vaRnNg;wHwkh'ba~4cE#Ta*x3gctyw@'!+%RnFRnD<4Rn@hFvK5RnCxWg[#`&a0Ua()`1Rm75Rg[c]%X#qi8Rg^NvdRj>BwzgZauwji7Rm6A4wgg]d1#&(*,.0a#Rm;Rm<Rm=Rm>Rm?Rm@RmARmBe%#^^^Xaea?aC/b+(,!a+a#!a/!>a&Ta<aKbD!2wphBRnk[yPw}hE|.=Br-3Dtm>6Vy~g6urRf.x,hPrNav!%'RnqRo%Ro#Nu;q[Pw;5r+JwNZtM@3r)d'#Y'Weh;xChL#`&RnmRnoKu}>%(!Rne~Bs-;2wjcussJv+'!aYSO}6@B<5?ba~8LrNvj!.%*ROwungw~ng~:9;Ri^>wtnig;wHRnixDh@|(UZ.x1h@|)!#:2<H|*xHn]#-UX'3Ro)z=iT}6ARns=Bwsn_wpnaRncw]aR(#UXa&Ua*a/=]iPd'#Y&Ro'WnXf{QRm2hNvj]nZd`'T~&1`{|`#9b]{}c:'!#Wl{>@=be}]?cl{{U#:5Abb}Jds#^YaF!a*b4a#a3aPa>&Tb!bH!*a_!Eau?/a&RjY<]gj>6Vz*;:pe~DrZg,QRj1JwNZtX@wihspcJvZ&!VyX9WmOJu|!|N2WmHJvh&!]ht~Bpbcn&T(!#RmQ<s7Nu;padH#X'`+WmJ@>RmKCARhnKup=!)&Wf+:RhqNuPpf9c!#'45pd5AwghpARn(Ls@w!%,)!RmP@Wfe<E|IJva!&WmNg8vsRmLd`*.`#Y'Xa!axRn*]hrA8Rhug5s@rXg8u!RmMd8#X'X*3@rV72smdI*#UY&RmICARho~GsgxVgd)Ta'U-Y&Xa!T#RnEWnA@Wffg1uDRi0hFvK5RnBxGnG&#`%owp)@wsf+bX}Ze-*1!a*^^^Ua|!#a.aq&Ya2!a>.a6!a:aO`aJDtL[y`@Wg#>6Vz12@wzoYRoZNuPRi!NuPRhzg=ucRi,@=b`{Yg=ucRi-ACJvB!&Sh[ebSh]ebi`wUuFRm4Jw2_[y0JvB!.<Ju(!&SoG}6Shd}6<Ju(!&SoH}6She}6Kur@._g5vHRieJvx!{L2G{Kx6gd'T#?Rh82Wi5cZ#X(g1w)Rm5dW-Y(Ta#!a)!#aYa=wnfE=su2>>bU{0j9udv:<svj8uQv-7RgHdE%#^'sq9sp=>Bb_{TJv`!&g/r|snj6v(us5d,#Y(56H}[978H}]Jw5!&g1rushJvB!+j;v{u5?zDhd}6}bj;v{u5?zDhe}6}ce*#`(^^^a[aea!=!a6a*aoXb1a.!aAbL!b>,b'aL!aV@Wf|2Wlg3[y/JwNZt^@3piPw:5pgJunZou3@rsJva&!Vy_g<v~Rm#JvG'!6Vz0=<r{Ju{%!:pj@WfsiXuJu3Rm:JvZ&!WfA~Bph@c4Z&Dtwax5rubx(#:awRk1@d,#Y&RfjRfid1#,Y(@Wfp2Wlrg5s@ryKu[@!,'=]ig9wlk?Rk>g5u-rqJvy'!@9RkQcH(T#=>Ri~@<wkj(Wj(KuZB*!&<7rw@9RkRcH(T#=>Ri}@<wkj)Wj)dg(Ta2Xa9X#`-!a*CARhg@@=I}d9x;c~#X%so=<sj>2@@=aybb}XjWv0Q~EfEj3vLv;<d,#Y(56H}`978H}_dgaPaFa'a/!#a3Y0a_a;a|!1(a7-[yE3[xt;:pJNvZrrg3uJrvJwNZt=@3pIh=rt3rxPw:5pGOu!5rpJvG'!6Vys=<rz@c4Z&Dt(ax5rtJvZ!&~BpH@wsfNg-vaRlNci*U#=<wei<F}a5@Jq.!a*JQ!%@qZ23d(#Y&RjH5]jCk!u7w&u0udARjFd/prq=tyvpaEa(a:.!a1aZ(@@=I}:9wpd%=<sX55w_h}@@=I{t=ay<aU@@=I}T=ay<2@@=I})?C9:9au@9Cb]}DP~=x-fAZ(2Wl1=ay<aU@@=I}>5@d##Y+jTv|vV~EfFj]uNpn~FRfGdgaK!Z2&!a8a-Tb({E!acTbM*!a(DtY[yYd'%Y#sl[y*hHvh>Re5x2c{Z}.j4uCvcawRiMd+#X+_x&d!},<5RkX;2Hzw@x,gavfB-!{CcF&T#Roe;RodwWbBg5urRgaKvHC*_6Vz+<4opieuew&Rmq@d]&Y)X,T#X0Rh}<BqP=4qS9:ReMg/ujReNJw0!/<Jui%!bd{kawwnemRelAxUa?a3#*.&UX(Ya+a/RhvRnQ<o}9Wmtd-#Y&RgSRmw9;Rmxay=Rmyg-vaRmuxEhSrNu,v-voC!%(aR.a(a7+1Ro1>Ro5CE{A9b]{@;5x#eO{:g;urRi+KrNA!%(Ro3>Ro79;Ri_Ku@>{;&!x%gX|{KunA_+g5QRj/g3u5Rj#g>uERj%wio/xRhS&!,!#^1U}wba{8>>@=be}qC@:D5ba{7Ku+A&!}x?ba}t>>@=be}se(aA^^^Uat!b0#{pa+awUazbGa#aLb9bgaWac'a5TbS=Br!d1#`%scp_Jvl!#rT>Re0JvX&!VyN=H{Fcm#U&:pY=ReaJv2&!]h0=]nUJvG'!6Vy|=<r%JrM_=]h2@Wlud'#)U'Wf'b]{i=]h/Jvh!&~BpWg=v]RnMx+ny#'Nu;pVwjnu=]nwxJnx,T#`&Reqwjnt=]nvieu9vrRjLLuYwP(#+!th@wih5pX~Gr'g5v/Rh4KunA'!-CARnP@wwiN:Rm_9x'cvw>!|l=<saKvAA!0&3@q}>w^e1bp#&Re2Re3BDx7gH#T|f5H|eKuZ>!%(:qNAH{]Jv6!+3B2B9=b^{X<5<B92:E{ZLvhwA(a;a%!igQuyRmad+#Y}m@3Rh5d8#X'X*:AqUAHzmaxwbh<aXRnVcF}RT#Nw&cj#U(BWnug/vsRntdka)(a3+.Zb7aYYan1!bVa@Xa}[y^@b[{G=H{+hFu73Rj&Pv#5ReQcK%T#sig1v{Rj'Ku+D#'!t]~Grm~?rkKuMB!01d5#`'Vy.ta3Dtu~Hroc8#'{^45s85AwZbP&!#Rn!wghxWn#KvEA!)&2RlA2RlBx:h|#(T,=]j09Wobz>x]z/@awRoTd+#Y(az]hFhCrm4d,#Y+jTv|Q~EfMj]uNr|~FRfOdCa!Xa9_X#@<plJvf!%b`{(9;Rgwc;.!#2x7cw#T|UDb]|T5Ju={(!=@E{&Jv)&!Ab`{'awJvf!~*>>@=be{#KuY>!+&4Ezyi[ugv&RjIdea+T)#UXa&T-T&a!Rh9auRmW=]kLg5vuRn+g3u4Rn-Ow6ARn,hHus5xNk?#UX(U~)/g8v0RkD~AwkkF?Ri.OuNBwkkA?Ri/d|a2`a*^UYa.!aBTZaTa'Xa;!(!2!-a#b2[yC>6Vyq3[xr2Wi?g1rusVh%s?DtF~<5rbJs;%!DtBfswKtCj[uvuSsEu3RgVx3o:u+wN'*Zt;@3rd~Grh~?rfg8w)Lq)qE&-a%!>bI|`jWv0vV~EfCjTv|vV~Ef@j]uNpn~FRfBcK#T']gWNu7x,k7q4ai(0!hHv8<RhmkMu9vrsBuev/RhlCJvB!,g<v{wchh~@:Rhji[vrv{wchi~@:RhkdS&a5UY#Ta!RgPwwiI5BwciI~@:Rh`x'iJvj'!5]iJPu8Bwch]~@:Rhach)U#h3rp]gLh@t|Ax,hTq3ah!-(~@:Ro0Ou!5RhXj^v(pyw8unRhVd|)`,^UYas!a?/a2Z'a^Ta{Tb7Ta(a#!a,Wf&9sZ3DtAadamov=Bqt3[xig8vsRm~>waiL2b`{QJv*_Ouv2qgj<v]v2BqfdR'X*X#Y-@3qr~Gqv~?p6hHv-]glPup5Lq+q?_%*b_{qF{n9b^{rOu4ARhpKvCD!+&~Bqp:5Dbb}nwoiKl&unuTuBv]v+ueunaXRf0=Jvh!0nKufu8v1w&w7q%w&uHrz:Rgnj5w,uxDJq/(!hNw'5ReCk0s2u3w/w'5ReFd>Za&!*UaA=<wkgsRnSJv^!%Refifw3vyRgOKu_B'!,<]gkiiu:w&Rh<=C@a^<B57@2F{[<B5@aW:=3away9A5aW=<B=C@a^<B57@2F{Ie-#`(^^^bCara.b8aza6!/bZ,!adTbnTbOb+aFaS!aAT9@Wf~2Wli3Dtl2@d,#Y&RfnRfmJwJZtN~GqyJva&!VyMg<v~Rm%iXuJu3Rm9Jv[_=]ih9wlkDRkCd1#`(@Wg>2Wls3cH#T(@<Rj*=>Ri|b~'#23s9h<~El.d'#Y&Dtxi^rzvdRl#d*#U%(o|B2s`hJwSaxRmDKv4B&!1:Rmdd5#`'Vx}to~Hq{x'f1v3(!BA5ba|bJv_&!Wfug1v]ReIdO+U/Y#&G}-8wze=Rh{g1v]ReHg/uQRf/by#)ibQwERl/cH#T(@<Rj+=>Ri{cNu+vlax-!(#a0qa9<Rii2;;bU{H;x<i=&X#Rk`<4wwi=C9H~8xAI(Y#<azRi@45wXI<B9;5bb~7dL(X#Xa(+!aL6Vy{g5QqOau:5au2@ay547EzbxOcU(UX-T#Ta#:Cbb|A?wjh/b_|SOw6ARgtihr}u7Rhy<d1#T)X1@@=I|~=ay<2@@=aybb}Sj3vLv;<d,#Y(56H}A978H}@dGpvs@uAu`vcw9*!aFa+ai%(b!aXa8.a?a[ozWey=sU2@G}Nch&U#Rf_WexKu+D#'!t:~Gr`~?r^j]uNr|~FRg*j^psurwJt|RmcKv)@&!)7Rkv~Br[@wxfO:Rl3co#U'6Rezj_q#vIuavjRltwzeyh@vr5JqD0!>aY?C9:9au@9Cb]}9cl#U*5;5<H||jbuus1ucv&Rfvg1v~d/pppzqFr^a--a~!aMat1(hFv;Wiz@@=Izoj5uuv-7Rix~Cw`fk2WlVcZ#X,k)u3vWs@u2]ktg;wEx'fBq(_2Wg/jTv|vV~EfoJv]!15x'hzqG!(P~EfU~CRl_j6v(us5x4i-#T(2WmZ?C2F|d>Kq<aj1!*jTqIsBv=Wl`~Cw`fi2WlWj`v0u*~>RlR=c>Z,k#u3vWs@u2]kr<c1Z+jTqIsBv=Wla~Cw`fm2WlXdmb3!a{(arZa`bkTa%TbQTa-a9+c'!aM!/[yL=Bqug.w'RifhFvyDRj.g>vgwyk^9]k^Jv3_@WfbAARkhJw2_[x|JvB_wkoIRoKwkoJRoLd'(Y#<]gm=<9<H|yd'%_X#skDtb3awwqkgNulRkgdB#^',9:p'hJwSaxRmEBwVb8@4=H|qLu+w50&!)@3qs~?pU>Awwn;;Rn=c:Z'ARn<=<qwKvC@!/&~BqqJv6!&]eVb^z^xRge'/a%+^`#Sge}6<4Rn3=]n0Pw2>Rn8Jw0!&>Rn:>Rn6cY#a7+!a&=<wkaNw~h3z_c5Z{=wjh#=]nLKv^D!&)Vyz=bW|swYb<WetcG#T(2wxa@qVx@gD#Y&b^|V5JwG&!5bb|pg/w&RgD@x=kHs=uAvn!a%%/'+RmSRh694Ro`g-vaRmRhHv-]mlxCcS#`&ba~.5cD#Ta)P~=d,#Y(56H{>978H{Dd_#{2^Y%_+qbbb{6g3sERhsbU{?dfa.,`a(Xa<!aiX#(55RiG54RiHcI#T'WiU3RiVNvdwtfcRlKNvdd,#Y&RlHRlExQgf.1*^T'X#Sgf}6Wn4=]hfPrk>Rn7Jw0!&>Rn5>Rn9Lunw?&a2!,5<oq@@wqfdRlJj5Q~=d,#Y(~ARfcOuN]fdDKw;ay(}i!547E}j?cI#T(@5bV}iCbV}hdv(^^Tb?a40,b##Tbo!a*bR!a<b|a/!aKai!aU[yK=]o^g:v>ReGJwPZtK<7Rh+h<~El,Pv#5ReR@awwxjCg,ulRjDJv6&!]j!z?aQeeg>w=Sh<eeJw;!&axEzOg,Qosc!#*:wkeJ]eJ>x'h-u(!%Ro.w~h.zPdNZ(X,Ya![x{;9ReY;wkgxRiF:x?ap#Y&RmUg<s2Rkod]+UY0TZ'!a&A9sw<=bczLNvuw{gqzNhJwSaxRmCKuLay!#&s_Rf-55b^{uJvZa!!c%#(55Ri654wmiu5RiuawLu,vp!+}^%b_}Y9;wkgxba}o>A9:=b^}zKuh=a''!3awRk3c*'!#aHRk6c+Z&Rk5Rk4Jv)&!awRjSawd9*`#0?C2@EzMj8u<uJ5RmbjQrquJu3x,k>uq@_+=ayb^|W~ARkEOuN]k@7dhzV^X/X&a-#zRzSb`zXcJzTT#2WkVKvDBzW!%FzY9;5bbzWjQrquJu3Jw3%!b`zU=ayb^zQd:#X(T-a!6Vyywxh}=b]{Jg=u1RiAdGp~qHtzv!w(wA+a+a;<!aJaYai'anasb(=azRmV:Cbb{MLq2vb!%')RjuRjrRjtRjqx3jnqCw3!%')Rk(Rk+Rk&Rk)Lq2vb!%')Rj{RjxRjzRjwLq2vb!%')RjsRjpRjfRjex3jcqCw3!%')Rk'Rk*RjkRjl9<CbbzfOu4ARhxLq2vb!%')RjyRjvRjhRjgx=joq*uKvb!%')+-Rk.Rk%Rj~Rk-Rk#Rj}x=jdq*uKvb!%')+-Rk,Rk!Rj|RjmRjjRjidAq&qKs@uAv8Aa.'*-a@a&0!aM@a5[y73Dsy3Ds|3Dt):wxgI2sHJwJZt.~Gqxwsf0ikrzt}Rl0Jvy_[xj~HqzKv_A|D!&WfP8axRoVcf,U#k(v]v+ueunaXRf1Ju}'!g8u#Ri=jQw!sCunLprq>!,')~<5qeGzq9F{W=c##%s5au:5aU3CBE|;d4#X(D!a&6Vygx(b;#(=]ed?C2F{N<capoq2r[a&!aPa9,'Pw;5s:@@=I|,55w_h|@@=IzcP~=x'fCqB_2Wl2>aU@@=I|1OuNBc1Z+jTqIsBv=Wlc~Cw`fl2WlZ~AcTa%!Z+jTqIsBv=Wlb~Cw`fh2WlYk+uNqJsBv=WlSg,u3dca3#UXaMYa)TaB-=cM|7T#<bI}l5@B932:aV2G{BOuNBJq:|M!5Ezt=<B=C@a^<B57@2F{v>cB{/T#=ay<bI{3Jv6!a.6BKq0ah&+!5E}HP~Ef{978BaU@@=Iza<7d#.Y#978BaU@@=IzH~AJq0!(@@=IzG978BaU@@=IzFe,aU*Y&^^^bvJb,b:bFad!a,c2Ta>aL.bo6!a#CbTa'T#Re{2Wlh2@G{yg6t~Ro_NvdRfticuRQRllJv3&!x&c|zs@Jw3!%RflwpfkRlpKuL;%(!Re<@G|C2GzdhIvuBwgjAg-u0RjAKQB%!(GzZ@G|5NuuRl7d='T+Y#Vy[g<v~Rm!==G|>JvA!)@wma=]m1ifuaw&RmnLs@vT'!|/+[y,g:v>ReTJw1!#qX=x!eC{bLu+wT&)ZtZauq_~Graci&U#F|89:r_Lupvq!.)&2RlG8RfaC=x!eF{_h?rpWlmd&'!#X|&]k::xJey#`'T|+<E|&2@H|%dE#(^,g;u.RiEg6vjRiC9xCkA{O|zY#g=ucRmXKs0@!&*@G|m@awRknJuh!,3d(}gY}eJvj!%Rm):Jw3!%Rm+Rm-Ls0w(&!a(a#@b[|6cZ#X'7RkxWgAOu4ARn'dH'U#Y*Vz-Wm'CARm}d]*#a%^a*T'aK!a<9bV{PC=p*Jw4!&SgxcbB5r]idw(wBRmF7xFkt#&`(Rm/Rm8E|!JuY_9:Rl5=wrgr2:bbxd@xXfB(a*#T+!.X0X1Ta/a'T&RlDRfL>RlyARl9b[z[>RfZ:RlL:RfRwlg/ARl;9;RlxKv,A/!%7s69<74=BA5ba{-8Bde#`a<XaKYa1,a'P~=wxfB2bZ}}?C972@@=I}r8@55B9;5bb}G978B2@@=aybb}3j3vLv;<Jw3&!>Rfk=ayb^}4~Ad1#`*@@=aybb{w2@>==<bbz]dx+UY#^UaF!a9!bB'Ya1.!ajXa#%olRhD[y=3Dt#Ov5BrHKuMB%!(Rf^Wep~HrJwkiQjKr|~FRg)Ku+D#'!t5~GrF~?rDdV)UY,Z/_7RkuG{<~BrBg,rlsO:235B@bX}|d?a1!#`(6Vyn5@d##Y+jTv|vV~EfIj]uNpn~FRfH7Lq2vb1!a9-978BaU@@=Iz9978BbU}#~AJq0!(@@=Iz8978BaU@@=Iz7~AJQ|}!978BbU}!JvkaK!AdUa21-U#`a+(g/vsRn~Ou!5RPj:rmu9WhOjXuvvNr}:RhAj^v(pyw8unRn[kPr}p|u7vwv]RiSBd;pppzq@qHQa?(b.!a.a`@.|xa(hFv;Wiyj5uuv-7Riw~Cw`fg2WlU978BbU|wOuNBJqG!(P~EfD~CRlQcZ#X,k)u3vWs@u2]ksg;wEx'f@q1_2Wg.j]uNpn~FRfqJv]!15x'h{qG!(@@=IzK~CRl^j6v(us5x4i,#T(2WmY?C2F{1>Kq<aj1!*jTqIsBv=Wld~Cw`fj2Wl[j`v0u*~>RlT=c>Z,k#u3vWs@u2]kq<c1Z+jTqIsBv=Wle~Cw`fn2Wl]dn1#c(a(b^a2!b/bAT(bj!aDa7bu,a_a{c0!2T0g:v>ReD2@G{42@G{5~DpM~<5rc=Bx6i>{RT#RnI@zCx]y]z:2Jv[!zr5Awyk]9]k]dD(Y+X#6Vz.g=wKtgwhaCwgmTWj2Lu,w%_+/[y-B;b^xeg3u3Rj-2@bX{*KrJ<!+'@Wg(g?QRlC@Jv`!%b[zIwsfII}8JQ_@w|kW|=Jv(%!AqcOuNBJvEzh!bYzjLs@wP#(0!oy@>RkdJwMZtc3Dtd@BcG#T'9bWxg2@2Fznd*#Y+;2x'c}w<zizixNgwa#Z'U+!/!a'!a+w~g~z6wcn{Rn}wcnzRn|5Rh%=]nJg5vuRmvNvdRlvcprJu}w*az*a#!%.a.'Bot9qT]kj@Wg'ay2Gzv@Jv`!%b[zEwsfHI}1;ck#Ux`<Cbbx_Lu+w!a&0*!wko*wwo,So,}6Juqxf!E}PigQuyRm`d3(`#8>Rn%:A5B;bZ~%KvhCa!a2!x>k7#Uxb@b{#xaRk7Jw0!)>wwhlShl}6>wwhmShm}6CJvB!.x'hhvj{!!5Bwkhhbaz}x'hivjz~!5Bwkhibaz|xEhTrNu,v-vpD!a%&/)a3a.,%Ro2t[CE{)@3re9b]{%wjo09:rgc:Z&Ro6=<riifuaw&RmoKrNA!%(Ro4>Ro89;Ri`dSaL'UYzxZb)7Rka3xRhT&!,!#^1U}vbaz{>>@=be}yC@:D5bazzKu+A&!}{?ba}y>>@=be}wxBh[t`u~vJvr!%a!a()a,a0a4RoC=]o;Ju(!%RoGRhdwjh`=]oAg>w#Ro?g5vuRo=NvdRl|Ku]C.!&;RoEJvB!%RoORoMBx'h[v+_?w~h`}~5?w~hd~!xKh]oiptu-utv.vp!#%&a30a@a'a+(a/aOp(o~p!RoDJu(!%RoHRhewjha=]oBNvdRl}g>w#Ro@g5vuRo>c[#X']o<CauRoRAd-#Y':RkpauRoQKu]C.!&;RoFJvB!%RoNRoPBx'h]v+_?w~ha}t5?w~he}ue!/UbhYacXaW^Tc&a;b:a-c/#b&aja1(!cL+!bKbt!bmcRc9aIc?8[yW3Dtt94Rg`Jv}!&SiRMzBhEebShEMNuPRe>x7gL#TzuwjirRipc<Z&>on;>z=h-MSh.Mwqczx'a7vj&!>Re4@=ResJt__NuPRi*NuPRi)j]uNr|~FRfzKrJ>_+@Wfy@Wf]2WocKrJ<!+'@Wg%g/QRl@@Jv`!&awRl<wsfFIzgLu(w*!.*&ShBMwvhIRhI9;RhNx1hK'!#Sn]Mx1hK~0!#:2<H~7cNu+w7D*'1ZtW>Rn1~?rOc:Z&Rn2=<rQ<7wjh&=BSnLMc]#X(6Vz)w[b=a!U#9wzgMc3#&(RgMRitRis<x,gKt`ax!&+SioM=BSilMc3#&(RgKRinRimKurB,!&SiQMzBhDebShDM6BJQ!(P~Efx978B2@@=I}WLrJw!!,a*&@G}O@9wkibRid@@x'fKwC!&SlDMSfLMjUv~Q~EfKKv3@a+!(hFv-]mpx/hYZ(C5RiWz<o/MwkhY?So/M@x,gbvfB*&!SgEM:SoeeehFu3:Rgbda(,^TZa)X/7Sg[eb:2RgI~BrMC@wgkc:wwkcRerx3h(uUvK!&*,SnOM4Sh*MArRg;wHRh(x=h;rJvPwI!a4',a'0@Wg&=BSh/Mg>w=Rh=g3w*wwgGRgGcW(X#;Sg}M2Gzk@Jv`!&awRl=wsfGIz`dKZ*T'Y-:RhR7RhQg5u-p`j6v(us5d,#Y+~Awkia?RicOuNBwkibba}Ld6p~tyu_vbAa'a+!a/'a3aEa8a!>Sh,ebJv{!&Sh@ebSaReb9;SgwebNuPRi(NvdRl)NuPRi'hHu^<Rm^Jvv_@Wl(g;u1Si/ebKu'B&!*Sh?eb@Wl'z@aPeb95Si.ebcpputyvjB)!,&a+0a%ShAMWeK@G}C@WfJ9;RhMwvhH9w{ia}ix,hJvRA1(!zAn[MRhHx1hJ~*!#hFv(BSn[MBJQ!(@@=I~'978B2@@=I}2db.Ua<'X}+T#a0XaG2G}E;wkg|wuh!Rh!x,hZu,@)!&So0MVy)C5RiXACJvB!&5RiY5RiZg8w)cG}*T#2@bU}=KsA>(!a.3wkhZba~(x,h^u(A!&(SoCMRhb5Bz=h[eb?w~hb~6x,h_u(A!&(SoDMRhc5Bz=h]eb?w~hc~6e)aA1T#T,^^^c-bMb&blcPaP(a/!0!bA=b5c@a(!bfbrc#2afwmhARnjwchORnp2Wlf3DtsNvdRl-2@wpa<]m0bx(#:awRk2@Jw3!%RfhwpfgRlnKQB%!(G{V@G|'NuuRl6d='T+Y#VyUg<v~Rl~==G|<Jv+'!aYShC}6@B<5?ba~8@Jw3'!g2QRljhLrpWlOd+#Y'g.w'rIg>w*wgj@g-u0Rj@Lu+wT&)ZtUauq]~GrGci&U#F|39:rELrNvj!.%*RhCwunfw~nf~:9;Ri]>wtnhg;wHRnhx3hDs@v~!/+'@Wfr@9RkSNu&Rlo=@<5GzoKs0@_+@Wl+@awRkmJuh!-3d(}pY#qWJvj!%Rm(:Jw3!%Rm,Rm*de&!1U-U#`)Re;@G|.@9Ri82@wjfvRlq=@<5GzpLvOvr!).&2RlF8Rf`C=x!eE{.Jw3_g2QRlkhLrpWlPde(!#U{s,UXa*Ta'[y'g:v>ReS;x0PZ&RnlRnn~HrKJw1}f!=x!eB|2w]aP(#Xa&a*Ta.Ua2a7=]iOd'#Y&Ro&WnWg;u.RiDg6vjRiBNvdRlzhNvj]nYJuW_2Wm3x)kFze{9d])!a.!,Y01!#&aC!a3RndC=ox~BrC@2b^{pg,rlse7x'ksuq!%Rm.E{xidw(wBRmGx9o+)X#wwo-So-}69:Rl4@xSf@a#XZ'X)X,Ta(/ARl8b[xc>RfY:RlI:RfQwlg.ARl:9;Rlwdn'#^XafaQa1X1TaHTa)@b[{zcZ#X'7RkwWg@Ou4ARn&x)kG#{,g7u/RkGdH'U#Y*Vz'Wm&CARm|bx#(A]gUbUzJj9Q~=d,#Y(56H}l978H{U7d,0#U*2>ABb_xZ978BbU{e~AJQ{g!978BbU{hxMh?ad{oUYZ.x1h?{l!#:2<H{mx3n[t{vl!,&a%3Ro(z=iS}6ARnr=Bwsn^wvn`Rnbd`*T}B0!#^X'BG{c9b]{a>>@=be}F?JvS!&BG{d7BG}(Bde#`a1X,Ya@!a'P~=wxf@2bZ}I56B2@@=aybb}08@55B9;5bb}<j3vLv;<Jw3&!>Rfg=ayb^}&OuNBKuLA!)a!P~=x#fD{f2@>==<bbzl?C972@@=Ix^d6rSu,v7w*C(0a)a6#B+a%!sQ[y?3Dt%3[xn~<5rLOu!5p@Ku+D#'!t7~GrP~?rNKvlaya7'!h+v-5qMg=t|cd,U#5AAaa5Abb{S@52B5@a[@52B5Gx[iXueu;d<#`a(!/549C;ag>23ExY5@Dah89b^~689Jv)!~2b[~1Lv'w(%*!a#bX|aPrmawRe]keu7uhv-q6rxu,q`xTo]/a5aU!bNaDXbi!b-!ao!b<bwA!#5@B932:aV2G|:d-)Y#hJrL>RhG<7@C5<H|_=Cau:5aj5@B932:bJ|ng>vIbs)#?C2F|9jPv0w.vISh-MKvUaz(.!9ABbb|[5;5<H|Eg>unwfh;9:4E|YjQsBt|vjx'hYq3!(?C2F|J:2<BaY?C2F|GOu!5x,g|p{ah!-(?C2F|c9:4E|OjXuvvNr}:Rh&i[w*t|cd+U#jJvsu)vsSn~Mkfrmu9p}u7vwv]So!McW#Xa!ax5@A5aY:5;5<H|>kJv~vYrquJu3x4ib#T)2@SmZM?C2F|Bj:rmu9@xPhI(a*a#U#`a3-5Abb|L~@:RhK9:4E|0@52B5G|#C::aY?C2F|-:2<BaY?C2F|.5Jvk!a)javYrquJu3x4ia#T)2@SmYM?C2F|HAxPhH(!a#U#`a*-5Abb|4~@:RhJ9:4E|R@52B5G|F:2<BaY?C2F|Sc^#Xa2j=Qq5CJvB!-g<v{z;hhM?C2F|Zi[vrv{z;hiM?C2F|XKsA>!a)-g<v{z;h[eb?C2F|]i[vrv{z;h]eb?C2F|^iZu.vix,hZq3ah!.(?C2F|QOu!5ShXM:2<BaY?C2F|P", 13494, 2713, 49, 25, 61);
-
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/generated/decode-data-xml.js
-var xmlDecodeTree = /* @__PURE__ */ new Uint16Array([
-  512,
-  26465,
-  29036,
-  7,
-  0,
-  2,
-  4,
-  116,
-  24638,
-  116,
-  24636,
-  8693,
-  29807,
-  24610,
-  621,
-  1,
-  0,
-  0,
-  3,
-  112,
-  24614,
-  111,
-  115,
-  24615
-]);
-
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/internal/bin-trie-flags.js
-var BinTrieFlags;
-(function(BinTrieFlags2) {
-  BinTrieFlags2[BinTrieFlags2["VALUE_LENGTH"] = 49152] = "VALUE_LENGTH";
-  BinTrieFlags2[BinTrieFlags2["FLAG13"] = 8192] = "FLAG13";
-  BinTrieFlags2[BinTrieFlags2["BRANCH_LENGTH"] = 8064] = "BRANCH_LENGTH";
-  BinTrieFlags2[BinTrieFlags2["JUMP_TABLE"] = 127] = "JUMP_TABLE";
-  BinTrieFlags2[BinTrieFlags2["VALUE_MASK"] = 8191] = "VALUE_MASK";
-})(BinTrieFlags || (BinTrieFlags = {}));
-
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/decode.js
-var CharCodes;
-(function(CharCodes2) {
-  CharCodes2[CharCodes2["AMP"] = 38] = "AMP";
-  CharCodes2[CharCodes2["NUM"] = 35] = "NUM";
-  CharCodes2[CharCodes2["SEMI"] = 59] = "SEMI";
-  CharCodes2[CharCodes2["EQUALS"] = 61] = "EQUALS";
-  CharCodes2[CharCodes2["ZERO"] = 48] = "ZERO";
-  CharCodes2[CharCodes2["NINE"] = 57] = "NINE";
-  CharCodes2[CharCodes2["LOWER_A"] = 97] = "LOWER_A";
-  CharCodes2[CharCodes2["LOWER_X"] = 120] = "LOWER_X";
-})(CharCodes || (CharCodes = {}));
+// ../../node_modules/.pnpm/entities@9.0.0/node_modules/entities/dist/decode.js
+var CHAR_NUM = 35;
+var CHAR_SEMI = 59;
+var CHAR_EQUALS = 61;
+var CHAR_ZERO = 48;
+var CHAR_LOWER_A = 97;
+var CHAR_LOWER_X = 120;
+var CHAR_UPPER_A = 65;
 var TO_LOWER_BIT = 32;
 function isNumber(code) {
-  return code - CharCodes.ZERO >>> 0 <= 9;
+  return code - CHAR_ZERO >>> 0 <= 9;
 }
-function isHexadecimalCharacter(code) {
-  return (code | TO_LOWER_BIT) - CharCodes.LOWER_A >>> 0 <= 5;
-}
-function isAlpha(code) {
-  return (code | TO_LOWER_BIT) - CharCodes.LOWER_A >>> 0 <= 25;
+function isAlphaNumeric(code) {
+  return isNumber(code) || (code | TO_LOWER_BIT) - CHAR_LOWER_A >>> 0 <= 25;
 }
 function isEntityInAttributeInvalidEnd(code) {
-  return code === CharCodes.EQUALS || isAlpha(code) || isNumber(code);
+  return code === CHAR_EQUALS || isAlphaNumeric(code);
 }
-var EntityDecoderState;
-(function(EntityDecoderState2) {
-  EntityDecoderState2[EntityDecoderState2["EntityStart"] = 0] = "EntityStart";
-  EntityDecoderState2[EntityDecoderState2["NumericStart"] = 1] = "NumericStart";
-  EntityDecoderState2[EntityDecoderState2["NumericDecimal"] = 2] = "NumericDecimal";
-  EntityDecoderState2[EntityDecoderState2["NumericHex"] = 3] = "NumericHex";
-  EntityDecoderState2[EntityDecoderState2["NamedEntity"] = 4] = "NamedEntity";
-})(EntityDecoderState || (EntityDecoderState = {}));
 var DecodingMode;
 (function(DecodingMode2) {
   DecodingMode2[DecodingMode2["Legacy"] = 0] = "Legacy";
   DecodingMode2[DecodingMode2["Strict"] = 1] = "Strict";
   DecodingMode2[DecodingMode2["Attribute"] = 2] = "Attribute";
 })(DecodingMode || (DecodingMode = {}));
-var EntityDecoder = class {
-  decodeTree;
+var htmlDecode = /* @__PURE__ */ initDecodeData(htmlDecodeData);
+var htmlKeys = /* @__PURE__ */ (() => htmlDecode.keys)();
+var htmlBuckets = /* @__PURE__ */ (() => htmlDecode.buckets)();
+var htmlSlotMidOff = /* @__PURE__ */ (() => htmlDecode.slotMidOff)();
+var htmlLengthBits = /* @__PURE__ */ (() => htmlDecode.lengthBits)();
+var htmlMiddles = /* @__PURE__ */ (() => htmlDecode.middles)();
+var htmlSlotValue = /* @__PURE__ */ (() => htmlDecode.slotValue)();
+var htmlValues = /* @__PURE__ */ (() => htmlDecode.values)();
+function findSlotHtml(text, start, length) {
+  const c0 = text.charCodeAt(start);
+  const c12 = text.charCodeAt(start + 1);
+  const c2 = text.charCodeAt(start + length - 2);
+  const c3 = text.charCodeAt(start + length - 1);
+  if ((c0 | c12 | c2 | c3) > 127)
+    return -1;
+  const key = c0 << 25 | c12 << 18 | c2 << 11 | CHAR_REMAP[c3] << 5 | length;
+  let slot = 2 * ((Math.imul(key, BUCKET_HASH_1) >>> 16) * htmlBuckets >>> 16);
+  for (let attempt = 0; ; attempt++) {
+    if (htmlKeys[slot] === key && (length <= 4 || isMidMatchHtml(slot, text, start, length))) {
+      return slot;
+    }
+    if (htmlKeys[slot + 1] === key && (length <= 4 || isMidMatchHtml(slot + 1, text, start, length))) {
+      return slot + 1;
+    }
+    if (attempt === 1)
+      return -1;
+    slot = 2 * ((Math.imul(key, BUCKET_HASH_2) >>> 16) * htmlBuckets >>> 16);
+  }
+}
+function isMidMatchHtml(slot, text, start, length) {
+  let wordIndex = htmlSlotMidOff[slot];
+  let index = start + 2;
+  const end = start + length - 2;
+  while (index + 1 < end) {
+    if ((text.charCodeAt(index) | text.charCodeAt(index + 1) << 16) !== htmlMiddles[wordIndex++])
+      return false;
+    index += 2;
+  }
+  return index === end || text.charCodeAt(index) === (htmlMiddles[wordIndex] & 65535);
+}
+var numericDigits = /* @__PURE__ */ (() => {
+  const digits = new Uint8Array(128).fill(255);
+  for (let digit = 0; digit < 10; digit++) {
+    digits[CHAR_ZERO + digit] = digit;
+  }
+  for (let digit = 0; digit < 6; digit++) {
+    digits[CHAR_UPPER_A + digit] = digit + 10;
+    digits[CHAR_LOWER_A + digit] = digit + 10;
+  }
+  return digits;
+})();
+function findLegacySlot(input, start, maxLength) {
+  let legacy = htmlLengthBits[pairIndex(input.charCodeAt(start), input.charCodeAt(start + 1))] >>> 16 & 31;
+  while (legacy !== 0) {
+    const top = 31 - Math.clz32(legacy);
+    legacy ^= 1 << top;
+    if (top + 2 > maxLength)
+      continue;
+    const slot = findSlotHtml(input, start, top + 2);
+    if (slot >= 0 && (htmlSlotValue[slot] & 2) !== 0) {
+      return slot << 3 | top + 2;
+    }
+  }
+  return -1;
+}
+function findLongClassMatch(input, start, mode) {
+  const length = input.slice(start, start + 32).indexOf(";");
+  if (length - 2 >>> 0 <= 29) {
+    const slot = findSlotHtml(input, start, length);
+    if (slot >= 0)
+      return slot << 6 | length + 1;
+  }
+  if (mode !== DecodingMode.Strict) {
+    const packed = findLegacySlot(input, start, Math.min(31, input.length - start));
+    if (packed >= 0) {
+      const length2 = packed & 7;
+      if (mode !== DecodingMode.Attribute || start + length2 >= input.length || !isEntityInAttributeInvalidEnd(input.charCodeAt(start + length2)))
+        return packed >> 3 << 6 | length2;
+    }
+  }
+  return -1;
+}
+var STATE_ENTITY_START = 0;
+var STATE_NUMERIC_START = 1;
+var STATE_NUMERIC_DECIMAL = 2;
+var STATE_NUMERIC_HEX = 3;
+var STATE_NAMED_ENTITY = 4;
+var EntityDecoderBase = class {
   emitCodePoint;
   errors;
   /** The current state of the decoder. */
-  state = EntityDecoderState.EntityStart;
+  state = STATE_ENTITY_START;
   /** Characters that were consumed while parsing an entity. */
   consumed = 1;
-  /**
-   * The result of the entity.
-   *
-   * For named entities: the trie index of the best legacy match so far
-   * (0 = none). For numeric entities: the accumulated code point.
-   */
+  /** Accumulated numeric code point, or a packed partial XML name. */
   result = 0;
-  /** The current index in the decode tree. */
-  treeIndex = 0;
-  /**
-   * Characters consumed since the last recorded legacy match, plus one.
-   * Invariant at the top of the `stateNamedEntity` loop: `excess` equals
-   * the number of unrecorded consumed characters + 1.
-   */
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: False positive (read via destructuring)
-  excess = 1;
   /** The mode in which the decoder is operating. */
   decodeMode = DecodingMode.Strict;
-  /** The number of characters that have been consumed in the current run. */
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: False positive
-  runConsumed = 0;
-  constructor(decodeTree, emitCodePoint, errors) {
-    this.decodeTree = decodeTree;
+  /** Replacement rules for numeric character references. */
+  replaceNumericCodePoint = replaceCodePoint;
+  constructor(emitCodePoint, errors) {
     this.emitCodePoint = emitCodePoint;
     this.errors = errors;
-  }
-  /**
-   * Resets the instance to make it reusable.
-   * @param decodeMode Entity decoding mode to use.
-   */
-  startEntity(decodeMode) {
-    this.decodeMode = decodeMode;
-    this.state = EntityDecoderState.EntityStart;
-    this.result = 0;
-    this.treeIndex = 0;
-    this.excess = 1;
-    this.consumed = 1;
-    this.runConsumed = 0;
-  }
-  /**
-   * Write an entity to the decoder. This can be called multiple times with partial entities.
-   * If the entity is incomplete, the decoder will return -1.
-   *
-   * Mirrors the non-streaming `decodeWithTrie`, but with the ability to stop decoding if the
-   * entity is incomplete, and resume when the next string is written.
-   * @param input The string containing the entity (or a continuation of the entity).
-   * @param offset The offset at which the entity begins. Should be 0 if this is not the first call.
-   * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
-   */
-  write(input, offset) {
-    switch (this.state) {
-      case EntityDecoderState.EntityStart: {
-        if (input.charCodeAt(offset) === CharCodes.NUM) {
-          this.state = EntityDecoderState.NumericStart;
-          this.consumed += 1;
-          return this.stateNumericStart(input, offset + 1);
-        }
-        this.state = EntityDecoderState.NamedEntity;
-        return this.stateNamedEntity(input, offset);
-      }
-      case EntityDecoderState.NumericStart: {
-        return this.stateNumericStart(input, offset);
-      }
-      case EntityDecoderState.NumericDecimal: {
-        return this.stateNumericDecimal(input, offset);
-      }
-      case EntityDecoderState.NumericHex: {
-        return this.stateNumericHex(input, offset);
-      }
-      default: {
-        return this.stateNamedEntity(input, offset);
-      }
-    }
   }
   /**
    * Switches between the numeric decimal and hexadecimal states.
@@ -4587,45 +4561,42 @@ var EntityDecoder = class {
    * @param offset The current offset.
    * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
    */
-  // eslint-disable-next-line unicorn/consistent-class-member-order
   stateNumericStart(input, offset) {
     if (offset >= input.length) {
       return -1;
     }
-    if ((input.charCodeAt(offset) | TO_LOWER_BIT) === CharCodes.LOWER_X) {
-      this.state = EntityDecoderState.NumericHex;
+    if ((input.charCodeAt(offset) | TO_LOWER_BIT) === CHAR_LOWER_X) {
+      this.state = STATE_NUMERIC_HEX;
       this.consumed += 1;
       return this.stateNumericHex(input, offset + 1);
     }
-    this.state = EntityDecoderState.NumericDecimal;
+    this.state = STATE_NUMERIC_DECIMAL;
     return this.stateNumericDecimal(input, offset);
   }
   /**
    * Parses a hexadecimal numeric entity.
    *
-   * Equivalent to the `Hexademical character reference state` in the HTML
-   * spec. Digit parsing matches the hex loop in `parseNumericEntity`.
-   * The accumulated value is preserved for numeric validation callbacks.
+   * Equivalent to the `Hexadecimal character reference state` in the HTML spec.
    * @param input The string containing the entity (or a continuation of the entity).
    * @param offset The current offset.
    * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
    */
   stateNumericHex(input, offset) {
     const inputLength = input.length;
-    let { result: result2 } = this;
-    let { consumed } = this;
-    while (offset < inputLength) {
-      const char = input.charCodeAt(offset);
-      if (isNumber(char) || isHexadecimalCharacter(char)) {
-        const digit = char <= CharCodes.NINE ? char - CharCodes.ZERO : (char | TO_LOWER_BIT) - CharCodes.LOWER_A + 10;
+    let { result: result2, consumed } = this;
+    let index = offset;
+    while (index < inputLength) {
+      const char = input.charCodeAt(index);
+      const digit = numericDigits[char];
+      if (digit <= 15) {
         result2 = result2 * 16 + digit;
-        consumed += 1;
-        offset += 1;
       } else {
         this.result = result2;
         this.consumed = consumed;
         return this.emitNumericEntity(char, 3);
       }
+      consumed += 1;
+      index += 1;
     }
     this.result = result2;
     this.consumed = consumed;
@@ -4634,27 +4605,25 @@ var EntityDecoder = class {
   /**
    * Parses a decimal numeric entity.
    *
-   * Equivalent to the `Decimal character reference state` in the HTML
-   * spec. Digit parsing matches the decimal loop in `parseNumericEntity`.
-   * The accumulated value is preserved for numeric validation callbacks.
+   * Equivalent to the `Decimal character reference state` in the HTML spec.
    * @param input The string containing the entity (or a continuation of the entity).
    * @param offset The current offset.
    * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
    */
   stateNumericDecimal(input, offset) {
     const inputLength = input.length;
-    let { result: result2 } = this;
-    let { consumed } = this;
-    while (offset < inputLength) {
-      const digit = input.charCodeAt(offset) - CharCodes.ZERO;
+    let { result: result2, consumed } = this;
+    let index = offset;
+    while (index < inputLength) {
+      const digit = input.charCodeAt(index) - CHAR_ZERO;
       if (digit >>> 0 > 9) {
         this.result = result2;
         this.consumed = consumed;
-        return this.emitNumericEntity(digit + CharCodes.ZERO, 2);
+        return this.emitNumericEntity(digit + CHAR_ZERO, 2);
       }
       result2 = result2 * 10 + digit;
       consumed += 1;
-      offset += 1;
+      index += 1;
     }
     this.result = result2;
     this.consumed = consumed;
@@ -4663,7 +4632,7 @@ var EntityDecoder = class {
   /**
    * Validate and emit a numeric entity.
    *
-   * Implements the logic from the `Hexademical character reference start
+   * Implements the logic from the `Hexadecimal character reference start
    * state` and `Numeric character reference end state` in the HTML spec.
    * @param lastCp The last code point of the entity. Used to see if the
    *               entity was terminated with a semicolon.
@@ -4677,14 +4646,14 @@ var EntityDecoder = class {
       this.errors?.absenceOfDigitsInNumericCharacterReference(this.consumed);
       return 0;
     }
-    if (lastCp === CharCodes.SEMI) {
+    if (lastCp === CHAR_SEMI) {
       this.consumed += 1;
     } else if (this.decodeMode === DecodingMode.Strict) {
       return 0;
     }
-    this.emitCodePoint((this.decodeTree === xmlDecodeTree ? replaceCodePointXML : replaceCodePoint)(this.result), this.consumed);
+    this.emitCodePoint(this.replaceNumericCodePoint(this.result), this.consumed);
     if (this.errors) {
-      if (lastCp !== CharCodes.SEMI) {
+      if (lastCp !== CHAR_SEMI) {
         this.errors.missingSemicolonAfterCharacterReference();
       }
       this.errors.validateNumericCharacterReference(this.result);
@@ -4692,163 +4661,46 @@ var EntityDecoder = class {
     return this.consumed;
   }
   /**
-   * Flush locally-tracked walk state back to the fields, then emit the
-   * recorded legacy match or reject (cold path — at most once per
-   * entity). Called after failed navigation (leaf node, branch miss, or
-   * compact-run mismatch). In attribute mode, reject if no legacy was
-   * recorded at the current node, if we descended past it, or if the
-   * pending input character is an invalid attribute terminator.
-   * @param consumed Locally-tracked consumed count.
-   * @param excess Locally-tracked excess count.
-   * @param char Pending input character (may be the mismatching char).
-   * @param valueLength Value length at the current trie node.
+   * Resets the instance to make it reusable.
+   * @param decodeMode Entity decoding mode to use.
    */
-  flushAndEmitLegacyOrReject(consumed, excess, char, valueLength2) {
-    this.consumed = consumed;
-    this.excess = excess;
-    return this.result === 0 || this.decodeMode === DecodingMode.Attribute && (valueLength2 === 0 || excess > 1 || isEntityInAttributeInvalidEnd(char)) ? 0 : this.emitNotTerminatedNamedEntity();
+  startEntity(decodeMode) {
+    this.decodeMode = decodeMode;
+    this.state = STATE_ENTITY_START;
+    this.result = 0;
+    this.consumed = 1;
   }
   /**
-   * Parses a named entity.
-   *
-   * Equivalent to the `Named character reference state` in the HTML spec.
+   * Write an entity to the decoder. This can be called multiple times with partial entities.
+   * If the entity is incomplete, the decoder will return -1.
    * @param input The string containing the entity (or a continuation of the entity).
-   * @param offset The current offset.
+   * @param offset The offset at which the entity begins. Should be 0 if this is not the first call.
    * @returns The number of characters that were consumed, or -1 if the entity is incomplete.
    */
-  stateNamedEntity(input, offset) {
-    const { decodeTree } = this;
-    const inputLength = input.length;
-    const isStrict = this.decodeMode === DecodingMode.Strict;
-    let { treeIndex } = this;
-    let { excess } = this;
-    let { consumed } = this;
-    let current = decodeTree[treeIndex];
-    while (offset < inputLength) {
-      while ((current & (BinTrieFlags.VALUE_LENGTH | BinTrieFlags.FLAG13)) === 0 && (current & BinTrieFlags.JUMP_TABLE) !== 0) {
-        const char2 = input.charCodeAt(offset);
-        const jumpOffset = current & BinTrieFlags.JUMP_TABLE;
-        const branchCount = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-        if (branchCount === 0) {
-          if (char2 !== jumpOffset) {
-            return this.flushAndEmitLegacyOrReject(consumed, excess, char2, 0);
-          }
-          treeIndex += 1;
-        } else {
-          const slot = char2 - jumpOffset;
-          if (slot >>> 0 >= branchCount) {
-            return this.flushAndEmitLegacyOrReject(consumed, excess, char2, 0);
-          }
-          const stored = decodeTree[treeIndex + 1 + slot];
-          if (stored === 0) {
-            return this.flushAndEmitLegacyOrReject(consumed, excess, char2, 0);
-          }
-          treeIndex = treeIndex + branchCount + stored & 65535;
+  write(input, offset) {
+    switch (this.state) {
+      case STATE_ENTITY_START: {
+        if (input.charCodeAt(offset) === CHAR_NUM) {
+          this.state = STATE_NUMERIC_START;
+          this.consumed += 1;
+          return this.stateNumericStart(input, offset + 1);
         }
-        current = decodeTree[treeIndex];
-        offset += 1;
-        excess += 1;
-        if (offset >= inputLength)
-          break;
+        this.state = STATE_NAMED_ENTITY;
+        return this.stateNamedEntity(input, offset);
       }
-      if (offset >= inputLength)
-        break;
-      if ((current & (BinTrieFlags.VALUE_LENGTH | BinTrieFlags.FLAG13)) === BinTrieFlags.FLAG13) {
-        const runLength = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-        let { runConsumed } = this;
-        if (runConsumed === 0) {
-          const char2 = input.charCodeAt(offset);
-          if (char2 !== (current & BinTrieFlags.JUMP_TABLE)) {
-            return this.flushAndEmitLegacyOrReject(consumed, excess, char2, 0);
-          }
-          offset += 1;
-          excess += 1;
-          runConsumed = 1;
-        }
-        while (runConsumed < runLength) {
-          if (offset >= inputLength) {
-            this.treeIndex = treeIndex;
-            this.excess = excess;
-            this.consumed = consumed;
-            this.runConsumed = runConsumed;
-            return -1;
-          }
-          const charIndexInPacked = runConsumed - 1;
-          const packedWord = decodeTree[treeIndex + 1 + (charIndexInPacked >> 1)];
-          const expectedChar = packedWord >> ((charIndexInPacked & 1) << 3) & 255;
-          const char2 = input.charCodeAt(offset);
-          if (char2 !== expectedChar) {
-            this.runConsumed = 0;
-            return this.flushAndEmitLegacyOrReject(consumed, excess, char2, 0);
-          }
-          offset += 1;
-          excess += 1;
-          runConsumed += 1;
-        }
-        this.runConsumed = 0;
-        treeIndex += 1 + (runLength >> 1);
-        current = decodeTree[treeIndex];
-        continue;
+      case STATE_NUMERIC_START: {
+        return this.stateNumericStart(input, offset);
       }
-      const valueLength2 = current >>> 14;
-      const char = input.charCodeAt(offset);
-      if (valueLength2 !== 0) {
-        if (!isStrict && (current & BinTrieFlags.FLAG13) === 0) {
-          this.result = treeIndex;
-          consumed += excess - 1;
-          excess = 1;
-        }
-        if (char === CharCodes.SEMI) {
-          return this.emitNamedEntityData(treeIndex, valueLength2, consumed + excess);
-        }
-        if (valueLength2 === 1) {
-          return this.flushAndEmitLegacyOrReject(consumed, excess, char, valueLength2);
-        }
+      case STATE_NUMERIC_DECIMAL: {
+        return this.stateNumericDecimal(input, offset);
       }
-      const next = determineBranch(decodeTree, current, treeIndex + (valueLength2 || 1), char);
-      if (next < 0) {
-        return this.flushAndEmitLegacyOrReject(consumed, excess, char, valueLength2);
+      case STATE_NUMERIC_HEX: {
+        return this.stateNumericHex(input, offset);
       }
-      treeIndex = next;
-      current = decodeTree[treeIndex];
-      offset += 1;
-      excess += 1;
+      default: {
+        return this.stateNamedEntity(input, offset);
+      }
     }
-    if (!isStrict && current >>> 14 !== 0 && (current & BinTrieFlags.FLAG13) === 0) {
-      this.result = treeIndex;
-      consumed += excess - 1;
-      excess = 1;
-    }
-    this.treeIndex = treeIndex;
-    this.excess = excess;
-    this.consumed = consumed;
-    return -1;
-  }
-  /**
-   * Emit a named entity that was not terminated with a semicolon.
-   * @returns The number of characters consumed.
-   */
-  emitNotTerminatedNamedEntity() {
-    const { result: result2, decodeTree } = this;
-    const valueLength2 = decodeTree[result2] >>> 14;
-    this.emitNamedEntityData(result2, valueLength2, this.consumed);
-    this.errors?.missingSemicolonAfterCharacterReference();
-    return this.consumed;
-  }
-  /**
-   * Emit a named entity.
-   * @param result The index of the entity in the decode tree.
-   * @param valueLength Encoded value length (header plus any value words).
-   * @param consumed The number of characters consumed.
-   * @returns The number of characters consumed.
-   */
-  emitNamedEntityData(result2, valueLength2, consumed) {
-    const { decodeTree } = this;
-    this.emitCodePoint(valueLength2 === 1 ? decodeTree[result2] & BinTrieFlags.VALUE_MASK : decodeTree[result2 + 1], consumed);
-    if (valueLength2 === 3) {
-      this.emitCodePoint(decodeTree[result2 + 2], consumed);
-    }
-    return consumed;
   }
   /**
    * Signal to the parser that the end of the input was reached.
@@ -4858,17 +4710,17 @@ var EntityDecoder = class {
    */
   end() {
     switch (this.state) {
-      case EntityDecoderState.NamedEntity: {
-        return this.result !== 0 && (this.decodeMode !== DecodingMode.Attribute || this.result === this.treeIndex) ? this.emitNotTerminatedNamedEntity() : 0;
+      case STATE_NAMED_ENTITY: {
+        return this.endNamedEntity();
       }
       // Otherwise, emit a numeric entity if we have one.
-      case EntityDecoderState.NumericDecimal: {
+      case STATE_NUMERIC_DECIMAL: {
         return this.emitNumericEntity(0, 2);
       }
-      case EntityDecoderState.NumericHex: {
+      case STATE_NUMERIC_HEX: {
         return this.emitNumericEntity(0, 3);
       }
-      case EntityDecoderState.NumericStart: {
+      case STATE_NUMERIC_START: {
         this.errors?.absenceOfDigitsInNumericCharacterReference(this.consumed);
         return 0;
       }
@@ -4878,37 +4730,175 @@ var EntityDecoder = class {
     }
   }
 };
-function determineBranch(decodeTree, current, nodeIndex, char) {
-  const branchCount = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-  const jumpOffset = current & BinTrieFlags.JUMP_TABLE;
-  if (jumpOffset) {
-    if (branchCount === 0) {
-      return char === jumpOffset ? nodeIndex : -1;
+var HtmlEntityDecoder = class extends EntityDecoderBase {
+  /** Total name characters seen for the current named entity. */
+  runLength = 0;
+  /** Reused for ASCII alphanumerics; the 32nd character rules out an exact match. */
+  nameBuffer = new Uint8Array(32);
+  /**
+   * Emit the replacement for a matched slot. Values are at most two
+   * UTF-16 code units; like previous versions, each unit is emitted as
+   * its own callback (surrogate halves included).
+   * @param slot The matched slot.
+   */
+  emitSlot(slot) {
+    const packed = htmlSlotValue[slot];
+    const off = packed >> 2;
+    this.emitCodePoint(htmlValues.charCodeAt(off), this.consumed);
+    if ((packed & 1) !== 0) {
+      this.emitCodePoint(htmlValues.charCodeAt(off + 1), this.consumed);
     }
-    const slot = char - jumpOffset;
-    if (slot >>> 0 >= branchCount)
-      return -1;
-    const stored = decodeTree[nodeIndex + slot];
-    return stored === 0 ? -1 : nodeIndex + branchCount + stored - 1 & 65535;
   }
-  if (branchCount === 0)
-    return -1;
-  const packedKeySlots = branchCount + 1 >> 1;
-  const branchEnd = nodeIndex + packedKeySlots + branchCount;
-  for (let index = 0; index < branchCount; index++) {
-    const packed = decodeTree[nodeIndex + (index >> 1)];
-    const key = packed >> ((index & 1) << 3) & 255;
-    if (key === char) {
-      const pointerIndex = nodeIndex + packedKeySlots + index;
-      return branchEnd + decodeTree[pointerIndex] & 65535;
+  startEntity(decodeMode) {
+    super.startEntity(decodeMode);
+    this.runLength = 0;
+  }
+  stateNamedEntity(input, offset) {
+    const inputLength = input.length;
+    if (this.runLength === 0 && offset + 17 <= inputLength) {
+      const c0 = input.charCodeAt(offset);
+      const pair = pairIndex(c0, input.charCodeAt(offset + 1));
+      const bits = htmlLengthBits[pair];
+      if ((bits & 32768) !== 0 && offset + 32 <= inputLength) {
+        const packed = findLongClassMatch(input, offset, this.decodeMode);
+        if (packed >= 0) {
+          const length = packed & 63;
+          this.consumed = length + 1;
+          this.emitSlot(packed >> 6);
+          if (input.charCodeAt(offset + length - 1) !== CHAR_SEMI) {
+            this.errors?.missingSemicolonAfterCharacterReference();
+          }
+          return this.consumed;
+        }
+        return 0;
+      }
+      let probed = bits & 32767;
+      while (probed !== 0) {
+        const low = probed & -probed;
+        probed ^= low;
+        const length = 33 - Math.clz32(low);
+        if (input.charCodeAt(offset + length) === CHAR_SEMI) {
+          const slot = findSlotHtml(input, offset, length);
+          if (slot >= 0) {
+            this.consumed = length + 2;
+            this.emitSlot(slot);
+            return this.consumed;
+          }
+        }
+      }
+      if ((bits & 32768) === 0) {
+        if (this.decodeMode !== DecodingMode.Strict) {
+          const packed = findLegacySlot(input, offset, 31);
+          if (packed >= 0) {
+            const matchLength = packed & 7;
+            const next = input.charCodeAt(offset + matchLength);
+            if (this.decodeMode === DecodingMode.Attribute && isEntityInAttributeInvalidEnd(next)) {
+              return 0;
+            }
+            this.consumed = matchLength + 1;
+            this.emitSlot(packed >> 3);
+            this.errors?.missingSemicolonAfterCharacterReference();
+            return this.consumed;
+          }
+        }
+        return 0;
+      }
     }
-    if (key > char)
+    let index = offset;
+    let { runLength } = this;
+    let terminator = -1;
+    const scanEnd = Math.min(inputLength, offset + 32 - runLength);
+    while (index < scanEnd) {
+      const char = input.charCodeAt(index);
+      if (!isAlphaNumeric(char)) {
+        terminator = char;
+        break;
+      }
+      this.nameBuffer[runLength++] = char;
+      index++;
+    }
+    if (terminator < 0 && runLength < 32) {
+      this.runLength = runLength;
       return -1;
+    }
+    if (terminator === CHAR_SEMI && runLength - 2 >>> 0 <= 29) {
+      const slot = findBufferedHtmlSlot(this.nameBuffer, runLength);
+      if (slot >= 0) {
+        this.consumed = runLength + 2;
+        this.emitSlot(slot);
+        return this.consumed;
+      }
+    }
+    if (this.decodeMode !== DecodingMode.Strict && runLength >= 2) {
+      const packed = findBufferedLegacySlot(this.nameBuffer, runLength);
+      if (packed >= 0) {
+        const length = packed & 7;
+        const next = length < runLength ? this.nameBuffer[length] : terminator;
+        if (this.decodeMode === DecodingMode.Attribute && isEntityInAttributeInvalidEnd(next))
+          return 0;
+        this.consumed = length + 1;
+        this.emitSlot(packed >> 3);
+        this.errors?.missingSemicolonAfterCharacterReference();
+        return this.consumed;
+      }
+    }
+    return 0;
+  }
+  endNamedEntity() {
+    if (this.decodeMode === DecodingMode.Strict || this.runLength < 2) {
+      return 0;
+    }
+    const packed = findBufferedLegacySlot(this.nameBuffer, this.runLength);
+    if (packed < 0)
+      return 0;
+    if (this.decodeMode === DecodingMode.Attribute && (packed & 7) < this.runLength) {
+      return 0;
+    }
+    this.consumed = (packed & 7) + 1;
+    this.emitSlot(packed >> 3);
+    this.errors?.missingSemicolonAfterCharacterReference();
+    return this.consumed;
+  }
+};
+function findBufferedHtmlSlot(buffer, length) {
+  const key = buffer[0] << 25 | buffer[1] << 18 | buffer[length - 2] << 11 | CHAR_REMAP[buffer[length - 1]] << 5 | length;
+  let slot = 2 * ((Math.imul(key, BUCKET_HASH_1) >>> 16) * htmlBuckets >>> 16);
+  for (let attempt = 0; ; attempt++) {
+    if (htmlKeys[slot] === key && (length <= 4 || isBufferedMiddle(slot, buffer, length)))
+      return slot;
+    if (htmlKeys[slot + 1] === key && (length <= 4 || isBufferedMiddle(slot + 1, buffer, length)))
+      return slot + 1;
+    if (attempt === 1)
+      return -1;
+    slot = 2 * ((Math.imul(key, BUCKET_HASH_2) >>> 16) * htmlBuckets >>> 16);
+  }
+}
+function isBufferedMiddle(slot, buffer, length) {
+  let wordIndex = htmlSlotMidOff[slot];
+  let index = 2;
+  const end = length - 2;
+  while (index + 1 < end) {
+    if ((buffer[index] | buffer[index + 1] << 16) !== htmlMiddles[wordIndex++])
+      return false;
+    index += 2;
+  }
+  return index === end || buffer[index] === (htmlMiddles[wordIndex] & 65535);
+}
+function findBufferedLegacySlot(buffer, length) {
+  let legacy = htmlLengthBits[pairIndex(buffer[0], buffer[1])] >>> 16 & 31;
+  while (legacy !== 0) {
+    const top = 31 - Math.clz32(legacy);
+    legacy ^= 1 << top;
+    if (top + 2 > length)
+      continue;
+    const slot = findBufferedHtmlSlot(buffer, top + 2);
+    if (slot >= 0 && (htmlSlotValue[slot] & 2) !== 0)
+      return slot << 3 | top + 2;
   }
   return -1;
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/common/html.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/common/html.js
 var NS;
 (function(NS2) {
   NS2["HTML"] = "http://www.w3.org/1999/xhtml";
@@ -5422,7 +5412,8 @@ function hasUnescapedText(tn, scriptingEnabled) {
   return UNESCAPED_TEXT.has(tn) || scriptingEnabled && tn === TAG_NAMES.NOSCRIPT;
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/tokenizer/index.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/tokenizer/index.js
+var ATTR_NAME_SET_THRESHOLD = 64;
 var State;
 (function(State2) {
   State2[State2["DATA"] = 0] = "DATA";
@@ -5526,7 +5517,7 @@ function toAsciiLower(cp) {
   return cp + 32;
 }
 function isWhitespace(cp) {
-  return cp === CODE_POINTS.SPACE || cp === CODE_POINTS.LINE_FEED || cp === CODE_POINTS.TABULATION || cp === CODE_POINTS.FORM_FEED;
+  return cp === CODE_POINTS.SPACE || cp === CODE_POINTS.LINE_FEED || cp === CODE_POINTS.TABULATION || cp === CODE_POINTS.FORM_FEED || cp === CODE_POINTS.CARRIAGE_RETURN;
 }
 function isScriptDataDoubleEscapeSequenceEnd(cp) {
   return isWhitespace(cp) || cp === CODE_POINTS.SOLIDUS || cp === CODE_POINTS.GREATER_THAN_SIGN;
@@ -5561,11 +5552,19 @@ var Tokenizer = class {
     this.currentCharacterToken = null;
     this.currentToken = null;
     this.currentAttr = { name: "", value: "" };
+    this.currentAttrLocation = null;
+    this.currentAttrNames = null;
+    this.runStart = 0;
+    this.runEnd = 0;
     this.preprocessor = new Preprocessor(handler2);
     this.currentLocation = this.getCurrentLocation(-1);
-    this.entityDecoder = new EntityDecoder(htmlDecodeTree, (cp, consumed) => {
+    this.entityDecoder = new HtmlEntityDecoder((cp, consumed) => {
       this.preprocessor.pos = this.entityStartPos + consumed - 1;
-      this._flushCodePointConsumedAsCharacterReference(cp);
+      if (!this._isCharacterReferenceInAttribute()) {
+        this._ensureCharacterToken(isWhitespace(cp) ? TokenType.WHITESPACE_CHARACTER : cp === CODE_POINTS.NULL ? TokenType.NULL_CHARACTER : TokenType.CHARACTER);
+      }
+      this._extendRunWith(String.fromCodePoint(cp), 0);
+      this.entityStartPos = this.preprocessor.pos - consumed + 1;
     }, handler2.onParseError ? {
       missingSemicolonAfterCharacterReference: () => {
         this._err(ERR.missingSemicolonAfterCharacterReference, 1);
@@ -5613,6 +5612,92 @@ var Tokenizer = class {
     this.inLoop = false;
   }
   //API
+  /** Emit buffered character tokens without completing the current token or emitting EOF. */
+  flushCharacters() {
+    var _a;
+    if (this.inLoop) {
+      throw new Error("Cannot flush characters from a tokenizer callback");
+    }
+    const location = (_a = this.currentCharacterToken) === null || _a === void 0 ? void 0 : _a.location;
+    let nextLocation = null;
+    if (location) {
+      nextLocation = this.getCharacterTokenEndLocation(location);
+      this.currentLocation = nextLocation;
+    }
+    this.inLoop = true;
+    try {
+      this._emitCurrentCharacterToken(nextLocation);
+    } finally {
+      this.inLoop = false;
+    }
+    this._runParsingLoop();
+  }
+  getCharacterTokenEndLocation(location) {
+    const endOffset = this.getCharacterTokenEndOffset();
+    const html2 = this.preprocessor.html.slice(location.startOffset - this.preprocessor.droppedBufferSize, endOffset - this.preprocessor.droppedBufferSize);
+    let line = location.startLine;
+    let lastLineBreak = -1;
+    for (let i = html2.indexOf("\n"); i !== -1; i = html2.indexOf("\n", i + 1)) {
+      line++;
+      lastLineBreak = i;
+    }
+    for (let i = html2.indexOf("\r"); i !== -1; i = html2.indexOf("\r", i + 1)) {
+      if (html2.charCodeAt(i + 1) !== CODE_POINTS.LINE_FEED) {
+        line++;
+        lastLineBreak = Math.max(lastLineBreak, i);
+      }
+    }
+    return {
+      startLine: line,
+      startCol: lastLineBreak === -1 ? location.startCol + html2.length : html2.length - lastLineBreak,
+      startOffset: endOffset,
+      endLine: -1,
+      endCol: -1,
+      endOffset: -1
+    };
+  }
+  // Return the input boundary before any unfinished token or buffered delimiter.
+  getCharacterTokenEndOffset() {
+    var _a;
+    const end = this.preprocessor.droppedBufferSize + this.preprocessor.pos + 1;
+    const tokenLocation = (_a = this.currentToken) === null || _a === void 0 ? void 0 : _a.location;
+    switch (this.state) {
+      case State.TAG_OPEN:
+      case State.RCDATA_LESS_THAN_SIGN:
+      case State.RAWTEXT_LESS_THAN_SIGN:
+      case State.SCRIPT_DATA_LESS_THAN_SIGN:
+      case State.SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
+      case State.CDATA_SECTION_BRACKET: {
+        return end - 1;
+      }
+      case State.END_TAG_OPEN:
+      case State.MARKUP_DECLARATION_OPEN:
+      case State.RCDATA_END_TAG_OPEN:
+      case State.RCDATA_END_TAG_NAME:
+      case State.RAWTEXT_END_TAG_OPEN:
+      case State.RAWTEXT_END_TAG_NAME:
+      case State.SCRIPT_DATA_END_TAG_OPEN:
+      case State.SCRIPT_DATA_END_TAG_NAME:
+      case State.SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
+      case State.SCRIPT_DATA_ESCAPED_END_TAG_NAME:
+      case State.CDATA_SECTION_END: {
+        return end - 2;
+      }
+      case State.CHARACTER_REFERENCE: {
+        return this._isCharacterReferenceInAttribute() && tokenLocation ? tokenLocation.startOffset : this.preprocessor.droppedBufferSize + this.entityStartPos;
+      }
+      case State.DOCTYPE:
+      case State.BEFORE_DOCTYPE_NAME: {
+        return this.currentLocation.startOffset;
+      }
+      default: {
+        if (tokenLocation && (this.state === State.TAG_NAME || this.state >= State.BEFORE_ATTRIBUTE_NAME && this.state <= State.BOGUS_COMMENT || this.state >= State.COMMENT_START && this.state <= State.BOGUS_DOCTYPE)) {
+          return tokenLocation.startOffset;
+        }
+        return end;
+      }
+    }
+  }
   pause() {
     this.paused = true;
   }
@@ -5640,6 +5725,20 @@ var Tokenizer = class {
     this.active = true;
     this.preprocessor.insertHtmlAtCurrentPos(chunk);
     this._runParsingLoop();
+  }
+  /** @internal Flush completed streaming text without splitting an unfinished token. */
+  flushCurrentCharacterToken() {
+    if (this.paused || this.active || !this.currentCharacterToken || this.currentToken || this.state === State.DOCTYPE || this.state === State.BEFORE_DOCTYPE_NAME || !this.preprocessor.willDropParsedChunk()) {
+      return;
+    }
+    const pending = this.preprocessor.droppedBufferSize + this.preprocessor.pos + 1 - this.getCharacterTokenEndOffset();
+    this.preprocessor.advance();
+    this.currentLocation = this.getCurrentLocation(pending);
+    this.preprocessor.retreat(1);
+    this._emitCurrentCharacterToken(this.currentLocation);
+    this._createCharacterToken(TokenType.CHARACTER);
+    this.preprocessor.dropParsedChunk(Math.max(pending - 1, 0));
+    this.entityStartPos = this.preprocessor.pos + 1 - pending;
   }
   //Hibernation
   _ensureHibernation() {
@@ -5671,6 +5770,7 @@ var Tokenizer = class {
   }
   //Token creation
   _createStartTagToken() {
+    this._flushRun("");
     this.currentToken = {
       type: TokenType.START_TAG,
       tagName: "",
@@ -5682,6 +5782,7 @@ var Tokenizer = class {
     };
   }
   _createEndTagToken() {
+    this._flushRun("");
     this.currentToken = {
       type: TokenType.END_TAG,
       tagName: "",
@@ -5693,6 +5794,7 @@ var Tokenizer = class {
     };
   }
   _createCommentToken(offset) {
+    this._flushRun("");
     this.currentToken = {
       type: TokenType.COMMENT,
       data: "",
@@ -5700,6 +5802,7 @@ var Tokenizer = class {
     };
   }
   _createDoctypeToken(initialName) {
+    this._flushRun("");
     this.currentToken = {
       type: TokenType.DOCTYPE,
       name: initialName,
@@ -5709,42 +5812,117 @@ var Tokenizer = class {
       location: this.currentLocation
     };
   }
-  _createCharacterToken(type, chars) {
+  _createCharacterToken(type) {
+    if (this.currentLocation) {
+      const start = this.currentLocation.startOffset - this.preprocessor.droppedBufferSize;
+      if (this.preprocessor.html[start] === "\n" && this.preprocessor.html[start - 1] === "\r") {
+        this.currentLocation.startOffset++;
+      }
+    }
     this.currentCharacterToken = {
       type,
-      chars,
+      chars: "",
       location: this.currentLocation
     };
   }
   //Tag attributes
   _createAttr(attrNameFirstCh) {
+    this._flushRun("");
     this.currentAttr = {
       name: attrNameFirstCh,
       value: ""
     };
-    this.currentLocation = this.getCurrentLocation(0);
+    this.currentAttrLocation = this.getCurrentLocation(0);
   }
   _leaveAttrName() {
     var _a;
     var _b;
     const token = this.currentToken;
-    if (getTokenAttr(token, this.currentAttr.name) === null) {
-      token.attrs.push(this.currentAttr);
-      if (token.location && this.currentLocation) {
-        const attrLocations = (_a = (_b = token.location).attrs) !== null && _a !== void 0 ? _a : _b.attrs = /* @__PURE__ */ Object.create(null);
-        attrLocations[this.currentAttr.name] = this.currentLocation;
-        this._leaveAttrValue();
+    const { name } = this.currentAttr;
+    const names = this.currentAttrNames;
+    let duplicate;
+    if (names === null) {
+      duplicate = getTokenAttr(token, name) !== null;
+      if (!duplicate && token.attrs.length === ATTR_NAME_SET_THRESHOLD) {
+        this.currentAttrNames = new Set(token.attrs.map((attr) => attr.name)).add(name);
       }
     } else {
+      duplicate = names.has(name);
+      if (!duplicate)
+        names.add(name);
+    }
+    if (duplicate) {
       this._err(ERR.duplicateAttribute);
+    } else {
+      token.attrs.push(this.currentAttr);
+      if (token.location && this.currentAttrLocation) {
+        const attrLocations = (_a = (_b = token.location).attrs) !== null && _a !== void 0 ? _a : _b.attrs = /* @__PURE__ */ Object.create(null);
+        attrLocations[this.currentAttr.name] = this.currentAttrLocation;
+        this._leaveAttrValue();
+      }
     }
   }
   _leaveAttrValue() {
-    if (this.currentLocation) {
-      this.currentLocation.endLine = this.preprocessor.line;
-      this.currentLocation.endCol = this.preprocessor.col;
-      this.currentLocation.endOffset = this.preprocessor.offset;
+    if (this.currentAttrLocation) {
+      this.currentAttrLocation.endLine = this.preprocessor.line;
+      this.currentAttrLocation.endCol = this.preprocessor.col;
+      this.currentAttrLocation.endOffset = this.preprocessor.offset;
     }
+  }
+  /**
+   * Append the pending run and `text` to the attribute value, comment data or character token being built.
+   * The run is a string of its own: V8 copies a slice of fewer than 13 characters but lets a longer one share
+   * the input's buffer, which would keep that buffer alive for as long as any attribute value or text cut from
+   * it is; a concatenation is flattened into a buffer of its own when it is sliced.
+   */
+  _flushRun(text) {
+    if (this.runEnd === this.runStart && text.length === 0) {
+      return;
+    }
+    const slice = this.preprocessor.html.slice(this.runStart, this.runEnd);
+    const run2 = (slice.length < 13 ? slice : ` ${slice}`.slice(1)) + text;
+    const token = this.currentToken;
+    this.runStart = this.runEnd;
+    if (token === null) {
+      this.currentCharacterToken.chars += run2;
+    } else if (token.type === TokenType.COMMENT) {
+      token.data += run2;
+    } else {
+      this.currentAttr.value += run2;
+    }
+  }
+  /** Extend the pending run by the current input code point, read as `cp`, or flush it and start a new one. */
+  _extendRun(cp) {
+    const { preprocessor } = this;
+    if (cp === CODE_POINTS.LINE_FEED && preprocessor.html.charCodeAt(preprocessor.pos) !== CODE_POINTS.LINE_FEED) {
+      this._flushRun("\n");
+      this.runStart = preprocessor.pos + 1;
+    } else {
+      const start = preprocessor.pos - Number(cp > 65535);
+      if (start !== this.runEnd) {
+        this._flushRun("");
+        this.runStart = start;
+      }
+    }
+    this.runEnd = preprocessor.pos + 1;
+  }
+  /**
+   * Extend the pending run by `text`, the input that ends `cpOffset` code points after the current one, or flush
+   * the run and append `text` where the input differs (a NUL replacement, a decoded reference, a dropped chunk).
+   */
+  _extendRunWith(text, cpOffset) {
+    const { preprocessor } = this;
+    const start = preprocessor.codePointStart + 1 + cpOffset - text.length;
+    if (start >= 0 && preprocessor.html.startsWith(text, start)) {
+      if (start !== this.runEnd) {
+        this._flushRun("");
+        this.runStart = start;
+      }
+    } else {
+      this._flushRun(text);
+      this.runStart = start + text.length;
+    }
+    this.runEnd = start + text.length;
   }
   //Token emission
   prepareToken(ct) {
@@ -5759,6 +5937,7 @@ var Tokenizer = class {
   }
   emitCurrentTagToken() {
     const ct = this.currentToken;
+    this.currentAttrNames = null;
     this.prepareToken(ct);
     ct.tagID = getTagID(ct.tagName);
     if (ct.type === TokenType.START_TAG) {
@@ -5786,6 +5965,7 @@ var Tokenizer = class {
     this.preprocessor.dropParsedChunk();
   }
   _emitCurrentCharacterToken(nextLocation) {
+    this._flushRun("");
     if (this.currentCharacterToken) {
       if (nextLocation && this.currentCharacterToken.location) {
         this.currentCharacterToken.location.endLine = nextLocation.startLine;
@@ -5810,13 +5990,14 @@ var Tokenizer = class {
     }
   }
   _emitEOFToken() {
+    var _a, _b;
     const location = this.getCurrentLocation(0);
     if (location) {
       location.endLine = location.startLine;
       location.endCol = location.startCol;
       location.endOffset = location.startOffset;
     }
-    this._emitCurrentCharacterToken(location);
+    this._emitCurrentCharacterToken((_b = (_a = this.currentToken) === null || _a === void 0 ? void 0 : _a.location) !== null && _b !== void 0 ? _b : location);
     this.handler.onEof({ type: TokenType.EOF, location });
     this.active = false;
   }
@@ -5829,27 +6010,39 @@ var Tokenizer = class {
   //1)TokenType.NULL_CHARACTER - \u0000-character sequences (e.g. '\u0000\u0000\u0000')
   //2)TokenType.WHITESPACE_CHARACTER - any whitespace/new-line character sequences (e.g. '\n  \r\t   \f')
   //3)TokenType.CHARACTER - any character sequence which don't belong to groups 1 and 2 (e.g. 'abcdef1234@@#$%^')
-  _appendCharToCurrentCharacterToken(type, ch) {
+  /** Make the current character token one of `type`, emitting the current one if it has another type. */
+  _ensureCharacterToken(type) {
     if (this.currentCharacterToken) {
       if (this.currentCharacterToken.type === type) {
-        this.currentCharacterToken.chars += ch;
         return;
-      } else {
-        this.currentLocation = this.getCurrentLocation(0);
-        this._emitCurrentCharacterToken(this.currentLocation);
-        this.preprocessor.dropParsedChunk();
       }
+      this.currentLocation = this.getCurrentLocation(0);
+      this._emitCurrentCharacterToken(this.currentLocation);
+      this.preprocessor.dropParsedChunk();
     }
-    this._createCharacterToken(type, ch);
+    this._createCharacterToken(type);
   }
+  /** Emit the current input code point, read as `cp`. */
   _emitCodePoint(cp) {
     const type = isWhitespace(cp) ? TokenType.WHITESPACE_CHARACTER : cp === CODE_POINTS.NULL ? TokenType.NULL_CHARACTER : TokenType.CHARACTER;
-    this._appendCharToCurrentCharacterToken(type, cp < 65536 ? String.fromCharCode(cp) : String.fromCodePoint(cp));
+    const token = this.currentCharacterToken;
+    if (token === null || token.type !== type) {
+      this._ensureCharacterToken(type);
+    }
+    this._extendRun(cp);
   }
   //NOTE: used when we emit characters explicitly.
   //This is always for non-whitespace and non-null characters, which allows us to avoid additional checks.
-  _emitChars(ch) {
-    this._appendCharToCurrentCharacterToken(TokenType.CHARACTER, ch);
+  // Negative `cpOffset` values locate text emitted before the current input character.
+  _emitChars(ch, cpOffset = 0) {
+    if (this.options.sourceCodeLocationInfo && cpOffset !== 0 && this.currentCharacterToken && this.currentCharacterToken.type !== TokenType.CHARACTER) {
+      this.currentLocation = this.getCurrentLocation(ch.length - 1 - cpOffset);
+      this._emitCurrentCharacterToken(this.currentLocation);
+      this._createCharacterToken(TokenType.CHARACTER);
+    } else {
+      this._ensureCharacterToken(TokenType.CHARACTER);
+    }
+    this._extendRunWith(ch, cpOffset);
   }
   // Character reference helpers
   _startCharacterReference() {
@@ -5863,7 +6056,7 @@ var Tokenizer = class {
   }
   _flushCodePointConsumedAsCharacterReference(cp) {
     if (this._isCharacterReferenceInAttribute()) {
-      this.currentAttr.value += String.fromCodePoint(cp);
+      this._extendRun(cp);
     } else {
       this._emitCodePoint(cp);
     }
@@ -6309,13 +6502,13 @@ var Tokenizer = class {
         }
         case CODE_POINTS.EOF: {
           this._err(ERR.eofBeforeTagName);
-          this._emitChars("<");
+          this._emitChars("<", -1);
           this._emitEOFToken();
           break;
         }
         default: {
           this._err(ERR.invalidFirstCharacterOfTagName);
-          this._emitChars("<");
+          this._emitChars("<", -1);
           this.state = State.DATA;
           this._stateData(cp);
         }
@@ -6337,7 +6530,7 @@ var Tokenizer = class {
         }
         case CODE_POINTS.EOF: {
           this._err(ERR.eofBeforeTagName);
-          this._emitChars("</");
+          this._emitChars("</", -1);
           this._emitEOFToken();
           break;
         }
@@ -6391,7 +6584,7 @@ var Tokenizer = class {
     if (cp === CODE_POINTS.SOLIDUS) {
       this.state = State.RCDATA_END_TAG_OPEN;
     } else {
-      this._emitChars("<");
+      this._emitChars("<", -1);
       this.state = State.RCDATA;
       this._stateRcdata(cp);
     }
@@ -6403,7 +6596,7 @@ var Tokenizer = class {
       this.state = State.RCDATA_END_TAG_NAME;
       this._stateRcdataEndTagName(cp);
     } else {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.RCDATA;
       this._stateRcdata(cp);
     }
@@ -6437,6 +6630,7 @@ var Tokenizer = class {
         return false;
       }
       default: {
+        this.currentToken = null;
         return !this._ensureHibernation();
       }
     }
@@ -6445,7 +6639,7 @@ var Tokenizer = class {
   //------------------------------------------------------------------
   _stateRcdataEndTagName(cp) {
     if (this.handleSpecialEndTag(cp)) {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.RCDATA;
       this._stateRcdata(cp);
     }
@@ -6456,7 +6650,7 @@ var Tokenizer = class {
     if (cp === CODE_POINTS.SOLIDUS) {
       this.state = State.RAWTEXT_END_TAG_OPEN;
     } else {
-      this._emitChars("<");
+      this._emitChars("<", -1);
       this.state = State.RAWTEXT;
       this._stateRawtext(cp);
     }
@@ -6468,7 +6662,7 @@ var Tokenizer = class {
       this.state = State.RAWTEXT_END_TAG_NAME;
       this._stateRawtextEndTagName(cp);
     } else {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.RAWTEXT;
       this._stateRawtext(cp);
     }
@@ -6477,7 +6671,7 @@ var Tokenizer = class {
   //------------------------------------------------------------------
   _stateRawtextEndTagName(cp) {
     if (this.handleSpecialEndTag(cp)) {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.RAWTEXT;
       this._stateRawtext(cp);
     }
@@ -6496,7 +6690,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        this._emitChars("<");
+        this._emitChars("<", -1);
         this.state = State.SCRIPT_DATA;
         this._stateScriptData(cp);
       }
@@ -6509,7 +6703,7 @@ var Tokenizer = class {
       this.state = State.SCRIPT_DATA_END_TAG_NAME;
       this._stateScriptDataEndTagName(cp);
     } else {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.SCRIPT_DATA;
       this._stateScriptData(cp);
     }
@@ -6518,7 +6712,7 @@ var Tokenizer = class {
   //------------------------------------------------------------------
   _stateScriptDataEndTagName(cp) {
     if (this.handleSpecialEndTag(cp)) {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.SCRIPT_DATA;
       this._stateScriptData(cp);
     }
@@ -6643,11 +6837,11 @@ var Tokenizer = class {
     if (cp === CODE_POINTS.SOLIDUS) {
       this.state = State.SCRIPT_DATA_ESCAPED_END_TAG_OPEN;
     } else if (isAsciiLetter(cp)) {
-      this._emitChars("<");
+      this._emitChars("<", -1);
       this.state = State.SCRIPT_DATA_DOUBLE_ESCAPE_START;
       this._stateScriptDataDoubleEscapeStart(cp);
     } else {
-      this._emitChars("<");
+      this._emitChars("<", -1);
       this.state = State.SCRIPT_DATA_ESCAPED;
       this._stateScriptDataEscaped(cp);
     }
@@ -6659,7 +6853,7 @@ var Tokenizer = class {
       this.state = State.SCRIPT_DATA_ESCAPED_END_TAG_NAME;
       this._stateScriptDataEscapedEndTagName(cp);
     } else {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.SCRIPT_DATA_ESCAPED;
       this._stateScriptDataEscaped(cp);
     }
@@ -6668,7 +6862,7 @@ var Tokenizer = class {
   //------------------------------------------------------------------
   _stateScriptDataEscapedEndTagName(cp) {
     if (this.handleSpecialEndTag(cp)) {
-      this._emitChars("</");
+      this._emitChars("</", -1);
       this.state = State.SCRIPT_DATA_ESCAPED;
       this._stateScriptDataEscaped(cp);
     }
@@ -6954,7 +7148,7 @@ var Tokenizer = class {
       }
       case CODE_POINTS.NULL: {
         this._err(ERR.unexpectedNullCharacter);
-        this.currentAttr.value += REPLACEMENT_CHARACTER;
+        this._extendRunWith(REPLACEMENT_CHARACTER, 0);
         break;
       }
       case CODE_POINTS.EOF: {
@@ -6963,7 +7157,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        this.currentAttr.value += String.fromCodePoint(cp);
+        this._extendRun(cp);
       }
     }
   }
@@ -6981,7 +7175,7 @@ var Tokenizer = class {
       }
       case CODE_POINTS.NULL: {
         this._err(ERR.unexpectedNullCharacter);
-        this.currentAttr.value += REPLACEMENT_CHARACTER;
+        this._extendRunWith(REPLACEMENT_CHARACTER, 0);
         break;
       }
       case CODE_POINTS.EOF: {
@@ -6990,7 +7184,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        this.currentAttr.value += String.fromCodePoint(cp);
+        this._extendRun(cp);
       }
     }
   }
@@ -7018,7 +7212,7 @@ var Tokenizer = class {
       }
       case CODE_POINTS.NULL: {
         this._err(ERR.unexpectedNullCharacter);
-        this.currentAttr.value += REPLACEMENT_CHARACTER;
+        this._extendRunWith(REPLACEMENT_CHARACTER, 0);
         break;
       }
       case CODE_POINTS.QUOTATION_MARK:
@@ -7027,7 +7221,7 @@ var Tokenizer = class {
       case CODE_POINTS.EQUALS_SIGN:
       case CODE_POINTS.GRAVE_ACCENT: {
         this._err(ERR.unexpectedCharacterInUnquotedAttributeValue);
-        this.currentAttr.value += String.fromCodePoint(cp);
+        this._extendRun(cp);
         break;
       }
       case CODE_POINTS.EOF: {
@@ -7036,7 +7230,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        this.currentAttr.value += String.fromCodePoint(cp);
+        this._extendRun(cp);
       }
     }
   }
@@ -7070,6 +7264,7 @@ var Tokenizer = class {
       }
       default: {
         this._err(ERR.missingWhitespaceBetweenAttributes);
+        this._leaveAttrValue();
         this.state = State.BEFORE_ATTRIBUTE_NAME;
         this._stateBeforeAttributeName(cp);
       }
@@ -7115,11 +7310,11 @@ var Tokenizer = class {
       }
       case CODE_POINTS.NULL: {
         this._err(ERR.unexpectedNullCharacter);
-        token.data += REPLACEMENT_CHARACTER;
+        this._extendRunWith(REPLACEMENT_CHARACTER, 0);
         break;
       }
       default: {
-        token.data += String.fromCodePoint(cp);
+        this._extendRun(cp);
       }
     }
   }
@@ -7191,7 +7386,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        token.data += "-";
+        this._extendRunWith("-", -1);
         this.state = State.COMMENT;
         this._stateComment(cp);
       }
@@ -7207,13 +7402,13 @@ var Tokenizer = class {
         break;
       }
       case CODE_POINTS.LESS_THAN_SIGN: {
-        token.data += "<";
+        this._extendRunWith("<", 0);
         this.state = State.COMMENT_LESS_THAN_SIGN;
         break;
       }
       case CODE_POINTS.NULL: {
         this._err(ERR.unexpectedNullCharacter);
-        token.data += REPLACEMENT_CHARACTER;
+        this._extendRunWith(REPLACEMENT_CHARACTER, 0);
         break;
       }
       case CODE_POINTS.EOF: {
@@ -7223,22 +7418,21 @@ var Tokenizer = class {
         break;
       }
       default: {
-        token.data += String.fromCodePoint(cp);
+        this._extendRun(cp);
       }
     }
   }
   // Comment less-than sign state
   //------------------------------------------------------------------
   _stateCommentLessThanSign(cp) {
-    const token = this.currentToken;
     switch (cp) {
       case CODE_POINTS.EXCLAMATION_MARK: {
-        token.data += "!";
+        this._extendRunWith("!", 0);
         this.state = State.COMMENT_LESS_THAN_SIGN_BANG;
         break;
       }
       case CODE_POINTS.LESS_THAN_SIGN: {
-        token.data += "<";
+        this._extendRunWith("<", 0);
         break;
       }
       default: {
@@ -7292,7 +7486,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        token.data += "-";
+        this._extendRunWith("-", -1);
         this.state = State.COMMENT;
         this._stateComment(cp);
       }
@@ -7313,7 +7507,7 @@ var Tokenizer = class {
         break;
       }
       case CODE_POINTS.HYPHEN_MINUS: {
-        token.data += "-";
+        this._extendRunWith("-", -2);
         break;
       }
       case CODE_POINTS.EOF: {
@@ -7323,7 +7517,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        token.data += "--";
+        this._extendRunWith("--", -1);
         this.state = State.COMMENT;
         this._stateComment(cp);
       }
@@ -7335,7 +7529,7 @@ var Tokenizer = class {
     const token = this.currentToken;
     switch (cp) {
       case CODE_POINTS.HYPHEN_MINUS: {
-        token.data += "--!";
+        this._extendRunWith("--!", -1);
         this.state = State.COMMENT_END_DASH;
         break;
       }
@@ -7352,7 +7546,7 @@ var Tokenizer = class {
         break;
       }
       default: {
-        token.data += "--!";
+        this._extendRunWith("--!", -1);
         this.state = State.COMMENT;
         this._stateComment(cp);
       }
@@ -7976,7 +8170,7 @@ var Tokenizer = class {
     if (cp === CODE_POINTS.RIGHT_SQUARE_BRACKET) {
       this.state = State.CDATA_SECTION_END;
     } else {
-      this._emitChars("]");
+      this._emitChars("]", -1);
       this.state = State.CDATA_SECTION;
       this._stateCdataSection(cp);
     }
@@ -7990,11 +8184,11 @@ var Tokenizer = class {
         break;
       }
       case CODE_POINTS.RIGHT_SQUARE_BRACKET: {
-        this._emitChars("]");
+        this._emitChars("]", -2);
         break;
       }
       default: {
-        this._emitChars("]]");
+        this._emitChars("]]", -1);
         this.state = State.CDATA_SECTION;
         this._stateCdataSection(cp);
       }
@@ -8038,7 +8232,7 @@ var Tokenizer = class {
   }
 };
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/parser/open-element-stack.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/parser/open-element-stack.js
 var IMPLICIT_END_TAG_REQUIRED = /* @__PURE__ */ new Set([TAG_ID.DD, TAG_ID.DT, TAG_ID.LI, TAG_ID.OPTGROUP, TAG_ID.OPTION, TAG_ID.P, TAG_ID.RB, TAG_ID.RP, TAG_ID.RT, TAG_ID.RTC]);
 var IMPLICIT_END_TAG_REQUIRED_THOROUGHLY = /* @__PURE__ */ new Set([
   ...IMPLICIT_END_TAG_REQUIRED,
@@ -8051,7 +8245,33 @@ var IMPLICIT_END_TAG_REQUIRED_THOROUGHLY = /* @__PURE__ */ new Set([
   TAG_ID.THEAD,
   TAG_ID.TR
 ]);
-var SCOPING_ELEMENTS_HTML = /* @__PURE__ */ new Set([
+var INDEX_DEPTH = 64;
+var SVG_KEYS = 256;
+var MATHML_KEYS = 512;
+var NAME_KEYS = 768;
+var NUMBERED_HEADERS2 = [TAG_ID.H1, TAG_ID.H2, TAG_ID.H3, TAG_ID.H4, TAG_ID.H5, TAG_ID.H6];
+var TABLE_BODIES = [TAG_ID.TBODY, TAG_ID.TFOOT, TAG_ID.THEAD];
+var TABLE_ROW_CONTEXT = [TAG_ID.TR, TAG_ID.TEMPLATE, TAG_ID.HTML];
+var TABLE_BODY_CONTEXT = [...TABLE_BODIES, TAG_ID.TEMPLATE, TAG_ID.HTML];
+var TABLE_CONTEXT = [TAG_ID.TABLE, TAG_ID.TEMPLATE, TAG_ID.HTML];
+var TABLE_CELLS = [TAG_ID.TD, TAG_ID.TH];
+var SPECIAL = 1;
+var LIST_ITEM_BOUNDARY = 2;
+var SCOPE = 4;
+var LIST_ITEM_SCOPE = 8;
+var BUTTON_SCOPE = 16;
+var TABLE_SCOPE = 32;
+var KEY_CLASSES = new Uint8Array(NAME_KEYS);
+for (const [ns, offset] of [
+  [NS.HTML, 0],
+  [NS.SVG, SVG_KEYS],
+  [NS.MATHML, MATHML_KEYS]
+]) {
+  for (const tn of SPECIAL_ELEMENTS[ns]) {
+    KEY_CLASSES[offset + tn] = ns === NS.HTML && (tn === TAG_ID.ADDRESS || tn === TAG_ID.DIV || tn === TAG_ID.P) ? SPECIAL : SPECIAL | LIST_ITEM_BOUNDARY;
+  }
+}
+for (const key of [
   TAG_ID.APPLET,
   TAG_ID.CAPTION,
   TAG_ID.HTML,
@@ -8060,16 +8280,46 @@ var SCOPING_ELEMENTS_HTML = /* @__PURE__ */ new Set([
   TAG_ID.TABLE,
   TAG_ID.TD,
   TAG_ID.TEMPLATE,
-  TAG_ID.TH
-]);
-var SCOPING_ELEMENTS_HTML_LIST = /* @__PURE__ */ new Set([...SCOPING_ELEMENTS_HTML, TAG_ID.OL, TAG_ID.UL]);
-var SCOPING_ELEMENTS_HTML_BUTTON = /* @__PURE__ */ new Set([...SCOPING_ELEMENTS_HTML, TAG_ID.BUTTON]);
-var SCOPING_ELEMENTS_MATHML = /* @__PURE__ */ new Set([TAG_ID.ANNOTATION_XML, TAG_ID.MI, TAG_ID.MN, TAG_ID.MO, TAG_ID.MS, TAG_ID.MTEXT]);
-var SCOPING_ELEMENTS_SVG = /* @__PURE__ */ new Set([TAG_ID.DESC, TAG_ID.FOREIGN_OBJECT, TAG_ID.TITLE]);
-var TABLE_ROW_CONTEXT = /* @__PURE__ */ new Set([TAG_ID.TR, TAG_ID.TEMPLATE, TAG_ID.HTML]);
-var TABLE_BODY_CONTEXT = /* @__PURE__ */ new Set([TAG_ID.TBODY, TAG_ID.TFOOT, TAG_ID.THEAD, TAG_ID.TEMPLATE, TAG_ID.HTML]);
-var TABLE_CONTEXT = /* @__PURE__ */ new Set([TAG_ID.TABLE, TAG_ID.TEMPLATE, TAG_ID.HTML]);
-var TABLE_CELLS = /* @__PURE__ */ new Set([TAG_ID.TD, TAG_ID.TH]);
+  TAG_ID.TH,
+  SVG_KEYS + TAG_ID.DESC,
+  SVG_KEYS + TAG_ID.FOREIGN_OBJECT,
+  SVG_KEYS + TAG_ID.TITLE,
+  MATHML_KEYS + TAG_ID.ANNOTATION_XML,
+  MATHML_KEYS + TAG_ID.MI,
+  MATHML_KEYS + TAG_ID.MN,
+  MATHML_KEYS + TAG_ID.MO,
+  MATHML_KEYS + TAG_ID.MS,
+  MATHML_KEYS + TAG_ID.MTEXT
+]) {
+  KEY_CLASSES[key] |= SCOPE | LIST_ITEM_SCOPE | BUTTON_SCOPE;
+}
+KEY_CLASSES[TAG_ID.OL] |= LIST_ITEM_SCOPE;
+KEY_CLASSES[TAG_ID.UL] |= LIST_ITEM_SCOPE;
+KEY_CLASSES[TAG_ID.BUTTON] |= BUTTON_SCOPE;
+KEY_CLASSES[TAG_ID.TABLE] |= TABLE_SCOPE;
+KEY_CLASSES[TAG_ID.HTML] |= TABLE_SCOPE;
+var FORMATTING_TAGS = new Uint8Array(NAME_KEYS);
+for (const tn of [TAG_ID.A, TAG_ID.B, TAG_ID.BIG, TAG_ID.CODE, TAG_ID.EM, TAG_ID.FONT, TAG_ID.I, TAG_ID.NOBR, TAG_ID.S, TAG_ID.SMALL, TAG_ID.STRIKE, TAG_ID.STRONG, TAG_ID.TT, TAG_ID.U]) {
+  FORMATTING_TAGS[tn] = 1;
+}
+function tagKey(ns, tagID) {
+  if (tagID === TAG_ID.UNKNOWN)
+    return -1;
+  switch (ns) {
+    case NS.HTML: {
+      return tagID;
+    }
+    case NS.SVG: {
+      return SVG_KEYS + tagID;
+    }
+    case NS.MATHML: {
+      return MATHML_KEYS + tagID;
+    }
+    default: {
+      return -1;
+    }
+  }
+}
 var OpenElementStack = class {
   get currentTmplContentOrNode() {
     return this._isInTemplate() ? this.treeAdapter.getTemplateContent(this.current) : this.current;
@@ -8080,13 +8330,43 @@ var OpenElementStack = class {
     this.items = [];
     this.tagIDs = [];
     this.stackTop = -1;
+    this.depth = 0;
     this.tmplCount = 0;
     this.currentTagId = TAG_ID.UNKNOWN;
+    this.indexed = false;
+    this.below = [];
+    this.above = [];
+    this.keys = [];
+    this.keyPrev = [];
+    this.keyNext = [];
+    this.keyTops = new Int32Array(0);
+    this.specials = [];
+    this.listItemBoundaries = [];
+    this.scopeBoundaries = [];
+    this.htmlSlots = [];
+    this.formattingSlots = /* @__PURE__ */ new Map();
     this.current = document;
   }
-  //Index of element
+  /** The slot of an open element, or -1. */
   _indexOf(element) {
+    if (this.indexed) {
+      const idx = this.formattingSlots.get(element);
+      if (idx !== void 0)
+        return idx;
+      if (FORMATTING_TAGS[getTagID(this.treeAdapter.getTagName(element))])
+        return -1;
+    }
     return this.items.lastIndexOf(element, this.stackTop);
+  }
+  /** The slot of the open element below the one at `idx`, or -1. */
+  slotBelow(idx) {
+    return this.indexed ? this.below[idx] : idx - 1;
+  }
+  /** The slot of the open element above the one at `idx`, or -1. */
+  slotAbove(idx) {
+    if (this.indexed)
+      return this.above[idx];
+    return idx === this.stackTop ? -1 : idx + 1;
   }
   //Update current element
   _isInTemplate() {
@@ -8096,61 +8376,297 @@ var OpenElementStack = class {
     this.current = this.items[this.stackTop];
     this.currentTagId = this.tagIDs[this.stackTop];
   }
+  //Index
+  _nameKey(ns, tagName, create) {
+    var _a, _b;
+    const name = `${ns} ${tagName}`;
+    let key = (_a = this.nameKeys) === null || _a === void 0 ? void 0 : _a.get(name);
+    if (key === void 0 && create) {
+      (_b = this.nameKeys) !== null && _b !== void 0 ? _b : this.nameKeys = /* @__PURE__ */ new Map();
+      key = NAME_KEYS + this.nameKeys.size;
+      this.nameKeys.set(name, key);
+      if (key === this.keyTops.length) {
+        const keyTops = new Int32Array(2 * key).fill(-1);
+        keyTops.set(this.keyTops);
+        this.keyTops = keyTops;
+      }
+    }
+    return key !== null && key !== void 0 ? key : -1;
+  }
+  /** Indexes the open elements once the stack is `INDEX_DEPTH` deep. */
+  _indexAll() {
+    this.indexed = true;
+    this.keyTops = new Int32Array(NAME_KEYS).fill(-1);
+    for (let i = 0; i <= this.stackTop; i++)
+      this._index(i, i - 1);
+  }
+  /** Indexes the element at `slot`, above the open element at `belowIdx`. */
+  _index(slot, belowIdx) {
+    const element = this.items[slot];
+    const tagID = this.tagIDs[slot];
+    const ns = this.treeAdapter.getNamespaceURI(element);
+    let key = tagKey(ns, tagID);
+    if (key === -1)
+      key = this._nameKey(ns, this.treeAdapter.getTagName(element), true);
+    const keyPrev = this.keyTops[key];
+    this.keys[slot] = key;
+    this.keyPrev[slot] = keyPrev;
+    this.keyNext[slot] = -1;
+    if (keyPrev !== -1)
+      this.keyNext[keyPrev] = slot;
+    this.keyTops[key] = slot;
+    this.above[slot] = -1;
+    this._link(slot, belowIdx, ns === NS.HTML);
+    if (FORMATTING_TAGS[tagID])
+      this.formattingSlots.set(element, slot);
+  }
+  /** Puts the indexed element at `slot` above the one at `belowIdx`, and counts the elements of each class. */
+  _link(slot, belowIdx, isHtml) {
+    const key = this.keys[slot];
+    const classes = key < NAME_KEYS ? KEY_CLASSES[key] : 0;
+    this.below[slot] = belowIdx;
+    if (belowIdx === -1) {
+      this.specials[slot] = classes & SPECIAL;
+      this.listItemBoundaries[slot] = (classes & LIST_ITEM_BOUNDARY) >> 1;
+      this.scopeBoundaries[slot] = (classes & SCOPE) >> 2;
+      this.htmlSlots[slot] = isHtml ? slot : -1;
+    } else {
+      this.above[belowIdx] = slot;
+      this.specials[slot] = this.specials[belowIdx] + (classes & SPECIAL);
+      this.listItemBoundaries[slot] = this.listItemBoundaries[belowIdx] + ((classes & LIST_ITEM_BOUNDARY) >> 1);
+      this.scopeBoundaries[slot] = this.scopeBoundaries[belowIdx] + ((classes & SCOPE) >> 2);
+      this.htmlSlots[slot] = isHtml ? slot : this.htmlSlots[belowIdx];
+    }
+  }
+  /** Takes the element at `slot` out of the index, except for the links between slots. */
+  _unindex(slot) {
+    const key = this.keys[slot];
+    const keyPrev = this.keyPrev[slot];
+    const keyNext = this.keyNext[slot];
+    if (keyPrev !== -1)
+      this.keyNext[keyPrev] = keyNext;
+    if (keyNext === -1)
+      this.keyTops[key] = keyPrev;
+    else
+      this.keyPrev[keyNext] = keyPrev;
+    if (FORMATTING_TAGS[this.tagIDs[slot]])
+      this.formattingSlots.delete(this.items[slot]);
+  }
+  /** Moves the indexed element at `from` down to the free slot `to`, keeping its key chain in order. */
+  _move(from, to) {
+    const element = this.items[from];
+    const key = this.keys[from];
+    const keyPrev = this.keyPrev[from];
+    const keyNext = this.keyNext[from];
+    this.items[to] = element;
+    this.tagIDs[to] = this.tagIDs[from];
+    this.keys[to] = key;
+    this.keyPrev[to] = keyPrev;
+    this.keyNext[to] = keyNext;
+    if (keyPrev !== -1)
+      this.keyNext[keyPrev] = to;
+    if (keyNext === -1)
+      this.keyTops[key] = to;
+    else
+      this.keyPrev[keyNext] = to;
+    if (FORMATTING_TAGS[this.tagIDs[to]])
+      this.formattingSlots.set(element, to);
+  }
+  //Search by tag
+  /** The slot of the topmost open HTML element with this tag, or -1. */
+  indexOfTopmost(tagID) {
+    if (this.indexed)
+      return this.keyTops[tagID];
+    for (let i = this.stackTop; i >= 0; i--) {
+      if (this.tagIDs[i] === tagID && this.treeAdapter.getNamespaceURI(this.items[i]) === NS.HTML)
+        return i;
+    }
+    return -1;
+  }
+  /** The slot of the topmost open HTML element with any of these tags, or -1. */
+  indexOfTopmostOf(tagIDs) {
+    if (this.indexed) {
+      let top = -1;
+      for (const tagID of tagIDs) {
+        if (this.keyTops[tagID] > top)
+          top = this.keyTops[tagID];
+      }
+      return top;
+    }
+    for (let i = this.stackTop; i >= 0; i--) {
+      if (tagIDs.includes(this.tagIDs[i]) && this.treeAdapter.getNamespaceURI(this.items[i]) === NS.HTML)
+        return i;
+    }
+    return -1;
+  }
+  /** The slot of the topmost open element in this namespace with this tag name, or -1. */
+  indexOfTopmostByName(ns, tagName) {
+    if (this.indexed) {
+      let key = tagKey(ns, getTagID(tagName));
+      if (key === -1)
+        key = this._nameKey(ns, tagName, false);
+      return key === -1 ? -1 : this.keyTops[key];
+    }
+    for (let i = this.stackTop; i >= 0; i--) {
+      const element = this.items[i];
+      if (this.treeAdapter.getTagName(element) === tagName && this.treeAdapter.getNamespaceURI(element) === ns) {
+        return i;
+      }
+    }
+    return -1;
+  }
+  /** The slot of the topmost open HTML element, or -1. */
+  indexOfTopmostHtmlElement() {
+    if (this.indexed)
+      return this.stackTop === -1 ? -1 : this.htmlSlots[this.stackTop];
+    let i = this.stackTop;
+    while (i >= 0 && this.treeAdapter.getNamespaceURI(this.items[i]) !== NS.HTML)
+      i--;
+    return i;
+  }
+  /** Whether an element of the classes is open above the slot `idx`, on a stack that is not indexed. */
+  _hasAbove(idx, classes) {
+    for (let i = this.stackTop; i > idx; i--) {
+      const key = tagKey(this.treeAdapter.getNamespaceURI(this.items[i]), this.tagIDs[i]);
+      if (key !== -1 && KEY_CLASSES[key] & classes)
+        return true;
+    }
+    return false;
+  }
+  /** Whether a special element is open above the slot `idx`. */
+  hasSpecialElementAbove(idx) {
+    return this.indexed ? this.specials[this.stackTop] !== this.specials[idx] : this._hasAbove(idx, SPECIAL);
+  }
+  /** Whether a special element other than HTML `address`, `div` and `p` is open above the slot `idx`. */
+  hasListItemBoundaryAbove(idx) {
+    return this.indexed ? this.listItemBoundaries[this.stackTop] !== this.listItemBoundaries[idx] : this._hasAbove(idx, LIST_ITEM_BOUNDARY);
+  }
   //Mutations
   push(element, tagID) {
+    const belowIdx = this.stackTop;
     this.stackTop++;
+    this.depth++;
     this.items[this.stackTop] = element;
     this.current = element;
     this.tagIDs[this.stackTop] = tagID;
     this.currentTagId = tagID;
+    if (this.indexed)
+      this._index(this.stackTop, belowIdx);
+    else if (this.depth === INDEX_DEPTH)
+      this._indexAll();
     if (this._isInTemplate()) {
       this.tmplCount++;
     }
     this.handler.onItemPush(element, tagID, true);
   }
-  pop() {
-    const popped = this.current;
+  /** Pops the current element without calling the handler. */
+  _popCurrent() {
     if (this.tmplCount > 0 && this._isInTemplate()) {
       this.tmplCount--;
     }
-    this.stackTop--;
+    if (this.indexed) {
+      this._unindex(this.stackTop);
+      this.stackTop = this.below[this.stackTop];
+      if (this.stackTop !== -1)
+        this.above[this.stackTop] = -1;
+    } else {
+      this.stackTop--;
+    }
+    this.depth--;
     this._updateCurrentElement();
+  }
+  pop() {
+    const popped = this.current;
+    this._popCurrent();
     this.handler.onItemPop(popped, true);
   }
   replace(oldElement, newElement) {
     const idx = this._indexOf(oldElement);
     this.items[idx] = newElement;
+    if (this.indexed && FORMATTING_TAGS[this.tagIDs[idx]]) {
+      this.formattingSlots.delete(oldElement);
+      this.formattingSlots.set(newElement, idx);
+    }
     if (idx === this.stackTop) {
       this.current = newElement;
     }
   }
-  insertAfter(referenceElement, newElement, newElementID) {
-    const insertionIdx = this._indexOf(referenceElement) + 1;
-    this.items.splice(insertionIdx, 0, newElement);
-    this.tagIDs.splice(insertionIdx, 0, newElementID);
-    this.stackTop++;
-    if (insertionIdx === this.stackTop) {
-      this._updateCurrentElement();
+  /**
+   * The adoption agency's last stack step: removes the formatting element at `formattingIdx` and opens `element`
+   * directly above the furthest block at `furthestBlockIdx`. On an indexed stack, only formatting elements the agency
+   * kept are still open between them; the furthest block, with those directly below it, moves down by one slot, and
+   * `element` takes the furthest block's slot. No open element above the furthest block moves, and as all these
+   * elements are HTML elements and only the furthest block is special, the counts above it stay the same.
+   */
+  replaceFormattingElement(formattingIdx, furthestBlockIdx, element, tagID) {
+    const formattingElement = this.items[formattingIdx];
+    if (!this.indexed) {
+      this.items.splice(formattingIdx, 1);
+      this.tagIDs.splice(formattingIdx, 1);
+      this.handler.onItemPop(formattingElement, false);
+      this.items.splice(furthestBlockIdx, 0, element);
+      this.tagIDs.splice(furthestBlockIdx, 0, tagID);
+      if (furthestBlockIdx === this.stackTop)
+        this._updateCurrentElement();
+      if (this.current && this.currentTagId !== void 0) {
+        this.handler.onItemPush(this.current, this.currentTagId, furthestBlockIdx === this.stackTop);
+      }
+      return;
     }
+    const key = this.keys[formattingIdx];
+    const belowIdx = this.below[formattingIdx];
+    const aboveIdx = this.above[furthestBlockIdx];
+    const kept = [];
+    for (let i = this.above[formattingIdx]; i !== furthestBlockIdx; i = this.above[i])
+      kept.push(i);
+    const keyNext = this.keyNext[formattingIdx];
+    this._unindex(formattingIdx);
+    this.items[formattingIdx] = void 0;
+    this.handler.onItemPop(formattingElement, false);
+    let free = furthestBlockIdx - 1;
+    while (kept.length > 0 && kept[kept.length - 1] === free) {
+      kept.pop();
+      free--;
+    }
+    for (let i = free + 1; i <= furthestBlockIdx; i++)
+      this._move(i, i - 1);
+    const keyPrev = keyNext === -1 ? this.keyTops[key] : this.keyPrev[keyNext];
+    this.items[furthestBlockIdx] = element;
+    this.tagIDs[furthestBlockIdx] = tagID;
+    this.keys[furthestBlockIdx] = key;
+    this.keyPrev[furthestBlockIdx] = keyPrev;
+    this.keyNext[furthestBlockIdx] = keyNext;
+    if (keyPrev !== -1)
+      this.keyNext[keyPrev] = furthestBlockIdx;
+    if (keyNext === -1)
+      this.keyTops[key] = furthestBlockIdx;
+    else
+      this.keyPrev[keyNext] = furthestBlockIdx;
+    if (FORMATTING_TAGS[tagID])
+      this.formattingSlots.set(element, furthestBlockIdx);
+    let prev = belowIdx;
+    for (const i of kept) {
+      this._link(i, prev, true);
+      prev = i;
+    }
+    for (let i = free; i < furthestBlockIdx; i++) {
+      this._link(i, prev, true);
+      prev = i;
+    }
+    this._link(furthestBlockIdx, prev, true);
+    if (aboveIdx === -1)
+      this._updateCurrentElement();
     if (this.current && this.currentTagId !== void 0) {
-      this.handler.onItemPush(this.current, this.currentTagId, insertionIdx === this.stackTop);
+      this.handler.onItemPush(this.current, this.currentTagId, aboveIdx === -1);
     }
   }
   popUntilTagNamePopped(tagName) {
-    let targetIdx = this.stackTop + 1;
-    do {
-      targetIdx = this.tagIDs.lastIndexOf(tagName, targetIdx - 1);
-    } while (targetIdx > 0 && this.treeAdapter.getNamespaceURI(this.items[targetIdx]) !== NS.HTML);
-    this.shortenToLength(Math.max(targetIdx, 0));
+    this.shortenToLength(Math.max(this.indexOfTopmost(tagName), 0));
   }
   shortenToLength(idx) {
     while (this.stackTop >= idx) {
       const popped = this.current;
-      if (this.tmplCount > 0 && this._isInTemplate()) {
-        this.tmplCount -= 1;
-      }
-      this.stackTop--;
-      this._updateCurrentElement();
+      this._popCurrent();
       this.handler.onItemPop(popped, this.stackTop < idx);
     }
   }
@@ -8158,54 +8674,65 @@ var OpenElementStack = class {
     const idx = this._indexOf(element);
     this.shortenToLength(Math.max(idx, 0));
   }
-  popUntilPopped(tagNames, targetNS) {
-    const idx = this._indexOfTagNames(tagNames, targetNS);
-    this.shortenToLength(Math.max(idx, 0));
-  }
   popUntilNumberedHeaderPopped() {
-    this.popUntilPopped(NUMBERED_HEADERS, NS.HTML);
+    this.shortenToLength(Math.max(this.indexOfTopmostOf(NUMBERED_HEADERS2), 0));
   }
   popUntilTableCellPopped() {
-    this.popUntilPopped(TABLE_CELLS, NS.HTML);
+    this.shortenToLength(Math.max(this.indexOfTopmostOf(TABLE_CELLS), 0));
   }
   popAllUpToHtmlElement() {
     this.tmplCount = 0;
     this.shortenToLength(1);
   }
-  _indexOfTagNames(tagNames, namespace) {
-    for (let i = this.stackTop; i >= 0; i--) {
-      if (tagNames.has(this.tagIDs[i]) && this.treeAdapter.getNamespaceURI(this.items[i]) === namespace) {
-        return i;
-      }
-    }
-    return -1;
-  }
-  clearBackTo(tagNames, targetNS) {
-    const idx = this._indexOfTagNames(tagNames, targetNS);
-    this.shortenToLength(idx + 1);
-  }
   clearBackToTableContext() {
-    this.clearBackTo(TABLE_CONTEXT, NS.HTML);
+    this.shortenToLength(this.indexOfTopmostOf(TABLE_CONTEXT) + 1);
   }
   clearBackToTableBodyContext() {
-    this.clearBackTo(TABLE_BODY_CONTEXT, NS.HTML);
+    this.shortenToLength(this.indexOfTopmostOf(TABLE_BODY_CONTEXT) + 1);
   }
   clearBackToTableRowContext() {
-    this.clearBackTo(TABLE_ROW_CONTEXT, NS.HTML);
+    this.shortenToLength(this.indexOfTopmostOf(TABLE_ROW_CONTEXT) + 1);
   }
   remove(element) {
     const idx = this._indexOf(element);
-    if (idx >= 0) {
-      if (idx === this.stackTop) {
-        this.pop();
-      } else {
-        this.items.splice(idx, 1);
-        this.tagIDs.splice(idx, 1);
-        this.stackTop--;
-        this._updateCurrentElement();
-        this.handler.onItemPop(element, false);
-      }
+    if (idx !== -1)
+      this.removeAt(idx);
+  }
+  /** Removes the open element at the slot `idx`; on an indexed stack, the elements above it keep their slots. */
+  removeAt(idx) {
+    if (idx === this.stackTop) {
+      this.pop();
+      return;
     }
+    const element = this.items[idx];
+    this.depth--;
+    if (this.indexed) {
+      const classes = this.keys[idx] < NAME_KEYS ? KEY_CLASSES[this.keys[idx]] : 0;
+      const belowIdx = this.below[idx];
+      const aboveIdx = this.above[idx];
+      this._unindex(idx);
+      this.items[idx] = void 0;
+      this.below[aboveIdx] = belowIdx;
+      if (belowIdx !== -1)
+        this.above[belowIdx] = aboveIdx;
+      if (classes !== 0) {
+        for (let i = aboveIdx; i !== -1; i = this.above[i]) {
+          this.specials[i] -= classes & SPECIAL;
+          this.listItemBoundaries[i] -= (classes & LIST_ITEM_BOUNDARY) >> 1;
+          this.scopeBoundaries[i] -= (classes & SCOPE) >> 2;
+        }
+      }
+      const html2 = belowIdx === -1 ? -1 : this.htmlSlots[belowIdx];
+      for (let i = aboveIdx; i !== -1 && this.htmlSlots[i] === idx; i = this.above[i]) {
+        this.htmlSlots[i] = html2;
+      }
+    } else {
+      this.items.splice(idx, 1);
+      this.tagIDs.splice(idx, 1);
+      this.stackTop--;
+      this._updateCurrentElement();
+    }
+    this.handler.onItemPop(element, false);
   }
   //Search
   tryPeekProperlyNestedBodyElement() {
@@ -8215,110 +8742,76 @@ var OpenElementStack = class {
     return this._indexOf(element) > -1;
   }
   getCommonAncestor(element) {
-    const elementIdx = this._indexOf(element) - 1;
-    return elementIdx >= 0 ? this.items[elementIdx] : null;
+    const idx = this._indexOf(element);
+    const belowIdx = idx === -1 ? -1 : this.slotBelow(idx);
+    return belowIdx === -1 ? null : this.items[belowIdx];
   }
   isRootHtmlElementCurrent() {
     return this.stackTop === 0 && this.tagIDs[0] === TAG_ID.HTML;
   }
   //Element in scope
-  hasInDynamicScope(tagName, htmlScope) {
-    for (let i = this.stackTop; i >= 0; i--) {
-      const tn = this.tagIDs[i];
-      switch (this.treeAdapter.getNamespaceURI(this.items[i])) {
-        case NS.HTML: {
-          if (tn === tagName)
-            return true;
-          if (htmlScope.has(tn))
-            return false;
-          break;
-        }
-        case NS.SVG: {
-          if (SCOPING_ELEMENTS_SVG.has(tn))
-            return false;
-          break;
-        }
-        case NS.MATHML: {
-          if (SCOPING_ELEMENTS_MATHML.has(tn))
-            return false;
-          break;
-        }
+  /**
+   * On an indexed stack: whether no element of the `scope` class is open above the slot `target`. A target that is not
+   * open is in scope only on a stack without such an element, as a scan from the top would end there.
+   */
+  _isInScope(target, scope) {
+    let boundary = -1;
+    switch (scope) {
+      case LIST_ITEM_SCOPE: {
+        boundary = Math.max(this.keyTops[TAG_ID.OL], this.keyTops[TAG_ID.UL]);
+        break;
       }
+      case BUTTON_SCOPE: {
+        boundary = this.keyTops[TAG_ID.BUTTON];
+        break;
+      }
+      case TABLE_SCOPE: {
+        boundary = Math.max(this.keyTops[TAG_ID.TABLE], this.keyTops[TAG_ID.HTML]);
+        return target === -1 ? boundary === -1 : target >= boundary;
+      }
+      default:
+    }
+    return target === -1 ? boundary === -1 && (this.stackTop === -1 || this.scopeBoundaries[this.stackTop] === 0) : target >= boundary && this.scopeBoundaries[this.stackTop] === this.scopeBoundaries[target];
+  }
+  /**
+   * On a stack that is not indexed: whether an HTML element with the tag, or one of the tags, and if passed the element
+   * itself, is open above every element of the `scope` class; true if neither is open.
+   */
+  _scanScope(tagID, tagIDs, scope, element) {
+    for (let i = this.stackTop; i >= 0; i--) {
+      const key = tagKey(this.treeAdapter.getNamespaceURI(this.items[i]), this.tagIDs[i]);
+      if (key === -1)
+        continue;
+      if ((tagIDs ? tagIDs.includes(key) : key === tagID) && (!element || this.items[i] === element))
+        return true;
+      if (KEY_CLASSES[key] & scope)
+        return false;
     }
     return true;
   }
-  hasInScope(tagName) {
-    return this.hasInDynamicScope(tagName, SCOPING_ELEMENTS_HTML);
+  /** If `element` is passed, only that element (which has to be a `tagName` element) is looked for. */
+  hasInScope(tagName, element) {
+    if (!this.indexed)
+      return this._scanScope(tagName, null, SCOPE, element);
+    return this._isInScope(element ? this._indexOf(element) : this.keyTops[tagName], SCOPE);
   }
   hasInListItemScope(tagName) {
-    return this.hasInDynamicScope(tagName, SCOPING_ELEMENTS_HTML_LIST);
+    return this.indexed ? this._isInScope(this.keyTops[tagName], LIST_ITEM_SCOPE) : this._scanScope(tagName, null, LIST_ITEM_SCOPE);
   }
   hasInButtonScope(tagName) {
-    return this.hasInDynamicScope(tagName, SCOPING_ELEMENTS_HTML_BUTTON);
+    return this.indexed ? this._isInScope(this.keyTops[tagName], BUTTON_SCOPE) : this._scanScope(tagName, null, BUTTON_SCOPE);
   }
   hasNumberedHeaderInScope() {
-    for (let i = this.stackTop; i >= 0; i--) {
-      const tn = this.tagIDs[i];
-      switch (this.treeAdapter.getNamespaceURI(this.items[i])) {
-        case NS.HTML: {
-          if (NUMBERED_HEADERS.has(tn))
-            return true;
-          if (SCOPING_ELEMENTS_HTML.has(tn))
-            return false;
-          break;
-        }
-        case NS.SVG: {
-          if (SCOPING_ELEMENTS_SVG.has(tn))
-            return false;
-          break;
-        }
-        case NS.MATHML: {
-          if (SCOPING_ELEMENTS_MATHML.has(tn))
-            return false;
-          break;
-        }
-      }
-    }
-    return true;
+    return this.indexed ? this._isInScope(this.indexOfTopmostOf(NUMBERED_HEADERS2), SCOPE) : this._scanScope(TAG_ID.UNKNOWN, NUMBERED_HEADERS2, SCOPE);
   }
   hasInTableScope(tagName) {
-    for (let i = this.stackTop; i >= 0; i--) {
-      if (this.treeAdapter.getNamespaceURI(this.items[i]) !== NS.HTML) {
-        continue;
-      }
-      switch (this.tagIDs[i]) {
-        case tagName: {
-          return true;
-        }
-        case TAG_ID.TABLE:
-        case TAG_ID.HTML: {
-          return false;
-        }
-      }
-    }
-    return true;
+    return this.indexed ? this._isInScope(this.keyTops[tagName], TABLE_SCOPE) : this._scanScope(tagName, null, TABLE_SCOPE);
   }
   hasTableBodyContextInTableScope() {
-    for (let i = this.stackTop; i >= 0; i--) {
-      if (this.treeAdapter.getNamespaceURI(this.items[i]) !== NS.HTML) {
-        continue;
-      }
-      switch (this.tagIDs[i]) {
-        case TAG_ID.TBODY:
-        case TAG_ID.THEAD:
-        case TAG_ID.TFOOT: {
-          return true;
-        }
-        case TAG_ID.TABLE:
-        case TAG_ID.HTML: {
-          return false;
-        }
-      }
-    }
-    return true;
+    return this.indexed ? this._isInScope(this.indexOfTopmostOf(TABLE_BODIES), TABLE_SCOPE) : this._scanScope(TAG_ID.UNKNOWN, TABLE_BODIES, TABLE_SCOPE);
   }
   hasInSelectScope(tagName) {
-    for (let i = this.stackTop; i >= 0; i--) {
+    for (let i = this.stackTop; i >= 0; i = this.slotBelow(i)) {
       if (this.treeAdapter.getNamespaceURI(this.items[i]) !== NS.HTML) {
         continue;
       }
@@ -8339,103 +8832,159 @@ var OpenElementStack = class {
   }
   //Implied end tags
   generateImpliedEndTags() {
-    while (this.currentTagId !== void 0 && IMPLICIT_END_TAG_REQUIRED.has(this.currentTagId)) {
+    while (this.currentTagId !== void 0 && IMPLICIT_END_TAG_REQUIRED.has(this.currentTagId) && this.treeAdapter.getNamespaceURI(this.current) === NS.HTML) {
       this.pop();
     }
   }
   generateImpliedEndTagsThoroughly() {
-    while (this.currentTagId !== void 0 && IMPLICIT_END_TAG_REQUIRED_THOROUGHLY.has(this.currentTagId)) {
+    while (this.currentTagId !== void 0 && IMPLICIT_END_TAG_REQUIRED_THOROUGHLY.has(this.currentTagId) && this.treeAdapter.getNamespaceURI(this.current) === NS.HTML) {
       this.pop();
     }
   }
   generateImpliedEndTagsWithExclusion(exclusionId) {
-    while (this.currentTagId !== void 0 && this.currentTagId !== exclusionId && IMPLICIT_END_TAG_REQUIRED_THOROUGHLY.has(this.currentTagId)) {
+    while (this.currentTagId !== void 0 && this.currentTagId !== exclusionId && IMPLICIT_END_TAG_REQUIRED_THOROUGHLY.has(this.currentTagId) && this.treeAdapter.getNamespaceURI(this.current) === NS.HTML) {
       this.pop();
     }
   }
 };
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/parser/formatting-element-list.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/parser/formatting-element-list.js
 var NOAH_ARK_CAPACITY = 3;
 var EntryType;
 (function(EntryType2) {
   EntryType2[EntryType2["Marker"] = 0] = "Marker";
   EntryType2[EntryType2["Element"] = 1] = "Element";
 })(EntryType || (EntryType = {}));
-var MARKER = { type: EntryType.Marker };
 var FormattingElementList = class {
-  constructor(treeAdapter) {
-    this.treeAdapter = treeAdapter;
-    this.entries = [];
+  constructor() {
+    this.newest = null;
     this.bookmark = null;
+    this.index = null;
+    this.elementEntries = /* @__PURE__ */ new Map();
   }
-  //Noah Ark's condition
-  //OPTIMIZATION: at first we try to find possible candidates for exclusion using
-  //lightweight heuristics without thorough attributes check.
-  _getNoahArkConditionCandidates(newElement, neAttrs) {
-    const candidates = [];
-    const neAttrsLength = neAttrs.length;
-    const neTagName = this.treeAdapter.getTagName(newElement);
-    const neNamespaceURI = this.treeAdapter.getNamespaceURI(newElement);
-    for (let i = 0; i < this.entries.length; i++) {
-      const entry = this.entries[i];
-      if (entry.type === EntryType.Marker) {
-        break;
-      }
-      const { element } = entry;
-      if (this.treeAdapter.getTagName(element) === neTagName && this.treeAdapter.getNamespaceURI(element) === neNamespaceURI) {
-        const elementAttrs = this.treeAdapter.getAttrList(element);
-        if (elementAttrs.length === neAttrsLength) {
-          candidates.push({ idx: i, attrs: elementAttrs });
-        }
-      }
+  /** Returns the entry's ark, or null if the entries after the last marker are not indexed. */
+  _insertElementEntry(element, token, older) {
+    const newer = older === null ? null : older.newer;
+    const entry = {
+      type: EntryType.Element,
+      element,
+      token,
+      older,
+      newer,
+      ark: null,
+      olderSameTag: null,
+      newerSameTag: null
+    };
+    if (newer === null) {
+      this.newest = entry;
+    } else {
+      newer.older = entry;
     }
-    return candidates;
+    if (older !== null) {
+      older.newer = entry;
+    }
+    return this.index === null ? null : this._addToIndex(this.index, entry);
   }
-  _ensureNoahArkCondition(newElement) {
-    if (this.entries.length < NOAH_ARK_CAPACITY)
-      return;
-    const neAttrs = this.treeAdapter.getAttrList(newElement);
-    const candidates = this._getNoahArkConditionCandidates(newElement, neAttrs);
-    if (candidates.length < NOAH_ARK_CAPACITY)
-      return;
-    const neAttrsMap = new Map(neAttrs.map((neAttr) => [neAttr.name, neAttr.value]));
-    let validCandidates = 0;
-    for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      if (candidate.attrs.every((cAttr) => neAttrsMap.get(cAttr.name) === cAttr.value)) {
-        validCandidates += 1;
-        if (validCandidates >= NOAH_ARK_CAPACITY) {
-          this.entries.splice(candidate.idx, 1);
-        }
-      }
+  _addToIndex(index, entry) {
+    const { tagName, attrs } = entry.token;
+    const key = tagName + attrs.map(({ name, value }) => `\0${name}\0${value}`).sort().join("");
+    let ark = index.arks.get(key);
+    if (ark === void 0) {
+      ark = { entries: [], key };
+      index.arks.set(key, ark);
     }
+    ark.entries.push(entry);
+    entry.ark = ark;
+    this.elementEntries.set(entry.element, entry);
+    let head = index.tagNames.get(tagName);
+    if (head === void 0) {
+      head = { olderSameTag: null };
+      index.tagNames.set(tagName, head);
+    }
+    entry.olderSameTag = head.olderSameTag;
+    entry.newerSameTag = head;
+    if (head.olderSameTag !== null) {
+      head.olderSameTag.newerSameTag = entry;
+    }
+    head.olderSameTag = entry;
+    return ark;
   }
   //Mutations
   insertMarker() {
-    this.entries.unshift(MARKER);
+    if (this.index === null) {
+      for (let entry = this.newest; entry !== null && entry.type === EntryType.Element; entry = entry.older) {
+        this.elementEntries.set(entry.element, entry);
+      }
+    }
+    const marker = {
+      type: EntryType.Marker,
+      older: this.newest,
+      newer: null,
+      outerIndex: this.index
+    };
+    if (this.newest !== null) {
+      this.newest.newer = marker;
+    }
+    this.newest = marker;
+    this.index = null;
   }
   pushElement(element, token) {
-    this._ensureNoahArkCondition(element);
-    this.entries.unshift({
-      type: EntryType.Element,
-      element,
-      token
-    });
+    if (this.index === null) {
+      let oldest = null;
+      let count = 0;
+      for (let entry = this.newest; entry !== null && entry.type === EntryType.Element; entry = entry.older) {
+        oldest = entry;
+        count++;
+      }
+      if (count >= NOAH_ARK_CAPACITY) {
+        this.index = { arks: /* @__PURE__ */ new Map(), tagNames: /* @__PURE__ */ new Map() };
+        for (let entry = oldest; entry !== null && entry.type === EntryType.Element; entry = entry.newer) {
+          this._addToIndex(this.index, entry);
+        }
+      }
+    }
+    const ark = this._insertElementEntry(element, token, this.newest);
+    if (ark !== null && ark.entries.length > NOAH_ARK_CAPACITY) {
+      this.removeEntry(ark.entries[0]);
+    }
   }
   insertElementAfterBookmark(element, token) {
-    const bookmarkIdx = this.entries.indexOf(this.bookmark);
-    this.entries.splice(bookmarkIdx, 0, {
-      type: EntryType.Element,
-      element,
-      token
-    });
+    const { bookmark } = this;
+    this.bookmark = null;
+    this._insertElementEntry(element, token, bookmark);
   }
   removeEntry(entry) {
-    const entryIndex = this.entries.indexOf(entry);
-    if (entryIndex !== -1) {
-      this.entries.splice(entryIndex, 1);
+    var _a;
+    if (entry.newer === null ? this.newest !== entry : entry.newer.older !== entry) {
+      return;
     }
+    this.elementEntries.delete(entry.element);
+    if (entry.newer === null) {
+      this.newest = entry.older;
+    } else {
+      entry.newer.older = entry.older;
+    }
+    if (entry.older !== null) {
+      entry.older.newer = entry.newer;
+    }
+    if (entry.ark !== null) {
+      const { entries, key } = entry.ark;
+      entries.splice(entries.indexOf(entry), 1);
+      if (entries.length === 0)
+        (_a = this.index) === null || _a === void 0 ? void 0 : _a.arks.delete(key);
+    }
+    if (entry.newerSameTag !== null) {
+      entry.newerSameTag.olderSameTag = entry.olderSameTag;
+      if (entry.olderSameTag !== null) {
+        entry.olderSameTag.newerSameTag = entry.newerSameTag;
+      }
+    }
+  }
+  replaceElement(entry, element) {
+    if (this.elementEntries.delete(entry.element)) {
+      this.elementEntries.set(element, entry);
+    }
+    entry.element = element;
   }
   /**
    * Clears the list of formatting elements up to the last marker.
@@ -8443,24 +8992,43 @@ var FormattingElementList = class {
    * @see https://html.spec.whatwg.org/multipage/parsing.html#clear-the-list-of-active-formatting-elements-up-to-the-last-marker
    */
   clearToLastMarker() {
-    const markerIdx = this.entries.indexOf(MARKER);
-    if (markerIdx === -1) {
-      this.entries.length = 0;
-    } else {
-      this.entries.splice(0, markerIdx + 1);
+    let marker = this.newest;
+    for (; marker !== null && marker.type === EntryType.Element; marker = marker.older) {
+      this.elementEntries.delete(marker.element);
+    }
+    this.newest = marker === null ? null : marker.older;
+    this.index = marker === null ? null : marker.outerIndex;
+    if (this.newest !== null) {
+      this.newest.newer = null;
     }
   }
   //Search
   getElementEntryInScopeWithTagName(tagName) {
-    const entry = this.entries.find((entry2) => entry2.type === EntryType.Marker || this.treeAdapter.getTagName(entry2.element) === tagName);
-    return entry && entry.type === EntryType.Element ? entry : null;
+    var _a, _b;
+    if (this.index !== null) {
+      return (_b = (_a = this.index.tagNames.get(tagName)) === null || _a === void 0 ? void 0 : _a.olderSameTag) !== null && _b !== void 0 ? _b : null;
+    }
+    for (let entry = this.newest; entry !== null && entry.type === EntryType.Element; entry = entry.older) {
+      if (entry.token.tagName === tagName) {
+        return entry;
+      }
+    }
+    return null;
   }
   getElementEntry(element) {
-    return this.entries.find((entry) => entry.type === EntryType.Element && entry.element === element);
+    if (this.index === null) {
+      for (let entry = this.newest; entry !== null && entry.type === EntryType.Element; entry = entry.older) {
+        if (entry.element === element) {
+          return entry;
+        }
+      }
+    }
+    return this.elementEntries.get(element);
   }
 };
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/tree-adapters/default.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/tree-adapters/default.js
+var attrListIndexes = /* @__PURE__ */ new WeakMap();
 var defaultTreeAdapter = {
   //Node construction
   createDocument() {
@@ -8506,8 +9074,9 @@ var defaultTreeAdapter = {
     newNode.parentNode = parentNode;
   },
   insertBefore(parentNode, newNode, referenceNode) {
-    const insertionIdx = parentNode.childNodes.indexOf(referenceNode);
-    parentNode.childNodes.splice(insertionIdx, 0, newNode);
+    const { childNodes } = parentNode;
+    const insertionIdx = childNodes[childNodes.length - 1] === referenceNode ? childNodes.length - 1 : childNodes.indexOf(referenceNode);
+    childNodes.splice(insertionIdx, 0, newNode);
     newNode.parentNode = parentNode;
   },
   setTemplateContent(templateElement, contentElement) {
@@ -8541,8 +9110,9 @@ var defaultTreeAdapter = {
   },
   detachNode(node) {
     if (node.parentNode) {
-      const idx = node.parentNode.childNodes.indexOf(node);
-      node.parentNode.childNodes.splice(idx, 1);
+      const { childNodes } = node.parentNode;
+      const idx = childNodes[childNodes.length - 1] === node ? childNodes.length - 1 : childNodes.indexOf(node);
+      childNodes.splice(idx, 1);
       node.parentNode = null;
     }
   },
@@ -8557,19 +9127,49 @@ var defaultTreeAdapter = {
     defaultTreeAdapter.appendChild(parentNode, defaultTreeAdapter.createTextNode(text));
   },
   insertTextBefore(parentNode, text, referenceNode) {
-    const prevNode = parentNode.childNodes[parentNode.childNodes.indexOf(referenceNode) - 1];
+    const { childNodes } = parentNode;
+    const referenceIdx = childNodes[childNodes.length - 1] === referenceNode ? childNodes.length - 1 : childNodes.indexOf(referenceNode);
+    const prevNode = childNodes[referenceIdx - 1];
     if (prevNode && defaultTreeAdapter.isTextNode(prevNode)) {
       prevNode.value += text;
     } else {
       defaultTreeAdapter.insertBefore(parentNode, defaultTreeAdapter.createTextNode(text), referenceNode);
     }
   },
+  /**
+   * Keeps the recipient's names between merges as a map from name to position. The map is rebuilt when the list changed
+   * length or has a repeated name, or when a merged name it holds no longer names the entry at that position. A name that
+   * other code gives an existing entry between two merges is missed otherwise, and merging it appends it a second time.
+   */
   adoptAttributes(recipient, attrs) {
-    const recipientAttrsMap = new Set(recipient.attrs.map((attr) => attr.name));
+    if (attrs.length === 0 || attrs === recipient.attrs)
+      return;
+    const cached = attrListIndexes.get(recipient.attrs);
+    const isIndexed = (cached === null || cached === void 0 ? void 0 : cached.size) === recipient.attrs.length && attrs.every(({ name }) => {
+      var _a;
+      const index = cached.get(name);
+      return index === void 0 || ((_a = recipient.attrs[index]) === null || _a === void 0 ? void 0 : _a.name) === name;
+    });
+    const recipientAttrsMap = isIndexed ? cached : /* @__PURE__ */ new Map();
+    if (!isIndexed) {
+      for (let i = 0; i < recipient.attrs.length; i++) {
+        const attr = recipient.attrs[i];
+        if (attr !== void 0)
+          recipientAttrsMap.set(attr.name, i);
+      }
+      attrListIndexes.set(recipient.attrs, recipientAttrsMap);
+    }
+    const adoptedFrom = recipient.attrs.length;
     for (let j = 0; j < attrs.length; j++) {
       if (!recipientAttrsMap.has(attrs[j].name)) {
         recipient.attrs.push(attrs[j]);
       }
+    }
+    for (let j = adoptedFrom; j < recipient.attrs.length; j++) {
+      recipientAttrsMap.set(recipient.attrs[j].name, j);
+    }
+    if (recipientAttrsMap.size !== recipient.attrs.length) {
+      attrListIndexes.delete(recipient.attrs);
     }
   },
   //Tree traversing
@@ -8632,7 +9232,7 @@ var defaultTreeAdapter = {
   }
 };
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/common/doctype.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/common/doctype.js
 var VALID_DOCTYPE_NAME = "html";
 var VALID_SYSTEM_ID = "about:legacy-compat";
 var QUIRKS_MODE_SYSTEM_ID = "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd";
@@ -8741,7 +9341,7 @@ function getDocumentMode(token) {
   return DOCUMENT_MODE.NO_QUIRKS;
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/common/foreign-content.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/common/foreign-content.js
 var MIME_TYPES = {
   TEXT_HTML: "text/html",
   APPLICATION_XML: "application/xhtml+xml"
@@ -8961,8 +9561,26 @@ function isIntegrationPoint(tn, ns, attrs, foreignNS) {
   return (!foreignNS || foreignNS === NS.HTML) && isHtmlIntegrationPoint(tn, ns, attrs) || (!foreignNS || foreignNS === NS.MATHML) && isMathMLTextIntegrationPoint(tn, ns);
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/parser/index.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/parser/index.js
+var INSERTION_MODE_TAGS = [
+  TAG_ID.TR,
+  TAG_ID.TBODY,
+  TAG_ID.THEAD,
+  TAG_ID.TFOOT,
+  TAG_ID.CAPTION,
+  TAG_ID.COLGROUP,
+  TAG_ID.TABLE,
+  TAG_ID.FRAMESET,
+  TAG_ID.SELECT,
+  TAG_ID.TEMPLATE,
+  TAG_ID.TD,
+  TAG_ID.TH,
+  TAG_ID.HEAD,
+  TAG_ID.BODY,
+  TAG_ID.HTML
+];
 var HIDDEN_INPUT_TYPE = "hidden";
+var EMPTY_ATTRS = [];
 var AA_OUTER_LOOP_ITER = 8;
 var AA_INNER_LOOP_ITER = 3;
 var InsertionMode;
@@ -9034,7 +9652,7 @@ var Parser = class {
     }
     this.document = document !== null && document !== void 0 ? document : this.treeAdapter.createDocument();
     this.tokenizer = new Tokenizer(this.options, this);
-    this.activeFormattingElements = new FormattingElementList(this.treeAdapter);
+    this.activeFormattingElements = new FormattingElementList();
     this.fragmentContextID = fragmentContext ? getTagID(this.treeAdapter.getTagName(fragmentContext)) : TAG_ID.UNKNOWN;
     this._setContextModes(fragmentContext !== null && fragmentContext !== void 0 ? fragmentContext : this.document, this.fragmentContextID);
     this.openElements = new OpenElementStack(this.document, this.treeAdapter, this);
@@ -9054,7 +9672,7 @@ var Parser = class {
     const documentMock = opts.treeAdapter.createElement("documentmock", NS.HTML, []);
     const parser = new this(opts, documentMock, fragmentContext);
     if (parser.fragmentContextID === TAG_ID.TEMPLATE) {
-      parser.tmplInsertionModeStack.unshift(InsertionMode.IN_TEMPLATE);
+      parser.tmplInsertionModeStack.push(InsertionMode.IN_TEMPLATE);
     }
     parser._initTokenizerForFragmentParsing();
     parser._insertFakeRootElement();
@@ -9096,11 +9714,12 @@ var Parser = class {
   }
   /** @internal */
   onItemPop(node, isTop) {
-    var _a, _b;
+    var _a, _b, _c;
     if (this.options.sourceCodeLocationInfo) {
       this._setEndLocation(node, this.currentToken);
     }
     (_b = (_a = this.treeAdapter).onItemPop) === null || _b === void 0 ? void 0 : _b.call(_a, node, this.openElements.current);
+    (_c = this.annotationXmlIntegrationPoints) === null || _c === void 0 ? void 0 : _c.delete(node);
     if (isTop) {
       let current;
       let currentTagId;
@@ -9139,7 +9758,7 @@ var Parser = class {
   _findFormInFragmentContext() {
     let node = this.fragmentContext;
     while (node) {
-      if (this.treeAdapter.getTagName(node) === TAG_NAMES.FORM) {
+      if (this.treeAdapter.getTagName(node) === TAG_NAMES.FORM && this.treeAdapter.getNamespaceURI(node) === NS.HTML) {
         this.formElement = node;
         break;
       }
@@ -9192,7 +9811,7 @@ var Parser = class {
     }
   }
   /** @protected */
-  _attachElementToTree(element, location) {
+  _attachElementToTree(element, location, insertionLocation) {
     if (this.options.sourceCodeLocationInfo) {
       const loc = location && {
         ...location,
@@ -9200,12 +9819,33 @@ var Parser = class {
       };
       this.treeAdapter.setNodeSourceCodeLocation(element, loc);
     }
-    if (this._shouldFosterParentOnInsertion()) {
-      this._fosterParentElement(element);
+    if (insertionLocation.beforeElement) {
+      this.treeAdapter.insertBefore(insertionLocation.parent, element, insertionLocation.beforeElement);
     } else {
-      const parent = this.openElements.currentTmplContentOrNode;
-      this.treeAdapter.appendChild(parent !== null && parent !== void 0 ? parent : this.document, element);
+      this.treeAdapter.appendChild(insertionLocation.parent, element);
     }
+  }
+  /** @protected */
+  _getInsertionLocation() {
+    var _a;
+    if (this._shouldFosterParentOnInsertion()) {
+      return this._findFosterParentingLocation();
+    }
+    return {
+      parent: (_a = this.openElements.currentTmplContentOrNode) !== null && _a !== void 0 ? _a : this.document,
+      beforeElement: null
+    };
+  }
+  /** @protected */
+  _createElement(tagName, namespaceURI, attrs, intendedParent) {
+    var _a, _b;
+    const element = this.treeAdapter.createElement(tagName, namespaceURI, attrs);
+    (_b = (_a = this.treeAdapter).onElementCreated) === null || _b === void 0 ? void 0 : _b.call(_a, element, {
+      intendedParent,
+      formElement: this.formElement,
+      isInTemplate: this.openElements.tmplCount > 0
+    });
+    return element;
   }
   /**
    * For self-closing tags. Add an element to the tree, but skip adding it
@@ -9213,37 +9853,41 @@ var Parser = class {
    */
   /** @protected */
   _appendElement(token, namespaceURI) {
-    const element = this.treeAdapter.createElement(token.tagName, namespaceURI, token.attrs);
-    this._attachElementToTree(element, token.location);
+    const insertionLocation = this._getInsertionLocation();
+    const element = this._createElement(token.tagName, namespaceURI, token.attrs, insertionLocation.parent);
+    this._attachElementToTree(element, token.location, insertionLocation);
   }
   /** @protected */
   _insertElement(token, namespaceURI) {
-    const element = this.treeAdapter.createElement(token.tagName, namespaceURI, token.attrs);
-    this._attachElementToTree(element, token.location);
+    const insertionLocation = this._getInsertionLocation();
+    const element = this._createElement(token.tagName, namespaceURI, token.attrs, insertionLocation.parent);
+    this._attachElementToTree(element, token.location, insertionLocation);
     this.openElements.push(element, token.tagID);
   }
   /** @protected */
   _insertFakeElement(tagName, tagID) {
-    const element = this.treeAdapter.createElement(tagName, NS.HTML, []);
-    this._attachElementToTree(element, null);
+    const insertionLocation = this._getInsertionLocation();
+    const element = this._createElement(tagName, NS.HTML, [], insertionLocation.parent);
+    this._attachElementToTree(element, null, insertionLocation);
     this.openElements.push(element, tagID);
   }
   /** @protected */
   _insertTemplate(token) {
-    const tmpl = this.treeAdapter.createElement(token.tagName, NS.HTML, token.attrs);
+    const insertionLocation = this._getInsertionLocation();
+    const tmpl = this._createElement(token.tagName, NS.HTML, token.attrs, insertionLocation.parent);
     const content = this.treeAdapter.createDocumentFragment();
     this.treeAdapter.setTemplateContent(tmpl, content);
-    this._attachElementToTree(tmpl, token.location);
+    this._attachElementToTree(tmpl, token.location, insertionLocation);
     this.openElements.push(tmpl, token.tagID);
     if (this.options.sourceCodeLocationInfo)
       this.treeAdapter.setNodeSourceCodeLocation(content, null);
   }
   /** @protected */
   _insertFakeRootElement() {
-    const element = this.treeAdapter.createElement(TAG_NAMES.HTML, NS.HTML, []);
+    const element = this._createElement(TAG_NAMES.HTML, NS.HTML, [], this.document);
     if (this.options.sourceCodeLocationInfo)
       this.treeAdapter.setNodeSourceCodeLocation(element, null);
-    this.treeAdapter.appendChild(this.openElements.current, element);
+    this.treeAdapter.appendChild(this.document, element);
     this.openElements.push(element, TAG_ID.HTML);
   }
   /** @protected */
@@ -9284,8 +9928,11 @@ var Parser = class {
   }
   /** @protected */
   _adoptNodes(donor, recipient) {
-    for (let child = this.treeAdapter.getFirstChild(donor); child; child = this.treeAdapter.getFirstChild(donor)) {
-      this.treeAdapter.detachNode(child);
+    const children = [...this.treeAdapter.getChildNodes(donor)];
+    for (let i = children.length - 1; i >= 0; i--) {
+      this.treeAdapter.detachNode(children[i]);
+    }
+    for (const child of children) {
       this.treeAdapter.appendChild(recipient, child);
     }
   }
@@ -9370,25 +10017,31 @@ var Parser = class {
       }
     }
   }
-  //Integration points
   /** @protected */
   _isIntegrationPoint(tid, element, foreignNS) {
+    var _a;
     const ns = this.treeAdapter.getNamespaceURI(element);
-    const attrs = this.treeAdapter.getAttrList(element);
-    return isIntegrationPoint(tid, ns, attrs, foreignNS);
+    if (tid === TAG_ID.ANNOTATION_XML && ns === NS.MATHML && foreignNS !== NS.MATHML) {
+      const verdicts = (_a = this.annotationXmlIntegrationPoints) !== null && _a !== void 0 ? _a : this.annotationXmlIntegrationPoints = /* @__PURE__ */ new Map();
+      let isIntegrationPoint2 = verdicts.get(element);
+      if (isIntegrationPoint2 === void 0) {
+        isIntegrationPoint2 = isIntegrationPoint(tid, ns, this.treeAdapter.getAttrList(element));
+        verdicts.set(element, isIntegrationPoint2);
+      }
+      return isIntegrationPoint2;
+    }
+    return isIntegrationPoint(tid, ns, EMPTY_ATTRS, foreignNS);
   }
   //Active formatting elements reconstruction
   /** @protected */
   _reconstructActiveFormattingElements() {
-    const listLength = this.activeFormattingElements.entries.length;
-    if (listLength) {
-      const endIndex = this.activeFormattingElements.entries.findIndex((entry) => entry.type === EntryType.Marker || this.openElements.contains(entry.element));
-      const unopenIdx = endIndex === -1 ? listLength - 1 : endIndex - 1;
-      for (let i = unopenIdx; i >= 0; i--) {
-        const entry = this.activeFormattingElements.entries[i];
-        this._insertElement(entry.token, this.treeAdapter.getNamespaceURI(entry.element));
-        entry.element = this.openElements.current;
-      }
+    let oldest = null;
+    for (let entry = this.activeFormattingElements.newest; entry !== null && entry.type === EntryType.Element && !this.openElements.contains(entry.element); entry = entry.older) {
+      oldest = entry;
+    }
+    for (let entry = oldest; entry !== null && entry.type === EntryType.Element; entry = entry.newer) {
+      this._insertElement(entry.token, this.treeAdapter.getNamespaceURI(entry.element));
+      this.activeFormattingElements.replaceElement(entry, this.openElements.current);
     }
   }
   //Close elements
@@ -9407,8 +10060,11 @@ var Parser = class {
   //Insertion modes
   /** @protected */
   _resetInsertionMode() {
-    for (let i = this.openElements.stackTop; i >= 0; i--) {
-      switch (i === 0 && this.fragmentContext ? this.fragmentContextID : this.openElements.tagIDs[i]) {
+    const i = this.openElements.indexOfTopmostOf(INSERTION_MODE_TAGS);
+    const tn = i === 0 && this.fragmentContext ? this.fragmentContextID : this.openElements.tagIDs[i];
+    const node = i === 0 && this.fragmentContext ? this.fragmentContext : this.openElements.items[i];
+    if (node !== void 0 && this.treeAdapter.getNamespaceURI(node) === NS.HTML) {
+      switch (tn) {
         case TAG_ID.TR: {
           this.insertionMode = InsertionMode.IN_ROW;
           return;
@@ -9444,7 +10100,7 @@ var Parser = class {
           return;
         }
         case TAG_ID.TEMPLATE: {
-          this.insertionMode = this.tmplInsertionModeStack[0];
+          this.insertionMode = this.tmplInsertionModeStack[this.tmplInsertionModeStack.length - 1];
           return;
         }
         case TAG_ID.HTML: {
@@ -9473,14 +10129,10 @@ var Parser = class {
   /** @protected */
   _resetInsertionModeForSelect(selectIdx) {
     if (selectIdx > 0) {
-      for (let i = selectIdx - 1; i > 0; i--) {
-        const tn = this.openElements.tagIDs[i];
-        if (tn === TAG_ID.TEMPLATE) {
-          break;
-        } else if (tn === TAG_ID.TABLE) {
-          this.insertionMode = InsertionMode.IN_SELECT_IN_TABLE;
-          return;
-        }
+      const tableIdx = this.openElements.indexOfTopmost(TAG_ID.TABLE);
+      if (tableIdx > 0 && tableIdx > this.openElements.indexOfTopmost(TAG_ID.TEMPLATE)) {
+        this.insertionMode = InsertionMode.IN_SELECT_IN_TABLE;
+        return;
       }
     }
     this.insertionMode = InsertionMode.IN_SELECT;
@@ -9496,26 +10148,24 @@ var Parser = class {
   }
   /** @protected */
   _findFosterParentingLocation() {
-    for (let i = this.openElements.stackTop; i >= 0; i--) {
-      const openElement = this.openElements.items[i];
-      switch (this.openElements.tagIDs[i]) {
-        case TAG_ID.TEMPLATE: {
-          if (this.treeAdapter.getNamespaceURI(openElement) === NS.HTML) {
-            return { parent: this.treeAdapter.getTemplateContent(openElement), beforeElement: null };
-          }
-          break;
-        }
-        case TAG_ID.TABLE: {
-          const parent = this.treeAdapter.getParentNode(openElement);
-          if (parent) {
-            return { parent, beforeElement: openElement };
-          }
-          return { parent: this.openElements.items[i - 1], beforeElement: null };
-        }
-        default:
-      }
+    const { openElements } = this;
+    const tableIdx = openElements.indexOfTopmost(TAG_ID.TABLE);
+    const templateIdx = openElements.indexOfTopmost(TAG_ID.TEMPLATE);
+    if (templateIdx > tableIdx) {
+      return {
+        parent: this.treeAdapter.getTemplateContent(openElements.items[templateIdx]),
+        beforeElement: null
+      };
     }
-    return { parent: this.openElements.items[0], beforeElement: null };
+    if (tableIdx !== -1) {
+      const table = openElements.items[tableIdx];
+      const parent = this.treeAdapter.getParentNode(table);
+      if (parent) {
+        return { parent, beforeElement: table };
+      }
+      return { parent: openElements.items[openElements.slotBelow(tableIdx)], beforeElement: null };
+    }
+    return { parent: openElements.items[0], beforeElement: null };
   }
   /** @protected */
   _fosterParentElement(element) {
@@ -10071,7 +10721,7 @@ function aaObtainFormattingElementEntry(p, token) {
     if (!p.openElements.contains(formattingElementEntry.element)) {
       p.activeFormattingElements.removeEntry(formattingElementEntry);
       formattingElementEntry = null;
-    } else if (!p.openElements.hasInScope(token.tagID)) {
+    } else if (!p.openElements.hasInScope(token.tagID, formattingElementEntry.element)) {
       formattingElementEntry = null;
     }
   } else {
@@ -10080,28 +10730,25 @@ function aaObtainFormattingElementEntry(p, token) {
   return formattingElementEntry;
 }
 function aaObtainFurthestBlock(p, formattingElementEntry) {
-  let furthestBlock = null;
-  let idx = p.openElements.stackTop;
-  for (; idx >= 0; idx--) {
-    const element = p.openElements.items[idx];
-    if (element === formattingElementEntry.element) {
-      break;
-    }
-    if (p._isSpecialElement(element, p.openElements.tagIDs[idx])) {
-      furthestBlock = element;
+  const { openElements } = p;
+  const formattingIdx = openElements._indexOf(formattingElementEntry.element);
+  for (let idx = openElements.slotAbove(formattingIdx); idx !== -1; idx = openElements.slotAbove(idx)) {
+    if (p._isSpecialElement(openElements.items[idx], openElements.tagIDs[idx])) {
+      return idx;
     }
   }
-  if (!furthestBlock) {
-    p.openElements.shortenToLength(Math.max(idx, 0));
-    p.activeFormattingElements.removeEntry(formattingElementEntry);
-  }
-  return furthestBlock;
+  openElements.shortenToLength(formattingIdx);
+  p.activeFormattingElements.removeEntry(formattingElementEntry);
+  return -1;
 }
-function aaInnerLoop(p, furthestBlock, formattingElement) {
+function aaInnerLoop(p, furthestBlockIdx, formattingElement) {
+  const furthestBlock = p.openElements.items[furthestBlockIdx];
   let lastElement = furthestBlock;
-  let nextElement = p.openElements.getCommonAncestor(furthestBlock);
-  for (let i = 0, element = nextElement; element !== formattingElement; i++, element = nextElement) {
-    nextElement = p.openElements.getCommonAncestor(element);
+  let nextIdx = p.openElements.slotBelow(furthestBlockIdx);
+  const intendedParent = p.openElements.getCommonAncestor(formattingElement);
+  for (let i = 0, idx = nextIdx; p.openElements.items[idx] !== formattingElement; i++, idx = nextIdx) {
+    let element = p.openElements.items[idx];
+    nextIdx = p.openElements.slotBelow(idx);
     const elementEntry = p.activeFormattingElements.getElementEntry(element);
     const counterOverflow = elementEntry && i >= AA_INNER_LOOP_ITER;
     const shouldRemoveFromOpenElements = !elementEntry || counterOverflow;
@@ -10109,9 +10756,9 @@ function aaInnerLoop(p, furthestBlock, formattingElement) {
       if (counterOverflow) {
         p.activeFormattingElements.removeEntry(elementEntry);
       }
-      p.openElements.remove(element);
+      p.openElements.removeAt(idx);
     } else {
-      element = aaRecreateElementFromEntry(p, elementEntry);
+      element = aaRecreateElementFromEntry(p, elementEntry, intendedParent);
       if (lastElement === furthestBlock) {
         p.activeFormattingElements.bookmark = elementEntry;
       }
@@ -10122,11 +10769,11 @@ function aaInnerLoop(p, furthestBlock, formattingElement) {
   }
   return lastElement;
 }
-function aaRecreateElementFromEntry(p, elementEntry) {
+function aaRecreateElementFromEntry(p, elementEntry, intendedParent) {
   const ns = p.treeAdapter.getNamespaceURI(elementEntry.element);
-  const newElement = p.treeAdapter.createElement(elementEntry.token.tagName, ns, elementEntry.token.attrs);
+  const newElement = p._createElement(elementEntry.token.tagName, ns, elementEntry.token.attrs, intendedParent);
   p.openElements.replace(elementEntry.element, newElement);
-  elementEntry.element = newElement;
+  p.activeFormattingElements.replaceElement(elementEntry, newElement);
   return newElement;
 }
 function aaInsertLastNodeInCommonAncestor(p, commonAncestor, lastElement) {
@@ -10145,26 +10792,36 @@ function aaInsertLastNodeInCommonAncestor(p, commonAncestor, lastElement) {
 function aaReplaceFormattingElement(p, furthestBlock, formattingElementEntry) {
   const ns = p.treeAdapter.getNamespaceURI(formattingElementEntry.element);
   const { token } = formattingElementEntry;
-  const newElement = p.treeAdapter.createElement(token.tagName, ns, token.attrs);
+  const newElement = p._createElement(token.tagName, ns, token.attrs, furthestBlock);
   p._adoptNodes(furthestBlock, newElement);
   p.treeAdapter.appendChild(furthestBlock, newElement);
   p.activeFormattingElements.insertElementAfterBookmark(newElement, token);
   p.activeFormattingElements.removeEntry(formattingElementEntry);
-  p.openElements.remove(formattingElementEntry.element);
-  p.openElements.insertAfter(furthestBlock, newElement, token.tagID);
+  const formattingIdx = p.openElements._indexOf(formattingElementEntry.element);
+  let furthestBlockIdx = p.openElements.slotAbove(formattingIdx);
+  while (p.openElements.items[furthestBlockIdx] !== furthestBlock) {
+    furthestBlockIdx = p.openElements.slotAbove(furthestBlockIdx);
+  }
+  p.openElements.replaceFormattingElement(formattingIdx, furthestBlockIdx, newElement, token.tagID);
 }
 function callAdoptionAgency(p, token) {
+  const { current, currentTagId } = p.openElements;
+  if (currentTagId === token.tagID && p.treeAdapter.getNamespaceURI(current) === NS.HTML && !p.activeFormattingElements.getElementEntry(current)) {
+    p.openElements.pop();
+    return;
+  }
   for (let i = 0; i < AA_OUTER_LOOP_ITER; i++) {
     const formattingElementEntry = aaObtainFormattingElementEntry(p, token);
     if (!formattingElementEntry) {
       break;
     }
-    const furthestBlock = aaObtainFurthestBlock(p, formattingElementEntry);
-    if (!furthestBlock) {
+    const furthestBlockIdx = aaObtainFurthestBlock(p, formattingElementEntry);
+    if (furthestBlockIdx === -1) {
       break;
     }
+    const furthestBlock = p.openElements.items[furthestBlockIdx];
     p.activeFormattingElements.bookmark = formattingElementEntry;
-    const lastElement = aaInnerLoop(p, furthestBlock, formattingElementEntry.element);
+    const lastElement = aaInnerLoop(p, furthestBlockIdx, formattingElementEntry.element);
     const commonAncestor = p.openElements.getCommonAncestor(formattingElementEntry.element);
     p.treeAdapter.detachNode(lastElement);
     if (commonAncestor)
@@ -10185,7 +10842,7 @@ function stopParsing(p, token) {
   p.stopped = true;
   if (token.location) {
     const target = p.fragmentContext ? 0 : 2;
-    for (let i = p.openElements.stackTop; i >= target; i--) {
+    for (let i = p.openElements.stackTop; i >= target; i = p.openElements.slotBelow(i)) {
       p._setEndLocation(p.openElements.items[i], token);
     }
     if (!p.fragmentContext && p.openElements.stackTop >= 0) {
@@ -10311,7 +10968,7 @@ function startTagInHead(p, token) {
       p.activeFormattingElements.insertMarker();
       p.framesetOk = false;
       p.insertionMode = InsertionMode.IN_TEMPLATE;
-      p.tmplInsertionModeStack.unshift(InsertionMode.IN_TEMPLATE);
+      p.tmplInsertionModeStack.push(InsertionMode.IN_TEMPLATE);
       break;
     }
     case TAG_ID.HEAD: {
@@ -10353,7 +11010,7 @@ function templateEndTagInHead(p, token) {
     }
     p.openElements.popUntilTagNamePopped(TAG_ID.TEMPLATE);
     p.activeFormattingElements.clearToLastMarker();
-    p.tmplInsertionModeStack.shift();
+    p.tmplInsertionModeStack.pop();
     p._resetInsertionMode();
   } else {
     p._err(token, ERR.endTagWithoutMatchingOpenElement);
@@ -10572,17 +11229,11 @@ function formStartTagInBody(p, token) {
 }
 function listItemStartTagInBody(p, token) {
   p.framesetOk = false;
-  const tn = token.tagID;
-  for (let i = p.openElements.stackTop; i >= 0; i--) {
-    const elementId = p.openElements.tagIDs[i];
-    if (tn === TAG_ID.LI && elementId === TAG_ID.LI || (tn === TAG_ID.DD || tn === TAG_ID.DT) && (elementId === TAG_ID.DD || elementId === TAG_ID.DT)) {
-      p.openElements.generateImpliedEndTagsWithExclusion(elementId);
-      p.openElements.popUntilTagNamePopped(elementId);
-      break;
-    }
-    if (elementId !== TAG_ID.ADDRESS && elementId !== TAG_ID.DIV && elementId !== TAG_ID.P && p._isSpecialElement(p.openElements.items[i], elementId)) {
-      break;
-    }
+  const idx = token.tagID === TAG_ID.LI ? p.openElements.indexOfTopmost(TAG_ID.LI) : Math.max(p.openElements.indexOfTopmost(TAG_ID.DD), p.openElements.indexOfTopmost(TAG_ID.DT));
+  if (idx !== -1 && !p.openElements.hasListItemBoundaryAbove(idx)) {
+    const elementId = p.openElements.tagIDs[idx];
+    p.openElements.generateImpliedEndTagsWithExclusion(elementId);
+    p.openElements.popUntilTagNamePopped(elementId);
   }
   if (p.openElements.hasInButtonScope(TAG_ID.P)) {
     p._closePElement();
@@ -11048,20 +11699,12 @@ function brEndTagInBody(p) {
   p.framesetOk = false;
 }
 function genericEndTagInBody(p, token) {
-  const tn = token.tagName;
   const tid = token.tagID;
-  for (let i = p.openElements.stackTop; i > 0; i--) {
-    const element = p.openElements.items[i];
-    const elementId = p.openElements.tagIDs[i];
-    if (tid === elementId && (tid !== TAG_ID.UNKNOWN || p.treeAdapter.getTagName(element) === tn)) {
-      p.openElements.generateImpliedEndTagsWithExclusion(tid);
-      if (p.openElements.stackTop >= i)
-        p.openElements.shortenToLength(i);
-      break;
-    }
-    if (p._isSpecialElement(element, elementId)) {
-      break;
-    }
+  const i = tid === TAG_ID.UNKNOWN ? p.openElements.indexOfTopmostByName(NS.HTML, token.tagName) : p.openElements.indexOfTopmost(tid);
+  if (i > 0 && !p.openElements.hasSpecialElementAbove(i)) {
+    p.openElements.generateImpliedEndTagsWithExclusion(tid);
+    if (p.openElements.stackTop >= i)
+      p.openElements.shortenToLength(i);
   }
 }
 function endTagInBody(p, token) {
@@ -11711,7 +12354,7 @@ function startTagInSelect(p, token) {
 function endTagInSelect(p, token) {
   switch (token.tagID) {
     case TAG_ID.OPTGROUP: {
-      if (p.openElements.stackTop > 0 && p.openElements.currentTagId === TAG_ID.OPTION && p.openElements.tagIDs[p.openElements.stackTop - 1] === TAG_ID.OPTGROUP) {
+      if (p.openElements.stackTop > 0 && p.openElements.currentTagId === TAG_ID.OPTION && p.openElements.tagIDs[p.openElements.slotBelow(p.openElements.stackTop)] === TAG_ID.OPTGROUP) {
         p.openElements.pop();
       }
       if (p.openElements.currentTagId === TAG_ID.OPTGROUP) {
@@ -11783,32 +12426,32 @@ function startTagInTemplate(p, token) {
     case TAG_ID.TBODY:
     case TAG_ID.TFOOT:
     case TAG_ID.THEAD: {
-      p.tmplInsertionModeStack[0] = InsertionMode.IN_TABLE;
+      p.tmplInsertionModeStack[p.tmplInsertionModeStack.length - 1] = InsertionMode.IN_TABLE;
       p.insertionMode = InsertionMode.IN_TABLE;
       startTagInTable(p, token);
       break;
     }
     case TAG_ID.COL: {
-      p.tmplInsertionModeStack[0] = InsertionMode.IN_COLUMN_GROUP;
+      p.tmplInsertionModeStack[p.tmplInsertionModeStack.length - 1] = InsertionMode.IN_COLUMN_GROUP;
       p.insertionMode = InsertionMode.IN_COLUMN_GROUP;
       startTagInColumnGroup(p, token);
       break;
     }
     case TAG_ID.TR: {
-      p.tmplInsertionModeStack[0] = InsertionMode.IN_TABLE_BODY;
+      p.tmplInsertionModeStack[p.tmplInsertionModeStack.length - 1] = InsertionMode.IN_TABLE_BODY;
       p.insertionMode = InsertionMode.IN_TABLE_BODY;
       startTagInTableBody(p, token);
       break;
     }
     case TAG_ID.TD:
     case TAG_ID.TH: {
-      p.tmplInsertionModeStack[0] = InsertionMode.IN_ROW;
+      p.tmplInsertionModeStack[p.tmplInsertionModeStack.length - 1] = InsertionMode.IN_ROW;
       p.insertionMode = InsertionMode.IN_ROW;
       startTagInRow(p, token);
       break;
     }
     default: {
-      p.tmplInsertionModeStack[0] = InsertionMode.IN_BODY;
+      p.tmplInsertionModeStack[p.tmplInsertionModeStack.length - 1] = InsertionMode.IN_BODY;
       p.insertionMode = InsertionMode.IN_BODY;
       startTagInBody(p, token);
     }
@@ -11821,9 +12464,11 @@ function endTagInTemplate(p, token) {
 }
 function eofInTemplate(p, token) {
   if (p.openElements.tmplCount > 0) {
-    p.openElements.popUntilTagNamePopped(TAG_ID.TEMPLATE);
-    p.activeFormattingElements.clearToLastMarker();
-    p.tmplInsertionModeStack.shift();
+    do {
+      p.openElements.popUntilTagNamePopped(TAG_ID.TEMPLATE);
+      p.activeFormattingElements.clearToLastMarker();
+      p.tmplInsertionModeStack.pop();
+    } while (p.openElements.tmplCount > 0);
     p._resetInsertionMode();
     p.onEof(token);
   } else {
@@ -11971,22 +12616,21 @@ function endTagInForeignContent(p, token) {
     p._endTagOutsideForeignContent(token);
     return;
   }
-  for (let i = p.openElements.stackTop; i > 0; i--) {
-    const element = p.openElements.items[i];
-    if (p.treeAdapter.getNamespaceURI(element) === NS.HTML) {
-      p._endTagOutsideForeignContent(token);
-      break;
-    }
-    const tagName = p.treeAdapter.getTagName(element);
-    if (tagName.toLowerCase() === token.tagName) {
-      token.tagName = tagName;
-      p.openElements.shortenToLength(i);
-      break;
-    }
+  if (p.openElements.stackTop === 0)
+    return;
+  const { tagName } = token;
+  const adjustedTagName = SVG_TAG_NAMES_ADJUSTMENT_MAP.get(tagName);
+  const contextNs = p.fragmentContext ? p.treeAdapter.getNamespaceURI(p.fragmentContext) : NS.HTML;
+  const i = Math.max(p.openElements.indexOfTopmostByName(NS.SVG, tagName), p.openElements.indexOfTopmostByName(NS.MATHML, tagName), adjustedTagName === void 0 ? -1 : p.openElements.indexOfTopmostByName(NS.SVG, adjustedTagName), contextNs === NS.HTML || contextNs === NS.SVG || contextNs === NS.MATHML ? -1 : p.openElements.indexOfTopmostByName(contextNs, tagName));
+  if (i > p.openElements.indexOfTopmostHtmlElement()) {
+    token.tagName = p.treeAdapter.getTagName(p.openElements.items[i]);
+    p.openElements.shortenToLength(i);
+  } else {
+    p._endTagOutsideForeignContent(token);
   }
 }
 
-// ../../node_modules/.pnpm/entities@8.1.0/node_modules/entities/dist/escape.js
+// ../../node_modules/.pnpm/entities@9.0.0/node_modules/entities/dist/escape.js
 function getEscape(char) {
   return char === 34 ? "&quot;" : char === 38 ? "&amp;" : char === 39 ? "&apos;" : char === 60 ? "&lt;" : char === 62 ? "&gt;" : "&nbsp;";
 }
@@ -12006,7 +12650,7 @@ function escapeWithRegex(re, data) {
   } while (re.test(data));
   return out + data.substring(last);
 }
-var attributeEscapeRegex = /["&\u{A0}]/gu;
+var attributeEscapeRegex = /["&<>\u{A0}]/gu;
 function escapeAttribute(data) {
   return escapeWithRegex(attributeEscapeRegex, data);
 }
@@ -12015,7 +12659,7 @@ function escapeText(data) {
   return escapeWithRegex(textEscapeRegex, data);
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/serializer/index.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/serializer/index.js
 var VOID_ELEMENTS = /* @__PURE__ */ new Set([
   TAG_NAMES.AREA,
   TAG_NAMES.BASE,
@@ -12041,41 +12685,49 @@ function isVoidElement(node, options) {
 }
 var defaultOpts = { treeAdapter: defaultTreeAdapter, scriptingEnabled: true };
 function serialize(node, options) {
+  var _a;
   const opts = { ...defaultOpts, ...options };
   if (isVoidElement(node, opts)) {
     return "";
   }
-  return serializeChildNodes(node, opts);
+  const { treeAdapter } = opts;
+  const container = treeAdapter.isElementNode(node) && treeAdapter.getTagName(node) === TAG_NAMES.TEMPLATE && treeAdapter.getNamespaceURI(node) === NS.HTML ? treeAdapter.getTemplateContent(node) : node;
+  return serializeNodes((_a = treeAdapter.getChildNodes(container)) !== null && _a !== void 0 ? _a : [], opts);
 }
-function serializeChildNodes(parentNode, options) {
+function serializeNodes(nodes, options) {
+  var _a;
+  const { treeAdapter } = options;
+  const stack = [];
   let html2 = "";
-  const container = options.treeAdapter.isElementNode(parentNode) && options.treeAdapter.getTagName(parentNode) === TAG_NAMES.TEMPLATE && options.treeAdapter.getNamespaceURI(parentNode) === NS.HTML ? options.treeAdapter.getTemplateContent(parentNode) : parentNode;
-  const childNodes = options.treeAdapter.getChildNodes(container);
-  if (childNodes) {
-    for (const currentNode of childNodes) {
-      html2 += serializeNode(currentNode, options);
+  let index = 0;
+  for (; ; ) {
+    if (index < nodes.length) {
+      const node = nodes[index++];
+      if (treeAdapter.isElementNode(node)) {
+        const tn = treeAdapter.getTagName(node);
+        html2 += `<${tn}${serializeAttributes(node, options)}>`;
+        const isHtml = treeAdapter.getNamespaceURI(node) === NS.HTML;
+        if (!(isHtml && VOID_ELEMENTS.has(tn))) {
+          stack.push({ nodes, index, endTag: `</${tn}>` });
+          nodes = (_a = treeAdapter.getChildNodes(isHtml && tn === TAG_NAMES.TEMPLATE ? treeAdapter.getTemplateContent(node) : node)) !== null && _a !== void 0 ? _a : [];
+          index = 0;
+        }
+      } else if (treeAdapter.isTextNode(node)) {
+        html2 += serializeTextNode(node, options);
+      } else if (treeAdapter.isCommentNode(node)) {
+        html2 += serializeCommentNode(node, options);
+      } else if (treeAdapter.isDocumentTypeNode(node)) {
+        html2 += serializeDocumentTypeNode(node, options);
+      }
+    } else {
+      const parent = stack.pop();
+      if (!parent) {
+        return html2;
+      }
+      html2 += parent.endTag;
+      ({ nodes, index } = parent);
     }
   }
-  return html2;
-}
-function serializeNode(node, options) {
-  if (options.treeAdapter.isElementNode(node)) {
-    return serializeElement(node, options);
-  }
-  if (options.treeAdapter.isTextNode(node)) {
-    return serializeTextNode(node, options);
-  }
-  if (options.treeAdapter.isCommentNode(node)) {
-    return serializeCommentNode(node, options);
-  }
-  if (options.treeAdapter.isDocumentTypeNode(node)) {
-    return serializeDocumentTypeNode(node, options);
-  }
-  return "";
-}
-function serializeElement(node, options) {
-  const tn = options.treeAdapter.getTagName(node);
-  return `<${tn}${serializeAttributes(node, options)}>${isVoidElement(node, options) ? "" : `${serializeChildNodes(node, options)}</${tn}>`}`;
 }
 function serializeAttributes(node, { treeAdapter }) {
   let html2 = "";
@@ -12123,7 +12775,7 @@ function serializeDocumentTypeNode(node, { treeAdapter }) {
   return `<!DOCTYPE ${treeAdapter.getDocumentTypeNodeName(node)}>`;
 }
 
-// ../../node_modules/.pnpm/parse5@8.0.1/node_modules/parse5/dist/index.js
+// ../../node_modules/.pnpm/parse5@8.1.1/node_modules/parse5/dist/index.js
 function parse(html2, options) {
   return Parser.parse(html2, options);
 }
@@ -17131,6 +17783,7 @@ async function resolveStart(params2, context) {
   }
   let provider = params2.providerId ?? "the host's default";
   let model = params2.model ?? "the host's default";
+  let permissionMode = params2.permissionMode ?? null;
   let permissionModeLabel = null;
   const choices = await providerChoices(context);
   if (choices) {
@@ -17149,13 +17802,17 @@ async function resolveStart(params2, context) {
       const mode = chosen.permissionModes.find((candidate) => candidate.id === params2.permissionMode);
       if (!mode) throw new PageError("invalid_params", "permissionMode is not one of the provider's permission modes");
       permissionModeLabel = mode.displayName;
+    } else if (params2.permissionMode === void 0) {
+      const fallback = chosen.permissionModes?.find((candidate) => candidate.default);
+      permissionMode = fallback?.id ?? null;
+      permissionModeLabel = fallback?.displayName ?? null;
     }
   }
-  return { workspace, ambiguous, provider, model, environment, permissionModeLabel };
+  return { workspace, ambiguous, provider, model, environment, permissionMode, permissionModeLabel };
 }
 function startHead(resolved, params2) {
   const where = `${quotable2(resolved.workspace.name, 60)}${resolved.ambiguous ? ` (id ${resolved.workspace.id})` : ""}`;
-  return (length) => `Start a session in ${where}: ${quoted(params2.prompt, length)} \u2014 provider ${excerpt(resolved.provider, 40)}, model ${excerpt(resolved.model, 40)}${params2.reasoningLevel !== void 0 ? `, reasoning ${quotable2(params2.reasoningLevel, 40)}` : ""}${params2.permissionMode !== void 0 ? `, permission mode ${permissionModeName(params2.permissionMode, resolved.permissionModeLabel)}` : ""}, environment ${resolved.environment}`;
+  return (length) => `Start a session in ${where}: ${quoted(params2.prompt, length)} \u2014 provider ${excerpt(resolved.provider, 40)}, model ${excerpt(resolved.model, 40)}${params2.reasoningLevel !== void 0 ? `, reasoning ${quotable2(params2.reasoningLevel, 40)}` : ""}${resolved.permissionMode !== null ? `, permission mode ${permissionModeName(resolved.permissionMode, resolved.permissionModeLabel)}` : ""}, environment ${resolved.environment}`;
 }
 function quotable2(text, max) {
   return quoted(text, max).slice(1, -1);
@@ -22053,7 +22710,16 @@ var ROSTER = [
 ];
 var MODEL_ID_MAX = 160;
 var USABLE_MODEL = /^[^\s\p{Cc}]+$/u;
-function modelSetting(claudeDir) {
+var PERMISSION_MODES = [
+  { id: "default", displayName: "Default" },
+  { id: "acceptEdits", displayName: "Accept edits" },
+  { id: "plan", displayName: "Plan" },
+  { id: "bypassPermissions", displayName: "Bypass permissions" },
+  { id: "dontAsk", displayName: "Don't ask" },
+  { id: "auto", displayName: "Auto" }
+];
+var DEFAULT_PERMISSION_MODE = "default";
+function userSettings(claudeDir) {
   if (!claudeDir) return null;
   const file = path17.join(claudeDir, "settings.json");
   let parsed;
@@ -22062,13 +22728,26 @@ function modelSetting(claudeDir) {
   } catch {
     return null;
   }
-  const model = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed.model : void 0;
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+}
+function modelSetting(settings) {
+  const model = settings?.model;
   return typeof model === "string" && model !== DEFAULT_MODEL && model.length <= MODEL_ID_MAX && USABLE_MODEL.test(model) ? model : null;
 }
+function permissionModeSetting(settings) {
+  const permissions = settings?.permissions;
+  const rules = permissions && typeof permissions === "object" && !Array.isArray(permissions) ? permissions : void 0;
+  const mode = rules?.defaultMode;
+  if (typeof mode !== "string" || !PERMISSION_MODES.some((m) => m.id === mode)) return null;
+  if (mode === "bypassPermissions" && (settings?.skipDangerousModePermissionPrompt !== true || rules?.disableBypassPermissionsMode === "disable")) return null;
+  return mode;
+}
 function claudeCodeProvider(claudeDir) {
-  const chosen = modelSetting(claudeDir) ?? DEFAULT_MODEL;
+  const settings = userSettings(claudeDir);
+  const chosen = modelSetting(settings) ?? DEFAULT_MODEL;
   const models = ROSTER.map((m) => ({ ...m, default: m.id === chosen }));
   if (!models.some((m) => m.default)) models.push({ id: chosen, displayName: chosen === DEFAULT_MODEL ? "Default" : chosen, default: true });
+  const mode = permissionModeSetting(settings) ?? DEFAULT_PERMISSION_MODE;
   return {
     id: "claude-code",
     displayName: "Claude Code",
@@ -22076,14 +22755,7 @@ function claudeCodeProvider(claudeDir) {
     default: true,
     models,
     reasoningLevels: ["low", "medium", "high", "xhigh", "max"].map((id) => ({ id, displayName: id })),
-    permissionModes: [
-      { id: "default", displayName: "Default", default: true },
-      { id: "acceptEdits", displayName: "Accept edits", default: false },
-      { id: "plan", displayName: "Plan", default: false },
-      { id: "bypassPermissions", displayName: "Bypass permissions", default: false },
-      { id: "dontAsk", displayName: "Don't ask", default: false },
-      { id: "auto", displayName: "Auto", default: false }
-    ],
+    permissionModes: PERMISSION_MODES.map((m) => ({ ...m, default: m.id === mode })),
     settings: { model: "session", reasoningLevel: "session" }
   };
 }
@@ -22172,7 +22844,7 @@ ${attachments.map((a) => `Attached file: ${a.name} (${a.type}, ${a.sizeBytes} by
       async list(query) {
         await d.refreshFromAgents();
         const agents = (await d.agents())?.rows ?? [];
-        let all = d.registry.all().map((e) => d.toRecord(e, agents.find((r) => r.sessionId === e.id)));
+        let all = d.registry.all().filter((e) => e.workspaceId).map((e) => d.toRecord(e, agents.find((r) => r.sessionId === e.id)));
         if (query.workspaceId) all = all.filter((s) => s.workspaceId === query.workspaceId);
         all.sort((a, b) => b.updatedAtMs - a.updatedAtMs || (a.id < b.id ? 1 : -1));
         const limit2 = Math.max(1, Math.min(query.limit, 200));
@@ -22987,8 +23659,8 @@ var Daemon = class {
     await this.forgetEmpty();
     this.workspaces.bind((p) => this.server.workspaceIdFor(p), this.registry.all().map((e) => e.cwd).filter(Boolean));
     for (const e of this.registry.all()) if (e.cwd) {
-      const id = this.workspaces.add(e.cwd);
-      if (id && id !== e.workspaceId) this.registry.upsert(e.id, { workspaceId: id });
+      const id = this.workspaces.of(e.cwd, e.workspaceId);
+      if (id && id !== e.workspaceId) this.registry.upsert(e.id, { workspaceId: id }, e.updatedAtMs);
     }
     await this.control.listen(this.socket);
     this.supervisor.start();
@@ -23041,7 +23713,7 @@ var Daemon = class {
       const patch = {};
       if (r.cwd && (!e || !e.cwd)) {
         patch.cwd = r.cwd;
-        const wid = this.workspaces.add(r.cwd);
+        const wid = this.workspaces.of(r.cwd);
         if (wid) patch.workspaceId = wid;
       }
       if (typeof r.name === "string" && r.name.trim() && r.name !== e?.title) patch.title = r.name;
@@ -23105,7 +23777,7 @@ var Daemon = class {
     const patch = { online: true, pluginRoot: a.pluginRoot };
     if (a.cwd) {
       patch.cwd = a.cwd;
-      const wid = this.workspaces.add(a.cwd);
+      const wid = this.workspaces.of(a.cwd, prev?.cwd === a.cwd ? prev.workspaceId : "");
       if (wid) patch.workspaceId = wid;
     }
     if (!prev) patch.kind = "interactive";
