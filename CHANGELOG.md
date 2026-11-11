@@ -1,8 +1,61 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` b6808f5): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` b2c59ee): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.35 — 2026-11-11
+
+The built-in home is the machine's home, in the Syns brand and look (unife-home-in-the-syns-look), with its New agent
+status line fixed (unife-home-start-status-never-shown), and on Claude Code a start that `claude --bg` refuses tells
+the page why (unife-refused-start-reason-reaches-the-page, unife-claude-bypass-start-without-disclaimer-generic-error).
+
+`@unifedev/pages-core` 0.6.16, `@unifedev/claude-pages` 0.6.35. No agent text changed. The bb plugin
+`@unifedev/thread-pages` stays 1.14.13 and does not carry pages-core 0.6.16 yet.
+
+### Changed
+
+- **The built-in home is the machine's home, with the Syns mark, name and look.** `/home` opens on one overview in
+  the look of the Syns workspace, light and dark: a top bar with the Syns mark and name (a link to
+  `https://syns.dev/`, opened as any external link from a page, through the host's confirmation) and Search agents
+  (⌘K / Ctrl K); then **Waiting on you**, **Agents, by workspace**, **New agent**, **Unsent drafts** and **Page
+  permissions**. It replaces the sidebar, the New-session view, the phone's Recent list and drawer, and the separate
+  Unsent drafts and Page permissions views. Agents stand in one group per workspace, with Open
+  (`pages.open { workspaceId, newSession: true }`; where the host offers no page for that workspace, a snackbar says
+  so and that group stops offering Open until the next load). A waiting agent is answered from its card where the
+  home can answer it (`sessions.respond`: options, free text, or the decisions the host offers, each through the
+  host's confirmation as before); every other card, a sub-agent's included, says where to answer it, with Open in host
+  where the host has it and Open. An agent opens in the home's agent view, on its page or its chat. Page permissions
+  show, per pair, when it was granted, when it last answered and how many answers. Under 720 px the home is one
+  column. The list is drawn again only when what it shows changes, keeping the reader's place and focus (in WebKit a
+  redraw no longer throws the reader to the top). Nothing the home did is dropped: no capability, route, command,
+  storage key or agent-facing text changed, and the stored state of the previous home loads (its `new`, `drafts` and
+  `permissions` views open the overview). The words read agent where they read session. The brand is the same for
+  every reader, whether or not they use Syns. On Claude Code, Open on a folder with no page of its own opens the
+  host's "not written yet" document. Tests: `packages/pages-core/test/agent/home.test.ts` (unife-home-in-the-syns-look).
+
+### Fixed
+
+- **The built-in home's New agent shows its status line on every start.** Each redraw made a new status line while
+  the composer kept writing into the first, detached one, so a start the home held or refused showed nothing, not even
+  "Confirm in the dialog to start it…", and the text just stayed in the field. The composer and its status line are now
+  made together, so the line shows on the first start and on every later one, also after a return from an agent view.
+  Test: `packages/pages-core/test/agent/home.test.ts` (unife-home-start-status-never-shown).
+- **Claude Code: a start that `claude --bg` refuses tells the page why.** A background start that ended without a
+  session id answered every page `handler_error`, "Could not execute the page action.", and what the process printed
+  went to the daemon's log only: a bypass mode whose disclaimer was never accepted, or a `claude` wrapper's own
+  sentence (no sign-in, a limit on agents). A start whose process fails by itself (an exit code other than 0) with
+  no session id now answers `unavailable` with the new reason `start_refused`, and its message is what the process
+  printed, as one line, cut at 512 characters: the terminal sequences Node's `stripVTControlCharacters` knows
+  (colour, cursor, hyperlink) are removed and every other control character becomes a space, so the body of a
+  device-control, application or privacy string (ESC P, ESC _, ESC ^) stays as text with only its ESC gone; where it
+  printed nothing the message is "The agent did not start and gave no reason." Nothing is started and a new-session
+  page stays new, as before; the log keeps a line with the exit code and the text. No refusal's wording is recognised, so
+  whatever the process says reaches the page as said. An untrusted folder still answers `untrusted_workspace`; a
+  start the daemon had to stop after 20 s, and one that exited 0 naming no session, still answer `handler_error`.
+  Tests: `packages/claude-pages/test/daemon/start-refused.test.ts`,
+  `packages/pages-core/test/domain/provider-reasons.test.ts`
+  (unife-refused-start-reason-reaches-the-page, unife-claude-bypass-start-without-disclaimer-generic-error).
 
 ## 0.6.34 — 2026-11-10
 
