@@ -8,7 +8,7 @@ var state = {
   pageRoot: null,
   pageUrl: null,
   pluginRoot: "",
-  pluginVersion: "0.6.35",
+  pluginVersion: "0.6.36",
   socketPath: null,
   nodePath: null,
   bridge: null,
@@ -274,23 +274,44 @@ async function pollAnswer($, id, done) {
     if (r.status !== 204) return null;
   }
 }
-async function race($, id, waiting, claude, nextP, apply) {
-  if (!state.token || !await openWait($, id, waiting, claude)) return nextP();
+async function race($, id, waiting, claude, nextP, apply, signal, alone) {
+  if (!state.token || !await openWait($, id, waiting, claude)) return alone ? alone() : nextP();
   let settled = false;
-  const fromPage = pollAnswer($, id, () => settled).then((a) => ({ page: a }));
-  const fromTerminal = nextP().then((r) => ({ terminal: r }), (e) => ({ error: e }));
-  const first = await Promise.race([fromPage, fromTerminal]);
-  settled = true;
-  if ("page" in first) {
-    const applied = first.page ? apply(first.page) : null;
-    if (applied !== null) return applied;
-    const t = await fromTerminal;
-    if ("terminal" in t) return t.terminal;
-    throw t.error;
+  let abort = () => {
+  };
+  const aborted = new Promise((resolve) => {
+    abort = () => resolve({ aborted: true });
+  });
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    closeWait($, id);
+  };
+  const onAbort = () => {
+    settle();
+    abort();
+  };
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    const fromPage = pollAnswer($, id, () => settled).then((a) => ({ page: a }));
+    const fromTerminal = nextP().then((r) => ({ terminal: r }), (e) => ({ error: e }));
+    const first = await Promise.race([fromPage, fromTerminal, ...alone ? [aborted] : []]);
+    if ("aborted" in first) return alone();
+    if ("page" in first) {
+      const applied = first.page ? apply(first.page) : null;
+      if (applied !== null) return applied;
+      settle();
+      if (alone) return alone();
+      const t = await fromTerminal;
+      if ("terminal" in t) return t.terminal;
+      throw t.error;
+    }
+    if ("terminal" in first) return first.terminal;
+    throw first.error;
+  } finally {
+    settle();
   }
-  closeWait($, id);
-  if ("terminal" in first) return first.terminal;
-  throw first.error;
 }
 function holdQuestion($, e, next) {
   const questions = Array.isArray(e.questions) ? e.questions : [];
@@ -301,13 +322,22 @@ function holdQuestion($, e, next) {
     waiting,
     { kind: "question", questions },
     () => next(e),
-    (a) => "answers" in a ? { result: { questions, answers: a.answers } } : null
+    (a) => "answers" in a ? { result: { questions, answers: a.answers } } : null,
+    next.signal
   );
 }
-function holdPermissionB($, e, next) {
-  const input = JSON.stringify(e.tool_input);
-  let id = [...state.inflight].find(([, v]) => v.tool === e.tool_name && JSON.stringify(v.input) === input)?.[0];
-  if (!id) id = `perm-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+var DIALOG_TOOLS = /* @__PURE__ */ new Set(["AskUserQuestion", "ExitPlanMode"]);
+function canonical(v) {
+  return JSON.stringify(v, (_k, x) => x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x);
+}
+async function holdPermissionB($, e, next) {
+  if (DIALOG_TOOLS.has(e.tool_name)) return next(e);
+  const beneath = await next(e);
+  if (beneath?.decision) return beneath;
+  const input = canonical(e.tool_input);
+  const call2 = [...state.inflight].find(([, v]) => v.tool === e.tool_name && canonical(v.input) === input);
+  if (!call2?.[1].over) return beneath;
+  const [id, { over }] = call2;
   const suggestions = e.permission_suggestions ?? [];
   const waiting = permissionWaiting(id, e.tool_name, e.tool_input, void 0, suggestions);
   return race(
@@ -315,8 +345,10 @@ function holdPermissionB($, e, next) {
     id,
     waiting,
     { kind: "permission", tool: e.tool_name, input: e.tool_input, suggestions },
-    () => next(e),
-    (a) => "decision" in a ? { decision: a.decision } : null
+    () => over.then(() => beneath),
+    (a) => "decision" in a ? { decision: a.decision } : null,
+    next.signal,
+    () => beneath
   );
 }
 async function holdPermissionA($, e, verdict) {
@@ -863,7 +895,7 @@ function flushHeld($) {
 }
 
 // src/mod/register.ts
-var PLUGIN_VERSION = "0.6.35";
+var PLUGIN_VERSION = "0.6.36";
 async function ids($) {
   state.sessionId = await $.session.id();
   state.cwd = await $.session.cwd();
@@ -1014,7 +1046,12 @@ function register(on) {
   }).catch(($, e, next) => guard(next, e));
   on("tool.call", async ($, e, next) => {
     const { tool, tool_use_id, agentId, ...input } = e;
-    state.inflight.set(tool_use_id, { tool, input, ...agentId ? { agentId } : {} });
+    let end = () => {
+    };
+    const over = new Promise((resolve) => {
+      end = resolve;
+    });
+    state.inflight.set(tool_use_id, { tool, input, over, ...agentId ? { agentId } : {} });
     try {
       if (tool === "AskUserQuestion") return await holdQuestion($, e, next);
       if (tool === "ExitPlanMode") return await holdOther($, tool_use_id, "Plan approval in the terminal", () => next(e));
@@ -1025,6 +1062,7 @@ function register(on) {
       return await next(e);
     } finally {
       state.inflight.delete(tool_use_id);
+      end();
     }
   }).catch(($, e, next) => guard(next, e));
   on("classic.PermissionRequest", async ($, e, next) => {

@@ -1,8 +1,58 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` b2c59ee): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` f305c2b): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.36 — 2026-11-14
+
+On Claude Code, a question answered from a page closes its wait
+(unife-claude-a-questions-wait-stays-open-after-the-page-answers), a request to run something can be answered from a
+page again (unife-claude-a-request-to-run-never-reaches-the-page), and a folder that comes back after the daemon
+started is listed again (saved-workspace-link-is-not-found-after-a-stop-and-wake).
+
+`@unifedev/claude-pages` 0.6.36; `@unifedev/pages-core` stays 0.6.16. No agent text changed. The bb plugin
+`@unifedev/thread-pages` stays 1.14.13 and gets nothing from this release.
+
+### Fixed
+
+- **Claude Code: a question or a request answered while the Unife program was down no longer stays on the page.**
+  If the program crashed, was restarted (every update restarts it) or froze past 30 s while an agent waited, the
+  answer given in the terminal never reached it: after it came back, the page still offered the answered question or
+  request ("Decided.", and nothing happened) and hid that session's later cards. A program that starts now closes the
+  waits the last one left open, whether the session comes back or not, and a hold whose program stopped answering
+  deletes its wait at once, leaving the terminal to answer. No command, flag or file changes. Tests:
+  `packages/claude-pages/test/daemon/control.test.ts` and `test/mod/mod.test.ts`, "holds"
+  (unife-claude-a-request-to-run-never-reaches-the-page, unife-claude-a-questions-wait-stays-open-after-the-page-answers).
+- **Claude Code: a request to run something can be answered from a page again.** The mod raced the page against
+  `classic.PermissionRequest`'s `next(e)` as if that were the terminal's dialog. It is the settings hooks beneath,
+  which settle at once (no decision with none configured) while the dialog draws beside the hook, so the wait closed
+  5 to 16 ms after it opened and Allow once, Allow for this agent and Deny never reached the session; only the
+  terminal asked (measured on Claude Code 2.1.321 and 2.1.325). A hook beneath that decides is still returned at once;
+  otherwise the request now waits for the page's answer, which closes the terminal's dialog, until the terminal
+  answers it (the call ends) or the turn is stopped. A question's or a plan's own PermissionRequest opens no approval
+  (a hook's allow does not dismiss those dialogs); a request whose input keys come in another order is still
+  matched to its call, and one matched to no call (a settings hook beneath rewrote it) is left to the terminal. No command, flag or file changes. Test: `packages/claude-pages/test/mod/mod.test.ts`, "holds"
+  (unife-claude-a-request-to-run-never-reaches-the-page).
+- **Claude Code: a question answered from a page, or cancelled in the terminal, is no longer left waiting.** The
+  mod closed a question's wait only when the terminal answered it. Answered from a page, the wait stayed open: the
+  page's card stayed on "Answered." and the agent's reply did not show until a reload, a reload offered the question
+  again (pressing it: "The request conflicts with the current state."), the session was still "waiting for you", and
+  a later question stood hidden behind the stale one. Escape in the terminal left one open the same way. The wait now
+  closes however the hold ends: the page's answer, the terminal's, or the abort (Claude Code 2.1.325). No command, flag
+  or file changes. Test: `packages/claude-pages/test/mod/mod.test.ts`, "holds"
+  (unife-claude-a-questions-wait-stays-open-after-the-page-answers).
+- **Claude Code: a folder that comes back after the daemon started is listed again, so its saved address opens.**
+  Which known folders are listed was settled once, when the daemon started. A folder that was away at that moment (a
+  disk mounted later; a host that restores the daemon's state and puts the folders back afterwards, as a cloud
+  computer does when it wakes) stayed unlisted until the next restart or until it was opened again: its saved
+  `/page?workspace=<id>` answered "Not found", `workspaces.list` left it out, and a start there was `not_found`,
+  although `opened-folders.json` still held it. A known folder that is away, a session's or one opened with
+  `unife-pages open --workspace`, is now looked for again each time the folders are listed or an unlisted one is asked
+  for: back at its path it is listed under the same id. An opened folder back as a symlink still is not; and one
+  that is a file at a start is no longer listed (it had a row in `workspaces.list` and no page). No command, flag or
+  file changes. Test: `packages/claude-pages/test/daemon/folder-back.test.ts`
+  (saved-workspace-link-is-not-found-after-a-stop-and-wake).
 
 ## 0.6.35 — 2026-11-11
 

@@ -509,6 +509,8 @@ var Workspaces = class {
   map;
   /** The folders opened with `open --workspace`, canonical paths, in the order opened; never dropped (W6a). */
   opened;
+  /** The folders of known sessions that were not there when last looked for, as recorded (`returned`). */
+  away = /* @__PURE__ */ new Set();
   idFor = null;
   constructor(home3) {
     this.file = path7.join(home3, "workspaces.json");
@@ -517,21 +519,27 @@ var Workspaces = class {
     const opened = readJson(this.openedFile, []);
     this.opened = Array.isArray(opened) ? opened.filter((p) => typeof p === "string" && path7.isAbsolute(p)) : [];
   }
-  /**
-   * The session cwds, then the opened folders that are still the folder opened: a directory, no symlink on the way.
-   * One gone stays in the file, unlisted (W6a). One stored in another form of its name (a home written before D-W1)
-   * is listed, and kept, under its form on disk.
-   */
+  /** The session cwds, then the opened folders (`listOpened`). One that is away is looked for again later (`returned`). */
   bind(idFor, paths) {
     this.idFor = idFor;
     this.map = {};
+    this.away.clear();
     for (const p of paths) this.add(p);
+    this.listOpened();
+  }
+  /**
+   * The opened folders that are still the folder opened: a directory, no symlink on the way. One gone stays in the
+   * file, unlisted (W6a). One stored in another form of its name (a home written before D-W1) is listed, and kept,
+   * under its form on disk.
+   */
+  listOpened() {
     const kept = [];
     for (const p of this.opened) {
       const c = stillOpened(p) ? this.canonical(p) : null;
-      const entry = c && isDirectory(c) ? c : p;
+      const folder = c && isDirectory(c) ? c : null;
+      const entry = folder ?? p;
       if (!kept.includes(entry)) kept.push(entry);
-      if (entry === c) this.add(c);
+      if (folder) this.add(folder);
     }
     if (kept.join("\n") !== this.opened.join("\n")) {
       this.opened = kept;
@@ -568,8 +576,13 @@ var Workspaces = class {
     return onDisk(p);
   }
   add(p) {
+    if (!this.idFor) return null;
     const c = this.canonical(p);
-    if (!c || !this.idFor) return null;
+    if (!c) {
+      if (path7.isAbsolute(p)) this.away.add(p);
+      return null;
+    }
+    this.away.delete(p);
     const id = this.idFor(c);
     if (this.map[id] !== c) {
       this.map[id] = c;
@@ -586,15 +599,29 @@ var Workspaces = class {
     return this.add(cwd) ?? (had || (this.idFor && path7.isAbsolute(cwd) ? this.idFor(cwd) : null));
   }
   /**
+   * The known folders that were away, looked for again each time the folders are listed or an unlisted one is asked
+   * for: a session's folder that is there, and an opened one that is the folder opened (`bind`'s own rule), is listed
+   * from then on under its id. So a folder that comes back after the daemon started (a disk mounted later, a host that
+   * puts the folders back once the daemon runs) needs no restart and no second `open`.
+   */
+  returned() {
+    const idFor = this.idFor;
+    if (!idFor) return;
+    for (const p of this.away) this.add(p);
+    if (this.opened.some((p) => this.map[idFor(p)] !== p)) this.listOpened();
+  }
+  /**
    * The folder stored for an id while it is still that folder (06 R-P17, `start`): its native realpath is the stored path,
    * so no symlink on the way, and it is a directory. A folder gone, made a file or replaced by a symlink is null, so no
    * agent starts in a link's target. Every stored path is already its native realpath (`add`).
    */
   folderOf(id) {
+    if (!this.map[id]) this.returned();
     const p = this.map[id];
     return p && onDisk(p) === p && isDirectory(p) ? p : null;
   }
   list() {
+    this.returned();
     return Object.entries(this.map).map(([id, p]) => ({ id, name: path7.basename(p) || p, kind: "folder" }));
   }
 };
@@ -1263,8 +1290,13 @@ var Waits = class {
   persist(sessionId) {
     writeJsonSync(this.file(sessionId), this.forSession(sessionId));
   }
-  restore(sessionId) {
+  /** At the program's start: the waits the last program left open (it crashed, or stopped before a hook's delete reached
+   *  it) are closed as `bridge-lost`, as `onBridgeDrop` closes them for a program that stays up. */
+  closeLeftOpen(sessionId) {
     for (const w of readJson(this.file(sessionId), [])) if (!w.closed && !this.open.has(w.id)) this.open.set(w.id, w);
+    const any = this.forSession(sessionId).length > 0;
+    this.closeSession(sessionId, "bridge-lost");
+    return any;
   }
   forSession(sessionId) {
     return [...this.open.values()].filter((w) => w.sessionId === sessionId);
@@ -23790,7 +23822,7 @@ var Daemon = class {
     this.control = new ControlServer(this);
     this.bridges.onDrop = (sid) => this.onBridgeDrop(sid);
     this.bridges.onEvict = (sid, how) => this.onBridgeEvicted(sid, how);
-    for (const e of this.registry.all()) this.waits.restore(e.id);
+    for (const e of this.registry.all()) if (this.waits.closeLeftOpen(e.id)) this.waitedAtStop.add(e.id);
     this.pushedTo = new Pushed(sessionsDir(this.home), (sid, err) => this.log.warn(`session ${sid}: the note of where its answers went could not be written: ${err.message}`));
     this.pushedTo.load(
       this.registry.all().map((e) => e.id),
@@ -23849,6 +23881,8 @@ var Daemon = class {
    * from before the machine's boot, or whose pid names a process started after it, is not read (B-0244).
    */
   pushedTo;
+  /** Sessions the last program stopped with a wait open: kept by the start's forget as a session with an open wait was (B-0240), though the wait is closed now. */
+  waitedAtStop = /* @__PURE__ */ new Set();
   sweep = null;
   pageRoot(id) {
     return path19.join(pagesDir(this.home), id);
@@ -24013,7 +24047,6 @@ var Daemon = class {
     this.resumes.end(a.sessionId);
     this.events.add(a.sessionId, "attach", true, "bridge attached");
     this.log.info(`session ${a.sessionId}: bridge attached`);
-    this.waits.restore(a.sessionId);
     return { backfill: !this.rows.hasRows(a.sessionId) };
   }
   /**
@@ -24238,7 +24271,7 @@ var Daemon = class {
     const named = new Set(all.flatMap((e) => [e.clearedFromId, e.resumedFromId, e.forkOfId, ...(e.reportedLinks ?? []).map((r) => r.from)]).filter(Boolean));
     for (const e of all) {
       if (!e.pluginRoot || e.title || e.shortId || e.kind === "background" || e.reportedLinks?.length || named.has(e.id)) continue;
-      if (this.rows.hasAny(e.id) || this.queue.unacked(e.id).length || this.waits.current(e.id) || hasFiles(this.pageRoot(e.id))) continue;
+      if (this.rows.hasAny(e.id) || this.queue.unacked(e.id).length || this.waitedAtStop.has(e.id) || hasFiles(this.pageRoot(e.id))) continue;
       try {
         await this.forgetSession(e.id, "nothing behind it at start");
       } catch (err) {
