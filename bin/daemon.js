@@ -3342,9 +3342,11 @@ var pagesOpenParams = refine(
     home: optional(literal([true], "Home")),
     // A fresh new-session page of a workspace. 03 R5.29c
     workspaceId: optional(entityId("Workspace id")),
-    newSession: optional(boolean())
+    newSession: optional(boolean()),
+    // In a new tab, opened by the shell on the reader's press; the reader's view stays. 03 R5.29d
+    newTab: optional(literal([true], "New tab"))
   }),
-  (value) => exactlyOneOf("sessionId", "home", "workspaceId")(value) ?? (value.home && (value.path !== void 0 || value.fragment !== void 0) ? "path and fragment go with sessionId, not home" : null) ?? (value.workspaceId !== void 0 && value.newSession !== true ? "workspaceId goes with newSession: true" : null) ?? (value.workspaceId === void 0 && value.newSession !== void 0 ? "newSession goes with workspaceId" : null) ?? (value.workspaceId !== void 0 && (value.path !== void 0 || value.fragment !== void 0) ? "path and fragment go with sessionId, not workspaceId" : null)
+  (value) => exactlyOneOf("sessionId", "home", "workspaceId")(value) ?? (value.home && value.newTab !== void 0 ? "newTab goes with sessionId or workspaceId, not home" : null) ?? (value.home && (value.path !== void 0 || value.fragment !== void 0) ? "path and fragment go with sessionId, not home" : null) ?? (value.workspaceId !== void 0 && value.newSession !== true ? "workspaceId goes with newSession: true" : null) ?? (value.workspaceId === void 0 && value.newSession !== void 0 ? "newSession goes with workspaceId" : null) ?? (value.workspaceId !== void 0 && (value.path !== void 0 || value.fragment !== void 0) ? "path and fragment go with sessionId, not workspaceId" : null)
 );
 var pagesOpen = spec({
   method: "pages.open",
@@ -17016,12 +17018,13 @@ var pagesOpen2 = handler({
   },
   async execute(params2, context) {
     const base = context.serving.serving.base();
-    if (params2.workspaceId !== void 0) return { result: { opened: true }, navigate: { kind: "page", url: `${base}/page?${new URLSearchParams({ workspace: params2.workspaceId })}` } };
+    const tab = params2.newTab === true ? { newTab: true } : {};
+    if (params2.workspaceId !== void 0) return { result: { opened: true }, navigate: { kind: "page", url: `${base}/page?${new URLSearchParams({ workspace: params2.workspaceId })}`, ...tab } };
     if (params2.sessionId === void 0) return { result: { opened: true }, navigate: { kind: "page", url: `${base}/home` } };
     const query = new URLSearchParams({ session: params2.sessionId });
     if (params2.path !== void 0) query.set("path", params2.path);
     const url = `${base}/page?${query}${params2.fragment !== void 0 ? `#${params2.fragment}` : ""}`;
-    return { result: { opened: true }, navigate: { kind: "page", url } };
+    return { result: { opened: true }, navigate: { kind: "page", url, ...tab } };
   }
 });
 async function ownOrigins(context) {
@@ -19044,9 +19047,10 @@ var BUILTIN_HOME_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Home</title>
 <style>
-  /* The built-in home page, the machine's home: every agent on this host by workspace, what waits on the reader, a
-     new agent, and the home's own duties. It carries the Syns brand and the look of the Syns workspace on every host.
-     Reader-neutral, one file; it holds no authority a page does not hold. 05 R-S12 */
+  /* The built-in home page, the machine's home: every agent on this host by workspace in a list, and beside it a new
+     agent or one agent's chat; the reader's unsent drafts and page permissions under the machine's name while there
+     are any. It carries the Syns brand and the look of the Syns workspace on every host. Reader-neutral, one file; it
+     holds no authority a page does not hold. 05 R-S12 */
   /* The workspace's tokens, light and dark by the device, and \`ok\`. */
   :root {
     color-scheme: light dark;
@@ -19056,7 +19060,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     --sh1: 0 1px 2px 0 rgba(16, 24, 40, .3), 0 1px 3px 1px rgba(16, 24, 40, .15); --sh2: 0 1px 2px 0 rgba(16, 24, 40, .3), 0 2px 6px 2px rgba(16, 24, 40, .15);
     --sh3: 0 1px 3px 0 rgba(16, 24, 40, .3), 0 4px 8px 3px rgba(16, 24, 40, .15);
     --font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    --ease: cubic-bezier(.2, 0, 0, 1); --col: 728px;
+    --ease: cubic-bezier(.2, 0, 0, 1); --col: 760px; --nav: 256px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -19075,6 +19079,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   button, input, textarea { font: inherit; color: inherit; }
   button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
   button[disabled] { cursor: default; opacity: .38; }
+  a { color: inherit; }
   h1, h2, h3, p { margin: 0; }
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .ic { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
@@ -19088,19 +19093,18 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   .muted { color: var(--muted); }
   code { font: 12.5px/18px var(--mono); background: var(--surface); padding: 1px 5px; border-radius: 5px; }
   .ib { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--ink2); flex: none; position: relative; }
-  .btn { height: 40px; padding: 0 24px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font-weight: 500; white-space: nowrap; flex: none; }
+  .btn { height: 40px; padding: 0 24px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font-weight: 500; white-space: nowrap; flex: none; text-decoration: none; }
   .btn.tonal { background: var(--sel); color: var(--on-sel); }
   .btn.text { color: var(--pr); padding: 0 12px; }
   .btn.out { border: 1px solid var(--outline); color: var(--pr); padding: 0 16px; }
   .btn.sm { height: 32px; padding: 0 14px; font-size: 13px; }
   .btn.sm.ico { padding: 0 14px 0 10px; }
   .btn.sm.text { padding: 0 10px; }
-  .tag { font-size: 11px; line-height: 16px; font-weight: 500; padding: 0 6px; border-radius: 999px; background: var(--wash); color: var(--on-wash); flex: none; white-space: nowrap; }
-  .tag.plain { background: var(--high); color: var(--ink2); }
   .chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--outline); color: var(--ink2); font-weight: 500; white-space: nowrap; max-width: 100%; }
   .chip .ic { flex: none; }
   .chip .pl { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .chip.on { background: var(--sel); color: var(--on-sel); border-color: transparent; }
+  .kbd { font-size: 12px; line-height: 16px; font-weight: 500; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--outline); color: var(--muted); flex: none; white-space: nowrap; }
   .dotw { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--pr); }
   .dotw.ok { background: var(--ok); }
   .dotw.off { background: transparent; border: 2px solid var(--outline); }
@@ -19109,94 +19113,82 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   .sk { display: block; height: 14px; border-radius: 7px; background: var(--high); animation: sk 1.2s infinite var(--ease); }
   @keyframes sk { 50% { opacity: .45; } }
 
-  /* ---- frame: the top bar on the canvas, one paper panel under it ---- */
-  .app { display: grid; grid-template: "top" 64px "main" minmax(0, 1fr) / minmax(0, 1fr); height: 100%; }
+  /* ---- frame: the top bar on the canvas; the list in the nav's place; one paper panel beside it ---- */
+  .app { display: grid; grid-template: "top top" 64px "nav main" minmax(0, 1fr) / var(--nav) minmax(0, 1fr); height: 100%; position: relative; }
   .s-top { grid-area: top; display: flex; align-items: center; gap: 4px; padding: 0 12px 0 8px; min-width: 0; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 8px; flex: none; border-radius: 999px; height: 44px; color: var(--ink); text-decoration: none; }
   .brand .mark { width: 26px; height: 26px; color: var(--pr); flex: none; }
   .brand span { font-size: 20px; line-height: 28px; white-space: nowrap; }
-  .search { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 16px; border-radius: 999px; background: var(--high); flex: 0 1 300px; max-width: 300px; min-width: 0; margin-left: 8px; color: var(--ink2); }
-  .search .q { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 16px; }
-  .only-phone { display: none; }
+  .vr { width: 1px; height: 24px; background: var(--divider); flex: none; margin: 0 6px 0 2px; }
+  .pick { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 8px; border-radius: 999px; font-size: 18px; line-height: 28px; color: var(--ink); min-width: 0; flex: 0 1 auto; }
+  .pick .ic { color: var(--muted); }
+  .pick .pl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pick[aria-expanded="true"] { background: var(--sel); color: var(--on-sel); }
+  .mobt { display: none; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 17px; line-height: 24px; padding: 0 6px; }
+  .search { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px 0 16px; border-radius: 999px; background: var(--high); flex: 0 1 300px; max-width: 300px; min-width: 0; margin-left: 8px; color: var(--ink2); }
+  .search .q { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 16px; text-align: left; }
+  .only-phone, .lst-b { display: none; }
+  .bdg { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--fill); color: var(--on-fill); font-size: 11px; line-height: 16px; font-weight: 600; text-align: center; }
+  .s-nav { grid-area: nav; display: flex; flex-direction: column; gap: 2px; padding: 0 0 12px 8px; min-height: 0; min-width: 0; }
+  .newb { display: inline-flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px 0 16px; margin: 4px 0 8px; border-radius: 16px; background: var(--paper); box-shadow: var(--sh1); font-weight: 500; align-self: flex-start; color: var(--ink); text-decoration: none; flex: none; }
+  .cl { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 2px 8px 2px 2px; overscroll-behavior: contain; scrollbar-width: thin; }
   .s-main { grid-area: main; background: var(--paper); border-radius: 16px; margin: 0 16px 16px; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
-  .bar, [data-thread-page-notice] { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 20px; background: var(--wash); color: var(--on-wash); flex-wrap: wrap; flex: none; }
-  [data-thread-page-notice] { padding: 12px 20px; }
-  .bar .ic { flex: none; }
-  .bar .btn.text { color: inherit; }
+  [data-thread-page-notice] { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--wash); color: var(--on-wash); flex-wrap: wrap; flex: none; }
   .view { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .in { flex: 1; min-height: 0; overflow: auto; padding: 20px 32px 32px; overscroll-behavior: contain; }
-  .pane { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .drawer-scrim { display: none; }
 
-  /* ---- the overview: what waits and the agents on the left, a new agent and the home's duties on the right ---- */
-  .mh-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 32px; align-items: start; }
-  .mh-col { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
-  .mh-col > * { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  /* The right column stays in view while the left one scrolls; taller than the panel, it scrolls on its own. Its
-     bound is the window's height less what stands around it (the bar, the panel's margin and padding, the notice
-     when it shows): the panel is no size container, since one engine loses a size container's scroll place
-     whenever its content is drawn again. */
-  .mh-col.side { position: sticky; top: 0; max-height: calc(100vh - 132px); overflow: auto; padding: 2px; margin: -2px; scrollbar-width: thin; }
-  [data-thread-page-notice]:not([hidden]) ~ .view .mh-col.side { max-height: calc(100vh - 176px); }
-  .ph-h { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-  .ph-h h2 { font: 500 18px/24px var(--font); }
-  .ph-h .n { color: var(--muted); }
-  .cards { display: flex; flex-direction: column; gap: 10px; }
-  .card { background: var(--surface); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  .card .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .card .top .ic { color: var(--ink2); }
-  .card .top b { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .top .sub { flex: none; }
-  .card .qa { display: flex; flex-direction: column; gap: 8px; }
-  .card .qtext { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .card .opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .card .opts:empty { display: none; }
-  .card code { background: var(--paper); overflow-wrap: anywhere; }
-  .card pre { margin: 0; font: 12.5px/18px var(--mono); background: var(--paper); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
-  .card .chip { white-space: normal; height: auto; min-height: 32px; padding: 5px 12px; text-align: left; }
-  .card input.chip { flex: 1 1 160px; min-width: 0; border-style: dashed; background: transparent; font-weight: 400; outline: 0; color: var(--ink); cursor: text; }
-  .card input.chip::placeholder { color: var(--muted); opacity: 1; }
-  .card input.chip:focus { border: 1px solid var(--pr); box-shadow: inset 0 0 0 1px var(--pr); }
-  .card .hint { color: var(--muted); font-size: 12px; line-height: 16px; }
-  .card .hint:empty { display: none; }
-  .agents { display: flex; flex-direction: column; gap: 4px; }
-  .grp { display: flex; flex-direction: column; }
-  .grp-h { display: flex; align-items: center; gap: 4px; height: 40px; padding: 0 4px 0 0; color: var(--ink2); min-width: 0; }
-  .gt { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px 0 8px; border-radius: 999px; min-width: 0; color: var(--ink2); }
+  /* ---- the list: a workspace's row, then its agents, two lines each ---- */
+  .cg { display: flex; flex-direction: column; gap: 1px; margin-bottom: 6px; flex: none; }
+  .cg-h { display: flex; align-items: center; gap: 2px; height: 36px; color: var(--ink2); font-size: 13px; flex: none; min-width: 0; }
+  .gt { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; border-radius: 999px; min-width: 0; color: var(--ink2); flex: 0 1 auto; }
+  .gt > .ic { color: var(--muted); }
   .gt b { font-weight: 600; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gt .sub { flex: none; }
-  .gt .gchev { display: inline-flex; opacity: 0; color: var(--muted); }
-  .grp-h:hover .gchev, .gt:focus-visible .gchev, .gt[aria-expanded="false"] .gchev { opacity: 1; }
-  .gadd { width: 32px; height: 32px; opacity: 0; }
-  .grp-h:hover .gadd, .grp-h:focus-within .gadd { opacity: 1; }
-  @media (hover: none) { .gadd { display: none; } .grp-h:focus-within .gadd { display: grid; } }
+  .gt .n { color: var(--muted); font-weight: 400; white-space: nowrap; flex: none; }
+  /* The fold's chevron takes the folder's place on hover, on focus and while folded. */
+  .gt .gchev { display: none; color: var(--muted); flex: none; }
+  .cg-h:hover .gt .gchev, .gt:focus-visible .gchev, .gt[aria-expanded="false"] .gchev { display: inline-flex; }
+  .cg-h:hover .gt > .ic, .gt:focus-visible > .ic, .gt[aria-expanded="false"] > .ic { display: none; }
+  .cg-h .ib { width: 32px; height: 32px; color: var(--muted); }
+  .cg-none { padding: 2px 0 6px 34px; color: var(--muted); font-size: 12px; line-height: 16px; }
   .mk { width: 18px; height: 18px; display: grid; place-items: center; flex: none; color: var(--ink2); }
   .mk.failed { color: var(--err); }
   .udot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink2); }
-  .ar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 12px 0 16px; border-radius: 999px; color: var(--ink); cursor: pointer; position: relative; min-width: 0; }
-  .ar:hover, .ar:focus-within { background: color-mix(in srgb, var(--ink) 6%, transparent); }
-  .ar .nm { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; border-radius: 4px; position: relative; }
-  .ar.unread .nm { font-weight: 600; }
-  .ar .t { color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; flex: none; }
-  .ar .tag { margin-left: 4px; }
-  .ar .tw { width: 24px; height: 24px; margin-left: -8px; color: var(--muted); display: inline-grid; place-items: center; border-radius: 50%; flex: none; }
-  .ar[data-depth="1"] { margin-left: 24px; } .ar[data-depth="2"] { margin-left: 48px; } .ar[data-depth="3"] { margin-left: 72px; }
-  .ar .hov { display: none; align-items: center; flex: none; margin-right: -4px; }
-  .ar .hov .ib { width: 32px; height: 32px; }
-  @media (hover: hover) { .ar:hover .hov, .ar:focus-within .hov { display: inline-flex; } .ar:hover .t, .ar:focus-within .t { display: none; } }
-  .skr { height: 48px; display: flex; align-items: center; padding: 0 16px; }
-  .skr .sk { width: 60%; } .skr:nth-child(2) .sk { width: 44%; } .skr:nth-child(3) .sk { width: 52%; }
-  .more { align-self: flex-start; margin-top: 4px; }
-  .capped { color: var(--muted); padding: 8px 16px; }
+  .cr { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 0 8px 0 0; border-radius: 12px; color: var(--ink); position: relative; min-width: 0; flex: none; }
+  .cr:hover, .cr:focus-within { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  .cr.on { background: var(--sel); color: var(--on-sel); }
+  .cr .lnk { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 4px 4px 14px; border-radius: 12px; color: inherit; text-decoration: none; }
+  .cr .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .cr .tx b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cr.unread .tx b { font-weight: 600; }
+  .cr .tx .t { font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cr .tx .t.w { color: var(--pr); font-weight: 600; }
+  .cr.on .tx .t { color: inherit; opacity: .8; }
+  .cr.on .mk { color: inherit; }
+  .cr .tw { width: 28px; height: 28px; color: var(--muted); display: inline-grid; place-items: center; border-radius: 50%; flex: none; }
+  .cr[data-depth="1"] { margin-left: 16px; } .cr[data-depth="2"] { margin-left: 32px; } .cr[data-depth="3"] { margin-left: 48px; }
+  .cr .arch { width: 32px; height: 32px; display: none; }
+  .cr:hover .arch, .cr:focus-within .arch { display: grid; }
+  .skr { height: 48px; display: flex; align-items: center; padding: 0 16px; flex: none; }
+  .skr .sk { width: 70%; } .skr:nth-child(2) .sk { width: 52%; } .skr:nth-child(3) .sk { width: 60%; }
+  .more { align-self: flex-start; margin: 4px 0 0 4px; }
+  .capped { color: var(--muted); padding: 8px 12px; font-size: 12px; line-height: 16px; }
   .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 56px 16px 24px; color: var(--ink2); }
   .empty .big { width: 56px; height: 56px; color: var(--muted); stroke-width: 1.2; }
   .empty b, .empty h2 { color: var(--ink); font: 500 18px/24px var(--font); }
   .empty p { max-width: 440px; }
   .empty .row2 { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+  .cl .empty { padding: 32px 12px 16px; gap: 6px; }
+  .cl .empty b { font: 600 14px/20px var(--font); }
+  .cl .empty p { font-size: 12px; line-height: 16px; color: var(--muted); }
 
-  /* ---- the composers: a new agent, and a message to one ---- */
-  .newa { background: var(--high); border-radius: 24px; padding: 14px 8px 8px 18px; display: flex; flex-direction: column; gap: 10px; }
+  /* ---- the middle: New agent, or the open chat ---- */
+  .mh-new { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 24px 32px 64px; overflow: auto; min-height: 0; }
+  .mh-new .home-in { width: 100%; max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .mh-new h2 { font: 400 28px/36px var(--font); }
+  .note-host { color: var(--ink2); }
+  .newa { background: var(--high); border-radius: 24px; padding: 16px 8px 8px 20px; display: flex; flex-direction: column; gap: 10px; }
   .newa:focus-within, .comp:focus-within { background: var(--paper); box-shadow: var(--sh1); }
-  .newa textarea { display: block; width: 100%; border: 0; outline: 0; resize: none; background: none; padding: 0 10px 0 0; font-size: 16px; line-height: 24px; min-height: 56px; max-height: 40vh; }
+  .newa textarea { display: block; width: 100%; border: 0; outline: 0; resize: none; background: none; padding: 0 10px 0 0; font-size: 16px; line-height: 24px; min-height: 72px; max-height: 40vh; }
   .newa textarea::placeholder, .comp textarea::placeholder { color: var(--ink2); opacity: 1; }
   .newa .row2 { display: flex; align-items: flex-end; gap: 6px; }
   .newa .row2 > .ib { width: 36px; height: 36px; margin: -3px 0 0 -10px; align-self: flex-start; }
@@ -19214,89 +19206,98 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   .status { color: var(--muted); font-size: 12px; line-height: 16px; padding: 0 18px; }
   .status:empty { display: none; }
   .status.err { color: var(--err); }
-  .note-host { color: var(--ink2); }
   .comp { border-radius: 24px; background: var(--high); display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px; padding: 4px; }
   .comp .chips { flex: 0 0 100%; padding: 6px 8px 2px; }
   .comp textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: none; resize: none; max-height: 180px; padding: 10px 0 10px 14px; line-height: 20px; min-height: 40px; }
   .comp .ib + textarea { padding-left: 0; }
   .comp .steer { margin: 0 4px 4px 0; }
-
-  /* ---- the home's duties: unsent drafts, page permissions ---- */
-  .sidecard { border: 1px solid var(--divider); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .sidecard .top { display: flex; align-items: center; gap: 10px; }
-  .sidecard .top .ic { color: var(--ink2); }
-  .sidecard .top h3 { flex: 1; font: 600 14px/20px var(--font); }
-  .sidecard .dr { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--divider); }
-  .sidecard .where { color: var(--ink2); overflow-wrap: anywhere; }
-  .sidecard textarea { display: block; width: 100%; min-height: 56px; max-height: 160px; border: 0; resize: vertical; background: var(--surface); border-radius: 8px; padding: 8px 10px; color: var(--ink2); font-style: italic; }
-  .sidecard .acts { display: flex; gap: 4px; justify-content: flex-end; }
-  .sidecard .pair { display: flex; align-items: center; gap: 8px; }
-  .sidecard .pair b { display: block; font-weight: 500; overflow-wrap: anywhere; }
-  .sidecard .all { align-self: flex-start; margin-left: -10px; }
-
-  /* ---- one agent: its bar, its page or its chat ---- */
-  .ah { display: flex; align-items: center; gap: 4px; height: 56px; padding: 0 12px 0 8px; flex: none; border-bottom: 1px solid var(--divider); min-width: 0; }
-  .ah .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 4px; }
-  .ah .tag { margin: 0 4px; }
-  .seg { display: inline-flex; gap: 6px; flex: none; margin-right: 4px; }
-  .seg .chip.attn::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--pr); }
-  .hostbtn { margin-left: 4px; }
-  .hostbtn .dotw { width: 8px; height: 8px; }
-  .hostbtn .dotw.off { border-width: 1.5px; }
-  .body { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .pagewrap { flex: 1; min-height: 0; position: relative; }
-  .pagewrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--paper); }
-  .scroller { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 16px 24px 12px; overscroll-behavior: contain; }
-  .col { width: 100%; max-width: var(--col); display: flex; flex-direction: column; gap: 12px; }
+  .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .scroller { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 28px 32px 8px; overscroll-behavior: contain; }
+  .col { width: 100%; max-width: var(--col); display: flex; flex-direction: column; gap: 14px; }
   .older { align-self: center; color: var(--muted); font-size: 12px; line-height: 16px; }
   .msg.u { align-self: flex-end; background: var(--sel); color: var(--on-sel); padding: 8px 14px; border-radius: 18px 18px 4px 18px; max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.u .from { display: block; font-size: 11px; line-height: 16px; opacity: .75; white-space: normal; }
-  .msg.u .files, .md .files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; white-space: normal; }
-  .md { overflow-wrap: anywhere; }
+  .msg.u .files, .md .files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; white-space: normal; }
+  .md { overflow-wrap: anywhere; font-size: 15px; line-height: 24px; }
   .md p { margin: 0 0 8px; } .md p:last-child { margin-bottom: 0; }
   .md ul, .md ol { margin: 0 0 8px; padding-left: 20px; }
   .md h1, .md h2, .md h3, .md h4 { font-size: 15px; line-height: 22px; font-weight: 600; margin: 10px 0 6px; }
   .md pre { margin: 0 0 8px; background: var(--surface); border-radius: 8px; padding: 8px 10px; font: 12.5px/18px var(--mono); overflow: auto; white-space: pre; }
   .md a { color: var(--pr); }
   .md strong { font-weight: 700; }
-  .worked { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); align-self: flex-start; border-radius: 999px; }
+  .worked { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; min-height: 28px; padding: 0 10px 0 6px; border-radius: 999px; color: var(--muted); font-size: 13px; font-weight: 500; }
+  .worked:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
   .worked .chev { transition: transform 120ms; } .worked[aria-expanded="true"] .chev { transform: rotate(90deg); }
   .worked .dotw, .trow .dotw { width: 8px; height: 8px; margin: 0 4px; }
-  .tl { margin-left: 7px; padding-left: 16px; border-left: 1px solid var(--divider); display: flex; flex-direction: column; gap: 4px; }
-  .trow { display: flex; align-items: center; gap: 8px; color: var(--ink2); min-height: 24px; text-align: left; width: 100%; border-radius: 4px; }
-  .trow .ic { color: var(--muted); }
-  .trow .tn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .tsteps { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin: -6px 0 0 10px; padding-left: 14px; border-left: 2px solid var(--divider); }
+  .tsteps .md { font-size: 14px; line-height: 20px; color: var(--ink2); padding: 2px 6px; }
+  .trow { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; text-align: left; color: var(--ink2); border-radius: 6px; padding: 0 6px; min-width: 0; }
+  .trow:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+  .trow > .ic { color: var(--muted); }
+  .trow .tn { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .trow .tn em { font: 12.5px/18px var(--mono); font-style: normal; color: var(--muted); }
-  .trow .errtag { font: 12px/16px var(--mono); color: var(--err); }
-  .tbox { background: var(--surface); border-radius: 8px; padding: 8px 10px; font: 12.5px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; margin: 2px 0 4px; }
-  .tbox .lbl { color: var(--muted); font-family: var(--font); display: block; margin-bottom: 2px; }
+  .trow .errtag { font: 12px/16px var(--mono); color: var(--err); flex: none; }
+  .trow .chv { color: var(--muted); flex: none; margin-left: auto; }
+  .trow[aria-expanded="true"] { background: var(--surface); border-radius: 6px 6px 0 0; }
+  .tbox { background: var(--surface); border-radius: 0 0 8px 8px; padding: 6px 12px 10px; font: 12.5px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; margin: 0 0 4px; color: var(--ink); }
+  .tbox .lbl { color: var(--muted); font-family: var(--font); font-size: 12px; display: block; margin: 6px 0 2px; }
   .tbox .out { display: block; margin-top: 6px; color: var(--ink2); }
   .sysline { color: var(--muted); display: flex; gap: 8px; align-items: center; }
-  .waitslot { width: 100%; max-width: var(--col); margin-top: 12px; }
-  .waitslot:empty { display: none; }
-  .dock { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 24px 12px; }
+  .dock { flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 32px 20px; }
   .dock > * { width: 100%; max-width: var(--col); }
+  .waitslot:empty { display: none; }
+  .wait-card { background: var(--surface); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .wait-card .top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  .wait-card .top .ic { color: var(--ink2); }
+  .wait-card .top b { font-weight: 600; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wait-card .qa { display: flex; flex-direction: column; gap: 8px; }
+  .wait-card .qtext { white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 600; }
+  .wait-card .opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .wait-card .opts:empty { display: none; }
+  .wait-card code { background: var(--paper); overflow-wrap: anywhere; }
+  .wait-card pre { margin: 0; font: 12.5px/18px var(--mono); background: var(--paper); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+  .wait-card .chip { white-space: normal; height: auto; min-height: 32px; padding: 5px 12px; text-align: left; background: var(--paper); }
+  .wait-card input.chip { flex: 1 1 160px; min-width: 0; border-style: solid; font-weight: 400; outline: 0; color: var(--ink); cursor: text; min-height: 40px; }
+  .wait-card input.chip::placeholder { color: var(--muted); opacity: 1; }
+  .wait-card input.chip:focus { border: 1px solid var(--pr); box-shadow: inset 0 0 0 1px var(--pr); }
+  .wait-card .hint { color: var(--muted); font-size: 12px; line-height: 16px; }
+  .wait-card .hint:empty { display: none; }
   .nudge { display: flex; align-items: center; gap: 10px; color: var(--ink2); font-size: 13px; padding: 0 8px; }
   .nudge .ic { color: var(--muted); }
   .nudge .btn { margin-left: auto; }
   .readonly { background: var(--high); border-radius: 24px; padding: 14px 18px; color: var(--ink2); text-align: center; }
 
-  /* ---- what floats: menus, quick open, the snackbar, tooltips ---- */
-  .menu { position: fixed; z-index: 50; min-width: 220px; max-width: min(340px, calc(100vw - 16px)); max-height: min(440px, calc(100vh - 16px)); overflow: auto; background: var(--surface); border-radius: 4px; box-shadow: var(--sh2); padding: 8px 0; animation: pop 120ms cubic-bezier(0, 0, .2, 1); }
+  /* ---- what floats: menus, dialogs, quick open, the snackbar, tooltips ---- */
+  .menu { position: fixed; z-index: 50; min-width: 240px; max-width: min(340px, calc(100vw - 16px)); max-height: min(440px, calc(100vh - 16px)); overflow: auto; background: var(--surface); border-radius: 4px; box-shadow: var(--sh2); padding: 8px 0; animation: pop 120ms cubic-bezier(0, 0, .2, 1); }
   @keyframes pop { from { opacity: 0; transform: scale(.9); } }
-  .menu .mi { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 32px; padding: 4px 16px; text-align: left; color: var(--ink); }
+  .menu .mi { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 40px; padding: 4px 16px; text-align: left; color: var(--ink); }
   .menu .mi:hover, .menu .mi:focus-visible { background: color-mix(in srgb, var(--ink) 8%, transparent); outline: 0; }
   .menu .mi .ic { color: var(--ink2); }
   .menu .mi .ml { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .menu .mi .k { color: var(--muted); font-size: 12px; line-height: 16px; flex: none; }
+  .menu .mi .k { color: var(--muted); font-size: 12px; line-height: 16px; flex: none; font-weight: 500; }
   .menu .mi .ck { width: 20px; display: inline-flex; flex: none; }
   .menu .mi .ck .ic { color: var(--pr); }
   .menu .sep { height: 1px; background: var(--divider); margin: 8px 0; }
   .menu .mh { padding: 8px 16px 4px; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--muted); }
+  .menu .note { display: flex; align-items: center; min-height: 28px; padding: 0 16px; color: var(--muted); font: 12.5px/18px var(--mono); overflow-wrap: anywhere; }
   .menu input[type="search"] { width: 100%; border: 0; border-bottom: 1px solid var(--divider); outline: 0; background: transparent; padding: 4px 16px 12px; margin-bottom: 4px; }
   .menu.wide { min-width: 320px; }
   .menu .tabs, .menu .segrow { display: flex; gap: 6px; padding: 4px 16px 8px; overflow-x: auto; scrollbar-width: none; }
   .menu .tabs .chip, .menu .segrow .chip { height: 28px; padding: 0 10px; font-size: 13px; flex: none; max-width: none; }
+  .scrim { position: fixed; inset: 0; z-index: 54; background: rgba(0, 0, 0, .32); }
+  .dlg { position: fixed; z-index: 55; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(512px, calc(100vw - 32px)); max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); overflow: auto; background: var(--paper); border-radius: 8px; box-shadow: var(--sh3), 0 0 0 1px var(--divider); padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .dlg h2 { font: 400 22px/28px var(--font); overflow-wrap: anywhere; padding-right: 32px; }
+  .dlg > p { color: var(--ink2); }
+  .dlg .x { position: absolute; top: 12px; right: 12px; }
+  .dlg .card { background: var(--surface); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .dlg .card .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .dlg .card .top .ic { color: var(--ink2); }
+  .dlg .card .top b { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dlg .card textarea { display: block; width: 100%; min-height: 56px; max-height: 160px; border: 0; resize: vertical; background: var(--paper); border-radius: 8px; padding: 8px 10px; color: var(--ink2); font-style: italic; }
+  .dlg .acts { display: flex; gap: 4px; justify-content: flex-end; }
+  .dlg .pair { display: flex; align-items: center; gap: 8px; }
+  .dlg .pair b { display: block; font-weight: 500; overflow-wrap: anywhere; }
+  .dlg .where { color: var(--ink2); overflow-wrap: anywhere; }
   .qo-back { position: fixed; inset: 0; z-index: 46; }
   .qo { position: fixed; z-index: 47; left: 50%; top: 72px; transform: translateX(-50%); width: min(680px, calc(100vw - 16px)); max-height: calc(100vh - 96px); max-height: calc(100dvh - 96px); background: var(--paper); border-radius: 16px; box-shadow: var(--sh3), 0 0 0 1px var(--divider); display: flex; flex-direction: column; overflow: hidden; }
   .qh { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 16px; color: var(--ink2); flex: none; }
@@ -19317,36 +19318,39 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   .snack button { color: var(--inv-acc); font-weight: 500; white-space: nowrap; }
   .tip { position: fixed; z-index: 70; background: var(--inv); color: var(--on-inv); font-size: 12px; line-height: 16px; padding: 4px 10px; border-radius: 999px; pointer-events: none; white-space: nowrap; }
 
-  /* ---- narrower: the right column narrows, then stacks under the left one; a phone folds the bar ---- */
-  @media (max-width: 1100px) { .mh-grid { grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; } }
+  /* ---- narrower: under 900 px the list is a drawer behind the list button, and the bar carries the open chat's
+     title; at 720 px and under the bar is a phone's ---- */
+  @media (max-width: 1100px) { .scroller { padding: 24px 24px 8px; } .dock { padding: 0 24px 16px; } }
   @media (max-width: 899px) {
-    .mh-grid { grid-template-columns: minmax(0, 1fr); }
-    .mh-col.side { position: static; max-height: none; overflow: visible; padding: 0; margin: 0; }
+    .app { grid-template: "top" 64px "main" minmax(0, 1fr) / minmax(0, 1fr); }
+    .lst-b { display: grid; }
+    .s-nav { display: none; }
+    .app.drawer .s-nav { display: flex; position: absolute; z-index: 45; left: 0; top: 0; bottom: 0; width: min(320px, 86%); background: var(--canvas); padding: 12px 0 12px 8px; box-shadow: var(--sh3); }
+    .app.drawer .drawer-scrim { display: block; position: absolute; inset: 0; z-index: 44; background: rgba(0, 0, 0, .32); }
+    .app.chat-open .pickw { display: none; }
+    .app.chat-open .mobt { display: block; }
     .search { flex-basis: 200px; }
   }
   @media (max-width: 720px) {
     .app { grid-template-rows: 56px minmax(0, 1fr); }
     .only-phone { display: grid; } .no-phone { display: none !important; }
     .s-top { gap: 0; padding: 0 4px; }
-    .brand { padding: 0 4px; } .brand span { display: none; }
+    .brand { padding: 0 4px; } .brand span, .vr { display: none; }
+    .pick { font-size: 17px; padding: 0 6px; }
     .s-main { margin: 0 8px 8px; }
-    .in { padding: 14px 14px 24px; }
-    .mh-grid { gap: 24px; }
-    .ar { padding: 0 8px 0 12px; gap: 10px; }
-    .ah { padding: 0 4px; gap: 0; }
-    .seg { gap: 4px; }
-    .seg .chip .sl, .hostbtn .hl, .tabbtn { display: none; }
-    .seg .chip { padding: 0 9px; }
-    .hostbtn { padding: 0 10px; }
-    .scroller { padding: 12px 12px 8px; }
+    .mh-new { padding: 16px 16px 24px; justify-content: flex-end; }
+    .mh-new h2 { font-size: 22px; line-height: 28px; }
+    .scroller { padding: 16px 14px 8px; }
     .dock { padding: 0 8px 8px; }
-    .comp textarea, .card input.chip, .menu input[type="search"] { font-size: 16px; }
+    .tsteps { margin-left: 4px; padding-left: 10px; }
+    .comp textarea, .newa textarea, .wait-card input.chip, .menu input[type="search"], .qi { font-size: 16px; }
     .snacks { left: 12px; right: 12px; bottom: 12px; }
     .snack { max-width: 100%; }
     .qo { top: 8px; border-radius: 12px; max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+    .dlg { padding: 20px; }
     .empty { padding-top: 32px; }
   }
-  @media (pointer: coarse) { .menu .mi { min-height: 40px; } }
+  @media (pointer: coarse) { .menu .mi { min-height: 44px; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -19361,46 +19365,49 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M6.5 3.5h7.25L18.5 8.25V19.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M13.5 3.5v5h5"/></symbol>
     <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></symbol>
     <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
-    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="12" cy="18.5" r=".9"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5h4L19 9a2.83 2.83 0 0 0-4-4L4.5 15.5z"/><path d="m13.5 6.5 4 4"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.25"/><path d="M3.75 12h16.5M12 3.75c2.2 2.3 3.25 5 3.25 8.25S14.2 18 12 20.25C9.8 18 8.75 15.25 8.75 12S9.8 6 12 3.75z"/></symbol>
-    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5.5M11 6l-6 6 6 6"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-ask" viewBox="0 0 24 24"><path d="M5.5 4.5h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3.5v-3.5h-1.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M10 8.75a2 2 0 1 1 2.8 1.83c-.5.22-.8.67-.8 1.17M12 14h.01"/></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M13.5 4.5h6v6M19.5 4.5l-8 8M18 14v4.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1H10"/></symbol>
     <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4.5 21 19.5H3z"/><path d="M12 10v4.5M12 17h.01"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="5" y="5.5" width="14" height="10" rx="1.5"/><path d="M3 18.5h18"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.25 18.5h10a4 4 0 0 0 .55-7.96A5.5 5.5 0 0 0 7.2 9.55a4.5 4.5 0 0 0 .05 8.95z"/></symbol>
     <!-- Drawn here in the workspace's style (a 24 px box, a 1.75 stroke), which has none of them. -->
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5.5 4.5h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3.5v-3.5h-1.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M8 9h8M8 12.25h5"/></symbol>
-    <symbol id="i-page" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9h17M7.5 13h5.5M7.5 16h8.5"/></symbol>
-    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5l-6 6M4.5 19.5l6-6"/></symbol>
     <symbol id="i-host" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="m7.5 10 2.5 2.25-2.5 2.25M12.5 15h4"/></symbol>
     <symbol id="i-archive" viewBox="0 0 24 24"><rect x="4" y="4.5" width="16" height="4" rx="1"/><path d="M5.5 8.5v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-10M10 12.5h4"/></symbol>
-    <symbol id="i-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.75"/></symbol>
     <symbol id="i-fail" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.25"/><path d="m9.25 9.25 5.5 5.5M14.75 9.25l-5.5 5.5"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.25"/><path d="M12 11v5M12 8h.01"/></symbol>
     <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m5.5 7.5 4.5 4.5-4.5 4.5M12.5 17h6.5"/></symbol>
+    <symbol id="i-agent" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 2.9a9.1 9.1 0 1 0 0 18.2 9.1 9.1 0 1 0 0-18.2zM9.2 9.6a1.1 1.8 0 1 0 0 3.6 1.1 1.8 0 1 0 0-3.6zM14.8 9.6a1.1 1.8 0 1 0 0 3.6 1.1 1.8 0 1 0 0-3.6z"/></symbol>
     <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3z"/><path d="M14.5 6.5 17 4l3 3-2.5 2.5"/></symbol>
   </defs>
 </svg>
 
 <div class="app" data-app>
-  <header class="s-top">
+  <header class="s-top" data-top>
+    <button type="button" class="ib st lst-b" data-list-button aria-label="Agents" aria-expanded="false" aria-controls="hub-list"><svg class="ic" aria-hidden="true"><use href="#i-sidebar"/></svg><span class="bdg" data-badge hidden></span></button>
     <a class="brand st" href="https://syns.dev/" target="_blank" rel="noopener" aria-label="Syns"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span>Syns</span></a>
+    <span class="pickw" data-machine-slot hidden><span class="vr"></span></span>
+    <span class="mobt" data-bar-title></span>
     <span class="grow"></span>
-    <button type="button" class="search no-phone" data-search data-tip="Search agents (\u2318K)"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="q">Search agents</span></button>
+    <button type="button" class="search st no-phone" data-search><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="q">Search agents</span><span class="kbd" aria-hidden="true">\u2318K</span></button>
     <button type="button" class="ib st only-phone" data-search aria-label="Search agents"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
   </header>
+  <nav class="s-nav" id="hub-list" aria-label="Agents" data-nav>
+    <div class="cl" data-list><div class="skr"><span class="sk"></span></div><div class="skr"><span class="sk"></span></div><div class="skr"><span class="sk"></span></div></div>
+  </nav>
   <main class="s-main" data-main>
     <p data-thread-page-notice hidden></p>
-    <div class="view" data-view><div class="in"><div class="mh-grid"><div class="mh-col"><div>
-      <div class="ph-h"><h2>Agents, by workspace</h2></div>
-      <div class="skr"><span class="sk"></span></div><div class="skr"><span class="sk"></span></div><div class="skr"><span class="sk"></span></div>
-    </div></div></div></div></div>
+    <div class="view" data-view></div>
   </main>
+  <div class="drawer-scrim" data-scrim></div>
 </div>
 <!-- The new agent's field is in the markup from the start, so the shell finds it when it restores a draft after a
      reload, before the script has built the view; the script moves it into the composer. 02 R-K4 -->
@@ -19418,11 +19425,13 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   // at connect, before the reads below resolve. 05 R-S12
   const SNAPSHOT_MS = 6000, CHAT_MS = 2000, CHAT_ROWS = 60, MAX_FILES = 8;
   let grants = [], drafts = [];
-  let roster = new Set(), canEmbed = false;
+  let roster = new Set();
   let workspaces = [], providers = [], sessions = [], byId = new Map(), loadedAt = 0, loadFailed = false;
   let archived = null;
+  // \`modes\` (an earlier home's choice of Page or Chat per agent) is kept as stored and no longer read.
   let prefs = { view: null, modes: {}, groups: {}, open: {}, compose: {} };
-  // The overview is the view kind \`new\`, as the stored state names it. 03 R5.18a
+  // What the middle shows: New agent (the view kind \`new\`, as the stored state names it) or one agent's chat. The
+  // address names it: \`#agent=<id>\`, or none for New agent. 03 R5.18a; 05 R-S12
   let view = { kind: "new" };
   let teardown = null, refresh = null;
   let listSig = "", dutiesSig = "", built = false;
@@ -19492,7 +19501,17 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   const recency = (session) => Math.max(session.attentionAtMs || 0, session.updatedAtMs || 0, session.startedAtMs || 0);
   const titleOf = (session) => (session && session.title) || "Untitled agent";
   const workspaceName = (id) => { const found = workspaces.find((workspace) => workspace.id === id); return found ? found.name : "Other"; };
-  const isPhone = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches;
+  const matches = (query) => typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  const isPhone = () => matches("(max-width: 720px)");
+  /** Under 900 px the list is a drawer behind the list button. */
+  const isNarrow = () => matches("(max-width: 899px)");
+
+  // ---- the machine, read from the address alone: \`<you>--<machine>.syns.dev\` names it and its account's door ------
+  const HERE = (() => { try { return new URL(document.baseURI).host; } catch (error) { return ""; } })();
+  const DOOR = (() => {
+    const found = /^([a-z0-9-]+?)--([a-z0-9-]+)\\.syns\\.dev$/i.exec(HERE.replace(/:\\d+$/, ""));
+    return found && found[1] && found[2] ? { you: found[1], machine: found[2] } : null;
+  })();
 
   // ---- the snackbar and errors ------------------------------------------------------------------------
   function toast(text, action) {
@@ -19513,31 +19532,16 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   document.addEventListener("thread-page:grants", (event) => { grants = (event.detail && event.detail.grants) || []; dutiesChanged(); });
   document.addEventListener("thread-page:drafts", (event) => { drafts = (event.detail && event.detail.drafts) || []; dutiesChanged(); });
 
-  // The overview's parts are made once and kept: a return from an agent shows them as they were left.
-  const viewEl = $("[data-view]"), layerEl = $("[data-layer]");
-  const waitCount = h("span", { class: "n" }), waitList = h("div", { class: "cards" });
-  const waitEl = h("div", { hidden: true, dataset: { waiting: "" } }, h("div", { class: "ph-h" }, h("h2", { text: "Waiting on you" }), waitCount), waitList);
-  const listCount = h("span", { class: "n" });
-  const listEl = h("nav", { class: "agents", "aria-label": "Agents", dataset: { list: "" } });
-  const newEl = h("div", { dataset: { newa: "" } });
-  const draftsEl = h("section", { class: "sidecard", "aria-label": "Unsent drafts", dataset: { drafts: "" } });
-  const permsEl = h("section", { class: "sidecard", "aria-label": "Page permissions", dataset: { perms: "" } });
-  const overviewEl = h("div", { class: "in", dataset: { overview: "" } }, h("div", { class: "mh-grid" },
-    h("div", { class: "mh-col" }, waitEl, h("div", null, h("div", { class: "ph-h" }, h("h2", { text: "Agents, by workspace" }), listCount), listEl)),
-    h("div", { class: "mh-col side" }, newEl, draftsEl, permsEl)));
-  // One agent's view takes the panel while it is open; the overview stays under it, kept up to date.
-  const agentEl = h("div", { class: "pane", hidden: true, dataset: { agent: "" } });
-  let overviewTop = 0;
-  function showAgent(...nodes) {
-    if (!overviewEl.hidden) overviewTop = overviewEl.scrollTop;
-    overviewEl.hidden = true;
-    agentEl.hidden = false;
-    agentEl.replaceChildren(...nodes);
-  }
-  // \u2191 and \u2193 move between rows, as in the host's own list.
+  // The parts are made once and kept: the list, and in the middle New agent, which a return to it shows as it was left.
+  const appEl = $("[data-app]"), topEl = $("[data-top]"), navEl = $("[data-nav]"), mainEl = $("[data-main]"), viewEl = $("[data-view]"), layerEl = $("[data-layer]");
+  const listEl = $("[data-list]"), listButton = $("[data-list-button]"), badgeEl = $("[data-badge]"), barTitle = $("[data-bar-title]"), machineSlot = $("[data-machine-slot]");
+  const newEl = h("div", { class: "home-in", dataset: { newa: "" } });
+  const newPane = h("div", { class: "mh-new", dataset: { newPane: "" } }, newEl);
+  const chatPane = h("div", { class: "chat", hidden: true, dataset: { chat: "" } });
+  // \u2191 and \u2193 move between rows and group names, as in the host's own list.
   listEl.addEventListener("keydown", (event) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const all = [...listEl.querySelectorAll(".ar .nm, .gt")];
+    const all = [...listEl.querySelectorAll(".cr .lnk, .gt")];
     const at = all.indexOf(document.activeElement);
     if (at < 0) return;
     event.preventDefault();
@@ -19546,20 +19550,63 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   });
 
   if (!tp) {
-    viewEl.replaceChildren(h("div", { class: "in" }, h("div", { class: "empty" }, h("p", { class: "note-host", text: "This document is the home page of a host: open it through the host, not as a file." }))));
+    viewEl.replaceChildren(h("div", { class: "empty" }, h("p", { class: "note-host", text: "This document is the home page of a host: open it through the host, not as a file." })));
+    listEl.replaceChildren();
     return;
   }
+
+  // ---- what holds the reader: a drawer or a dialog keeps Tab inside it, and nothing behind it is reachable ----------
+  const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+  /** Tab and Shift Tab go round inside \`box\`. */
+  function trapIn(box, event) {
+    if (event.key !== "Tab") return;
+    const all = [...box.querySelectorAll(FOCUSABLE)].filter((node) => !node.closest("[hidden]") && node.getClientRects().length > 0);
+    if (!all.length) { event.preventDefault(); return; }
+    const first = all[0], last = all[all.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+  }
+  const setInert = (nodes, on) => { for (const node of nodes) { if (on) node.setAttribute("inert", ""); else node.removeAttribute("inert"); } };
+
+  // ---- the drawer: the list behind the list button, under 900 px ----------------------------------------------------
+  let drawerOpen = false;
+  function openDrawer() {
+    if (drawerOpen) return;
+    drawerOpen = true;
+    appEl.classList.add("drawer");
+    listButton.setAttribute("aria-expanded", "true");
+    setInert([topEl, mainEl], true);
+    const first = navEl.querySelector(".cr.on .lnk") || navEl.querySelector(FOCUSABLE);
+    if (first) first.focus();
+  }
+  /** Closes the drawer; the focus goes back to the list button, unless what was picked takes it (New agent's field). */
+  function closeDrawer(keepFocus) {
+    if (!drawerOpen) return;
+    drawerOpen = false;
+    appEl.classList.remove("drawer");
+    listButton.setAttribute("aria-expanded", "false");
+    setInert([topEl, mainEl], false);
+    if (!keepFocus) listButton.focus();
+  }
+  listButton.addEventListener("click", () => (drawerOpen ? closeDrawer() : openDrawer()));
+  $("[data-scrim]").addEventListener("click", () => closeDrawer());
+  navEl.addEventListener("keydown", (event) => { if (drawerOpen) trapIn(navEl, event); });
+  // Wider again: the list stands beside the middle, and nothing is held.
+  window.addEventListener("resize", () => { if (drawerOpen && !isNarrow()) { drawerOpen = false; appEl.classList.remove("drawer"); listButton.setAttribute("aria-expanded", "false"); setInert([topEl, mainEl], false); } });
+  /** A pick in the list: the drawer closes and the focus is on the list button; on desktop it stays where it is. */
+  const picked = (keepFocus) => { if (drawerOpen) closeDrawer(keepFocus); };
 
   // ---- floating menus -------------------------------------------------------------------------------
   let closeMenu = null, menuAnchor = null;
   /** Closes the open menu. \`settled\`: the reader is done with it (Escape, an item picked), so a list that waited
    *  for it is drawn again now; a press elsewhere closes it too, and the list then waits for the next read, since
-   *  drawing it again inside a press would take the control from under it. */
-  function dismiss(settled) { if (closeMenu) { const close = closeMenu; closeMenu = null; close(settled === true); } }
+   *  drawing it again inside a press would take the control from under it. \`back\`: the focus returns to what opened it. */
+  function dismiss(settled, back) { if (closeMenu) { const close = closeMenu; closeMenu = null; close(settled === true, back === true); } }
   /** One menu at a time, anchored under (or above) its control; Escape and an outside press close it. */
   function popup(anchor, build, options) {
     dismiss();
     const menu = h("div", { class: "menu", role: "menu" });
+    if (options && options.label) menu.setAttribute("aria-label", options.label);
     build(menu, dismiss);
     layerEl.append(menu);
     const box = anchor.getBoundingClientRect();
@@ -19574,7 +19621,24 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     menuAnchor = anchor;
     const outside = (event) => { if (!menu.contains(event.target) && !anchor.contains(event.target)) dismiss(false); };
     setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
-    closeMenu = (settled) => { document.removeEventListener("pointerdown", outside, true); anchor.setAttribute("aria-expanded", "false"); menu.remove(); menuAnchor = null; if (settled && listEl.contains(anchor)) renderList(); };
+    closeMenu = (settled, back) => {
+      document.removeEventListener("pointerdown", outside, true);
+      anchor.setAttribute("aria-expanded", "false");
+      const had = menu.contains(document.activeElement);
+      menu.remove();
+      menuAnchor = null;
+      if ((back || had) && anchor.isConnected) anchor.focus({ preventScroll: true });
+      if (settled && listEl.contains(anchor)) renderList();
+    };
+    // \u2191 and \u2193 move between its items.
+    menu.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const items = [...menu.querySelectorAll(".mi:not([disabled])")];
+      if (!items.length || (event.target && event.target.matches && event.target.matches("input"))) return;
+      event.preventDefault();
+      const at = items.indexOf(document.activeElement);
+      items[(at + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+    });
     const first = menu.querySelector("input, .mi");
     if (first && !(options && options.noFocus)) first.focus();
     return menu;
@@ -19583,14 +19647,50 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     const checkable = !!extra && "check" in extra;
     const node = button({ class: "mi", role: checkable ? "menuitemradio" : "menuitem", "aria-checked": checkable ? String(!!extra.check) : null, disabled: extra && extra.disabled },
       iconName ? icon(iconName) : null, h("span", { class: "ml", text: label }), extra && extra.hint ? h("span", { class: "k", text: extra.hint }) : null,
+      extra && extra.trail ? icon(extra.trail, 18) : null,
       checkable ? h("span", { class: "ck" }, extra.check ? icon("check") : null) : null);
-    node.addEventListener("click", () => { dismiss(true); run(); });
+    node.addEventListener("click", () => { dismiss(true, !(extra && extra.away)); run(); });
     return node;
   }
-  const sep = () => h("div", { class: "sep" });
+  const sep = () => h("div", { class: "sep", role: "separator" });
+
+  // ---- dialogs: a scrim and a modal box, closed by Close, Escape or the scrim; the focus returns to what opened it ----
+  let closeDialog = null;
+  function dialog(title, fill, returnTo, onClose) {
+    if (closeDialog) closeDialog();
+    dismiss();
+    const heading = h("h2", { id: "hub-dialog-title", text: title });
+    const body = h("div", { style: "display:contents" });
+    const box = h("div", { class: "dlg", role: "dialog", "aria-modal": "true", "aria-labelledby": "hub-dialog-title" });
+    const scrim = h("div", { class: "scrim" });
+    const close = () => {
+      if (closeDialog !== close) return;
+      closeDialog = null;
+      scrim.remove(); box.remove();
+      setInert([appEl], false);
+      if (onClose) onClose();
+      if (returnTo && returnTo.isConnected) returnTo.focus({ preventScroll: true });
+    };
+    box.append(button({ class: "ib st x", "aria-label": "Close", onclick: close }, icon("close", 24)), heading, body);
+    scrim.addEventListener("click", close);
+    box.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
+      trapIn(box, event);
+    });
+    closeDialog = close;
+    const redraw = () => { if (closeDialog === close) fill(body); };
+    redraw();
+    setInert([appEl], true);
+    layerEl.append(scrim, box);
+    const first = box.querySelector(".x");
+    if (first) first.focus();
+    return redraw;
+  }
+
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && closeMenu) { dismiss(true); event.preventDefault(); return; }
-    if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K")) { event.preventDefault(); openSearch(); }
+    if (event.key === "Escape" && closeMenu) { dismiss(true, true); event.preventDefault(); return; }
+    if (event.key === "Escape" && drawerOpen && !closeDialog) { closeDrawer(); event.preventDefault(); return; }
+    if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K") && !closeDialog) { event.preventDefault(); openSearch(); }
   });
   window.addEventListener("resize", () => dismiss(false));
 
@@ -19611,7 +19711,8 @@ var BUILTIN_HOME_HTML = `<!doctype html>
 
   // ---- the hub's own budget. Every call it makes goes through \`call\`: a token bucket of 60 a minute (a burst of 8)
   // and 4 at once, whatever the logic above asks; the rest of the page's 120 a minute and 8 at once is the embed's
-  // (05 R2.38). The reader's own actions go first. A logic bug can make the hub slow, never a storm.
+  // (05 R2.38). The reader's own actions go first; a press that opens a tab is not queued at all. A logic bug can
+  // make the hub slow, never a storm.
   const RATE = 60, BURST = 8, AT_ONCE = 4;
   let tokens = BURST, refilledAt = Date.now(), inFlight = 0, wake = null;
   const waiting = [];
@@ -19639,6 +19740,13 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   }
   /** One capability call under the hub's budget; \`urgent\` for what the reader just did. */
   function call(method, params, urgent) {
+    // A press that opens a tab goes at once, counted but never queued: the shell claims the tab while the reader's
+    // press still counts, and a press that waited behind other calls would find it spent by the one before. 03 R5.29d
+    if (urgent === "press") {
+      tokens -= 1;
+      inFlight += 1;
+      return bounded(method, tp.invoke(method, params)).finally(() => { inFlight -= 1; pump(); });
+    }
     return new Promise((resolve, reject) => {
       const entry = { urgent: !!urgent, run: () => bounded(method, params === undefined ? tp.invoke(method) : tp.invoke(method, params)).then(resolve, reject) };
       const at = urgent ? waiting.findIndex((one) => !one.urgent) : -1;
@@ -19669,7 +19777,6 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     const context = await call("context.get");
     roster = new Set(context.capabilities.map((entry) => entry.method));
   } catch (error) { handle(error, "Could not read what this host offers"); }
-  canEmbed = typeof tp.embed === "function" && has("pages.read");
   for (const node of document.querySelectorAll("[data-search]")) node.addEventListener("click", () => openSearch());
 
   // The hub's view state lives in its own storage namespace; nothing about the reader is kept. 03 R5.18a
@@ -19714,9 +19821,9 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   /** What \`readPage\` answers when the read moved the hub to the per-workspace fallback: stop this pass. */
   const SWITCHED = "switched";
   /** One page of a list. Null: the page size halved, ask again. SWITCHED: the hub now reads by workspace. */
-  async function readPage(params, cursor) {
+  async function readPage(params, cursor, urgent) {
     const limit = pageLimit;
-    try { return await call("sessions.snapshot", { ...params, limit, ...(cursor ? { cursor } : {}) }); }
+    try { return await call("sessions.snapshot", { ...params, limit, ...(cursor ? { cursor } : {}) }, urgent); }
     catch (error) {
       if (error.code === "response_too_large" && pageLimit > 5) { pageLimit = Math.max(5, Math.floor(limit / 2)); return null; }
       // A row that does not validate, on whichever page of the whole list: read workspace by workspace instead.
@@ -19796,8 +19903,11 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     scanning.add(id);
     call("sessions.messages", { sessionId: id, limit: 1 }).then(async () => {
       const known = byId.get(id);
-      const workspaceId = known ? known.workspaceId : restoredIn.get(id);
-      if (typeof workspaceId !== "string") return;
+      // One started from here is waited for in its workspace's reads. U57
+      if (!known && !restoredIn.has(id)) return;
+      // Opened by its address alone, its workspace is not known: the host's one list is read, across workspaces. 05 R-S12
+      const said = known ? known.workspaceId : restoredIn.get(id);
+      const workspaceId = typeof said === "string" ? said : null;
       let scan = scans.get(id);
       if (!scan || scan.workspaceId !== workspaceId) { scan = { workspaceId, all: false, cursor: null }; scans.set(id, scan); }
       const scope = workspaceId ? { workspaceId } : {};
@@ -19822,6 +19932,8 @@ var BUILTIN_HOME_HTML = `<!doctype html>
           if (!archived.some((session) => session.id === id)) archived.unshift(hit);
           goneIds.add(id);
           drop();
+          // The open chat's row stays in the list, archived, while it is open. 05 R-S12
+          if (view.kind === "session" && view.id === id) { sessions = sessions.concat([hit]); byId.set(id, hit); listSig = ""; renderList(); if (refresh) refresh(); }
           return;
         }
         scan.cursor = found === SWITCHED ? null : found.nextCursor;
@@ -19854,6 +19966,8 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     // The open session stays while the list misses it; only the host saying it is gone closes it.
     const open = view.kind === "session" ? view.id : null;
     if (open && !seen.has(open) && byId.has(open) && !goneIds.has(open)) { next.push(byId.get(open)); checkGone(open); }
+    // An archived agent opened from search or by its address keeps its row while its chat is open.
+    else if (open && !seen.has(open) && archived) { const kept = archived.find((session) => session.id === open); if (kept && byId.has(open)) next.push(kept); }
     sessions = next;
     byId = new Map(sessions.map((session) => [session.id, session]));
     loadedAt = atMs || Date.now();
@@ -19932,7 +20046,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
    *  showing each as it arrives. A host with one workspace comes here only for a row that does not validate, and tries
    *  the single list again every twentieth tick. 03 R5.12a; U57 */
   function pollByWorkspace(own) {
-    let timer = null, stopped = false, running = false, count = 0, delay = 0, turn = 0, prefer = null;
+    let timer = null, stopped = false, running = false, count = 0, delay = 0, turn = 0, prefer = null, asks = 0;
     const rowsBy = new Map(), flat = new Set();
     for (const session of sessions) { if (!rowsBy.has(session.workspaceId)) rowsBy.set(session.workspaceId, []); rowsBy.get(session.workspaceId).push(session); }
     const gone = () => stopped || own !== generation;
@@ -19979,7 +20093,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
             } catch (error) { if (error.code === "rate_limited") limited = true; }
           }
           if (!limited && count % 6 === 0) { calls += 1; await loadWorkspaces(true); }
-          const wanted = prefer;
+          const wanted = prefer, asked = asks;
           for (const workspace of chosen()) {
             if (limited || gone()) break;
             const scoped = listParams({ includeChildren: !flat.has(workspace.id), workspaceId: workspace.id });
@@ -20006,8 +20120,9 @@ var BUILTIN_HOME_HTML = `<!doctype html>
             }
           }
           // Asked for once, read or not (a workspace the list does not name is never read); a session started there is
-          // then hot by its own start time.
-          if (prefer === wanted) prefer = null;
+          // then hot by its own start time. Asked again while this pass ran (a second start in the same workspace, after
+          // the pass had read it), it is read first on the next pass, at once.
+          if (asks === asked) prefer = null;
           if (!gone() && !limited) show();
         }
       } finally { running = false; }
@@ -20015,9 +20130,22 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       if (!gone()) timer = setTimeout(tick, prefer && !limited ? 0 : delay);
     };
     // A session just started: its workspace is read first, now. U57
+    /** One urgent read of a workspace's newest rows, beside the pass that runs. */
+    const readNow = async (id) => {
+      try {
+        const page = await readPage(listParams({ includeChildren: !flat.has(id), workspaceId: id }), null, true);
+        if (!page || page === SWITCHED || gone()) return;
+        rowsBy.set(id, page.sessions);
+        if (page.nextCursor) moreBy.set(id, page.nextCursor); else moreBy.delete(id);
+        show();
+      } catch (error) { /* the next pass reads it */ }
+    };
     nudgeWorkspace = (id) => {
       prefer = id;
-      if (running || gone()) return;
+      asks += 1;
+      if (gone()) return;
+      // A pass under way may wait behind the hub's other calls: the workspace is read now, beside it.
+      if (running) { void readNow(id); return; }
       clearTimeout(timer);
       tick();
     };
@@ -20128,7 +20256,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     else if (kind === "waiting") { slot.append(h("span", { class: "dotw" })); slot.title = "Waiting on you"; }
     else if (kind === "failed") { slot.append(icon("fail", 18)); slot.title = "Failed"; }
     else if (session && session.archived) { slot.append(icon("archive", 18)); slot.title = "Archived"; }
-    else if (session && session.state === "stopped") { slot.append(h("span", { class: "dotw off" })); slot.title = "Not running in its host"; }
+    else if (session && session.state === "stopped") slot.append(h("span", { class: "dotw off" }));
     else if (session && session.state === "idle") slot.append(icon("check", 18));
     else if (!session && kind === "unread") { slot.append(h("span", { class: "udot" })); slot.title = "Unread"; }
     return slot;
@@ -20136,7 +20264,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   /** What a wait is, for telling one from the next. */
   const waitKeyOf = (session) => { const wait = session.waiting; return wait ? (wait.id || "") + wait.kind + (wait.text || "") : ""; };
 
-  // ---- the overview's list: every agent under its workspace ------------------------------------------------
+  // ---- the list: every agent under its workspace -----------------------------------------------------------
   // While the pointer is over the list, rows keep their places, so a row does not move from under the reader.
   let held = null;
   const byOrder = (a, b) => {
@@ -20145,9 +20273,18 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     if (ha !== hb) return ha ? -1 : 1;
     return recency(b) - recency(a);
   };
-  listEl.addEventListener("pointerenter", () => { held = new Map([...listEl.querySelectorAll(".ar")].map((node, at) => [node.dataset.id, at])); });
+  listEl.addEventListener("pointerenter", () => { held = new Map([...listEl.querySelectorAll(".cr")].map((node, at) => [node.dataset.id, at])); });
   listEl.addEventListener("pointerleave", () => { held = null; renderList(); });
-  const agentsOf = (count, more) => (!count ? (more ? "No recent agents" : "No agents") : count + (more ? "+" : "") + (count === 1 && !more ? " agent" : " agents"));
+  /** The address of a view: \`#agent=<id>\` for a chat, \`#\` (none) for New agent. */
+  const hashOf = (next) => (next.kind === "session" ? "#agent=" + encodeURIComponent(next.id) : "#");
+  /** The agents that wait on the reader, for the list button's badge. */
+  const waitingCount = () => sessions.filter((session) => session.state === "waiting" && !session.archived).length;
+  /** Above the list: New agent, where the host starts agents from a page. A link, so its press is a step. */
+  const newButton = h("a", { class: "newb st", href: "#", dataset: { newAgent: "" } }, icon("plus", 24), h("span", { text: "New agent" }));
+  /** A plain press on a link: one with a modifier or another button is the browser's, and the address does not follow it. */
+  const plain = (event) => !event.defaultPrevented && !event.button && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+  // The drawer closes first, so the field takes the caret once the middle can hold it. H35
+  newButton.addEventListener("click", (event) => { if (!plain(event)) return; picked(true); show({ kind: "new" }, { focusNew: true }); });
   function renderList() {
     if (!built) return;
     const roots = sessions.filter((session) => !session.parentSessionId || !byId.has(session.parentSessionId));
@@ -20160,41 +20297,42 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     for (const session of roots) groupOf(session).list.push(session);
     if (other.list.length) groups.push(other);
     for (const group of groups) group.list.sort(byOrder);
+    drawBadge();
     // The list is drawn again only when what it shows changed: its rows and their order, a title, a state, a
     // count. The clock alone moves nothing: the times are written into the rows that stand. So the reader's place,
-    // the focus and the control under the pointer stay from one minute to the next.
+    // the focus and the control under the pointer stay from one minute to the next. Which chat is open is marked in
+    // place.
     const order = [];
     const walk = (session) => { order.push(session.id); if (prefs.open[session.id]) for (const kid of childrenOf(session.id)) walk(kid); };
     for (const group of groups) if (!prefs.groups[group.id]) group.list.forEach(walk);
     const sig = JSON.stringify([prefs.groups, prefs.open, !!moreCursor(), capped, [...moreBy.keys()], [...noPage], loadingMore, workspaces.map((w) => w.id + w.name), roster.size, loadedAt ? 1 : 0, loadFailed, order,
-      sessions.map((s) => [s.id, s.title, s.state, s.unread, s.parentSessionId, s.workspaceId, s.archived, waitKeyOf(s)])]);
-    // A row's open menu stays while its row is listed: the list is drawn again once the menu has closed.
-    const menuRow = menuAnchor && listEl.contains(menuAnchor) ? menuAnchor.closest(".ar") : null;
-    if (sig === listSig || (menuRow && byId.has(menuRow.dataset.id))) {
-      for (const row of listEl.querySelectorAll(".ar")) {
+      sessions.map((s) => [s.id, s.title, s.state, s.unread, s.parentSessionId, s.workspaceId, s.archived, s.state === "waiting" ? s.attentionAtMs || 0 : 0])]);
+    if (sig === listSig) {
+      for (const row of listEl.querySelectorAll(".cr")) {
         const session = byId.get(row.dataset.id), time = row.querySelector(".t");
         const said = session && time ? timeOf(row.dataset.kind || "", session) : null;
         if (said !== null && time.textContent !== said) time.textContent = said;
       }
-      drawWaiting();
+      markOpen();
       dutiesChanged();
       return;
     }
     listSig = sig;
     const fragment = document.createDocumentFragment();
+    const rows = fragment;
     if (!loadedAt) {
-      if (loadFailed) fragment.append(h("p", { class: "muted", text: "Could not list agents." }));
-      else for (let n = 0; n < 3; n += 1) fragment.append(h("div", { class: "skr" }, h("span", { class: "sk" })));
-    } else if (!sessions.length) {
-      fragment.append(h("div", { class: "empty" }, icon("chat", 24, "big"), h("b", { text: "No agents yet" }), h("p", { text: "Start one with New agent, or in the host; it appears here." })));
+      if (loadFailed) rows.append(h("p", { class: "capped", text: "Could not list agents." }));
+      else for (let n = 0; n < 3; n += 1) rows.append(h("div", { class: "skr" }, h("span", { class: "sk" })));
+    } else if (!sessions.length && !workspaces.length) {
+      rows.append(h("div", { class: "empty" }, h("b", { text: "No agents yet" }), h("p", { text: "Start one with New agent, or in the host; it appears here." })));
     }
     for (const group of loadedAt ? groups : []) {
       const listed = known.has(group.id);
       const open = !prefs.groups[group.id];
       const more = listed && (perWorkspace ? moreBy.has(group.id) : !!moreCursor());
-      const toggle = button({ class: "gt", "aria-expanded": String(open) }, icon("folder", 20), h("b", { class: "gname", text: group.name }), h("span", { class: "sub", text: agentsOf(group.count, more) }),
-        h("span", { class: "gchev" }, icon(open ? "chev-d" : "chev-r", 16)));
-      const header = h("div", { class: "grp-h" }, toggle);
+      const count = group.count ? String(group.count) + (more ? "+" : "") : "";
+      const toggle = button({ class: "gt st", "aria-expanded": String(open) }, icon("folder", 18), h("span", { class: "gchev" }, icon(open ? "chev-d" : "chev-r", 18)), h("b", { class: "gname", text: group.name }), h("span", { class: "n", text: count, "aria-label": count ? count + (group.count === 1 && !more ? " agent" : " agents") : null }));
+      const header = h("div", { class: "cg-h" }, toggle);
       // A folded group still shows what needs the reader, as a folded parent does.
       if (!open) {
         const kinds = group.list.map((session) => glyphOf(session, true));
@@ -20203,63 +20341,87 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       }
       toggle.addEventListener("click", () => { if (open) prefs.groups[group.id] = true; else delete prefs.groups[group.id]; savePrefs(); renderList(); });
       header.append(h("span", { class: "grow" }));
+      // Both always shown: a phone has no hover. 05 R-S12
       if (has("sessions.start") && listed) {
-        const add = button({ class: "ib st gadd", "aria-label": "New agent in " + group.name, "data-tip": "New agent in " + group.name }, icon("plus", 20));
-        add.addEventListener("click", () => { prefs.compose.workspaceId = group.id; savePrefs(); drawNew(); focusNew(); });
+        const add = h("a", { class: "ib st gadd", href: "#", "aria-label": "New agent in " + group.name, "data-tip": "New agent in " + group.name }, icon("plus", 18));
+        add.addEventListener("click", (event) => { if (!plain(event)) return; prefs.compose.workspaceId = group.id; savePrefs(); picked(true); show({ kind: "new" }, { focusNew: true }); });
         header.append(add);
       }
-      // The workspace's own page, where the host offers one; a page cannot know before it asks. 05 R-S12; 06 R-P17
-      if (has("pages.open") && listed && !noPage.has(group.id)) header.append(button({ class: "btn text sm ico st", dataset: { open: "" }, onclick: () => openWorkspace(group.id) }, icon("open", 18), h("span", { text: "Open" })));
-      const section = h("div", { class: "grp", dataset: { group: group.id } }, header);
-      if (open) for (const session of group.list) appendRow(section, session, 0);
-      fragment.append(section);
+      // The workspace's own page, in a tab of its own, where the host offers one; a page cannot know before it asks. 05 R-S12; 03 R5.29d; 06 R-P17
+      if (has("pages.open") && listed && !noPage.has(group.id)) header.append(button({ class: "ib st", dataset: { open: "" }, "aria-label": "Open " + group.name + " in a new tab", "data-tip": "Open " + group.name + " in a new tab", onclick: () => openWorkspace(group.id) }, icon("open", 18)));
+      const section = h("div", { class: "cg", dataset: { group: group.id } }, header);
+      if (open) {
+        if (!group.list.length) section.append(h("p", { class: "cg-none", text: "No agents yet" }));
+        for (const session of group.list) appendRow(section, session, 0);
+      }
+      rows.append(section);
     }
-    if (loadedAt && !perWorkspace && moreCursor()) fragment.append(button({ class: "btn text sm st more", dataset: { more: "" }, disabled: loadingMore, onclick: (event) => { event.currentTarget.disabled = true; event.currentTarget.textContent = "Loading\u2026"; showMore(); } }, loadingMore ? "Loading\u2026" : "Show more agents"));
-    else if (loadedAt && perWorkspace && capped) fragment.append(h("p", { class: "capped", text: "Showing the newest agents of each workspace; search finds the rest." }));
+    if (loadedAt && !perWorkspace && moreCursor()) rows.append(button({ class: "btn text sm st more", dataset: { more: "" }, disabled: loadingMore, onclick: (event) => { event.currentTarget.disabled = true; event.currentTarget.textContent = "Loading\u2026"; showMore(); } }, loadingMore ? "Loading\u2026" : "Show more agents"));
+    else if (loadedAt && perWorkspace && capped) rows.append(h("p", { class: "capped", text: "Showing the newest agents of each workspace; search finds the rest." }));
     // The control the reader was on keeps the focus across a redraw.
     const focused = document.activeElement && listEl.contains(document.activeElement) ? document.activeElement : null;
-    const place = focused ? { row: focused.closest(".ar") ? focused.closest(".ar").dataset.id : null, group: focused.closest(".grp") ? focused.closest(".grp").dataset.group : null, label: focused.getAttribute("aria-label"), name: focused.className } : null;
+    const place = focused ? { row: focused.closest(".cr") ? focused.closest(".cr").dataset.id : null, group: focused.closest(".cg") ? focused.closest(".cg").dataset.group : null, label: focused.getAttribute("aria-label"), name: focused.className, tag: focused.tagName } : null;
     // A redraw that is needed keeps what the reader looks at where it stood.
     const settle = holdPlace();
     listEl.replaceChildren(fragment);
     if (place) {
-      const within = place.row !== null ? [...listEl.querySelectorAll(".ar")].find((node) => node.dataset.id === place.row)
-        : place.group !== null ? [...listEl.querySelectorAll(".grp")].map((node) => (node.dataset.group === place.group ? node.querySelector(".grp-h") : null)).find(Boolean) : listEl;
-      const buttons = within ? [...within.querySelectorAll("button")] : [];
-      const target = (place.label && buttons.find((node) => node.getAttribute("aria-label") === place.label)) || buttons.find((node) => node.className === place.name);
+      const within = place.row !== null ? [...listEl.querySelectorAll(".cr")].find((node) => node.dataset.id === place.row)
+        : place.group !== null ? [...listEl.querySelectorAll(".cg")].map((node) => (node.dataset.group === place.group ? node.querySelector(".cg-h") : null)).find(Boolean) : listEl;
+      const controls = within ? [...within.querySelectorAll("button, a")] : [];
+      const target = (place.label && controls.find((node) => node.getAttribute("aria-label") === place.label)) || controls.find((node) => node.className === place.name && node.tagName === place.tag);
       if (target) target.focus({ preventScroll: true });
     }
-    listCount.textContent = loadedAt ? sessions.length + (capped || moreCursor() ? "+" : "") : "";
     if (menuAnchor && !menuAnchor.isConnected) dismiss();
-    drawWaiting();
+    markOpen();
     dutiesChanged();
     settle();
   }
-  /** What a row says of its time: how long it has worked, that it failed and when, or when it last moved. */
+  /** The open chat's row is \`selected\`, and the page it is. */
+  function markOpen() {
+    const open = view.kind === "session" ? view.id : null;
+    for (const row of listEl.querySelectorAll(".cr")) {
+      const on = row.dataset.id === open;
+      row.classList.toggle("on", on);
+      const link = row.querySelector(".lnk");
+      if (on) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
+    }
+  }
+  /** The list button says how many agents wait on the reader. */
+  function drawBadge() {
+    const count = loadedAt ? waitingCount() : 0;
+    badgeEl.hidden = !count;
+    if (badgeEl.textContent !== String(count)) badgeEl.textContent = String(count);
+    const label = count ? "Agents, " + count + " waiting on you" : "Agents";
+    if (listButton.getAttribute("aria-label") !== label) listButton.setAttribute("aria-label", label);
+  }
+  /** What a row says of its state and time: that it waits on the reader, how long it has worked, that it failed and
+   *  when, or when it last moved. */
   function timeOf(kind, session) {
     const at = recency(session);
+    if (kind === "waiting") return ["Waiting on you", ago(session.attentionAtMs || at)].filter(Boolean).join(" \xB7 ");
     return kind === "working" ? ["Working", lasting(at)].filter(Boolean).join(" \xB7 ") : kind === "failed" ? ["Failed", ago(at)].filter(Boolean).join(" \xB7 ") : ago(at);
   }
-  /** The reader's place on the overview is held across a change to it: the first heading, card, group or row at the
-   *  panel's top edge stands where it stood once the change is in, whatever came or went above it, in every engine.
-   *  Returns what to call when the change is in. At the very top nothing is held: what is new shows there. */
+  /** The reader's place in the list is held across a change to it: the first group or row at its top edge stands where
+   *  it stood once the change is in, whatever came or went above it, in every engine. Returns what to call when the
+   *  change is in. At the very top nothing is held: what is new shows there. */
   let placing = false;
   function holdPlace() {
-    if (placing || overviewEl.hidden || overviewEl.scrollTop <= 0) return () => {};
+    if (placing || listEl.scrollTop <= 0) return () => {};
     placing = true;
-    const edge = overviewEl.getBoundingClientRect().top, from = overviewEl.scrollTop;
-    const marks = () => [...overviewEl.querySelectorAll(".ph-h, .card, .grp-h, .ar, [data-newa], .sidecard")];
-    const nameOf = (node) => (node.classList.contains("ar") ? "a:" + node.dataset.id : node.classList.contains("grp-h") ? "g:" + node.parentNode.dataset.group : node.classList.contains("card") ? "c:" + node.dataset.wait : null);
+    const edge = listEl.getBoundingClientRect().top, from = listEl.scrollTop;
+    const marks = () => [...listEl.querySelectorAll(".cg-h, .cr")];
+    const nameOf = (node) => (node.classList.contains("cr") ? "a:" + node.dataset.id : "g:" + node.parentNode.dataset.group);
     const anchor = marks().find((node) => node.getBoundingClientRect().bottom > edge);
     const name = anchor ? nameOf(anchor) : null, was = anchor ? anchor.getBoundingClientRect().top : 0;
     return () => {
       placing = false;
       const now = anchor && anchor.isConnected ? anchor : name ? marks().find((node) => nameOf(node) === name) : null;
       const top = now ? now.getBoundingClientRect().top : 0;
-      const to = now ? overviewEl.scrollTop + top - was : from;
-      if (overviewEl.scrollTop !== to) overviewEl.scrollTop = to;
+      const to = now ? listEl.scrollTop + top - was : from;
+      if (listEl.scrollTop !== to) listEl.scrollTop = to;
     };
   }
+  /** One agent's row: a link to its chat (a press on it is a step Back retraces), its sub-agents' twist, and Archive. */
   function appendRow(into, session, depth) {
     const kids = childrenOf(session.id);
     const open = !!prefs.open[session.id];
@@ -20267,36 +20429,29 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     const kind = glyphOf(session, folded);
     const words = { waiting: "waiting on you", working: "working", failed: "failed", unread: "unread" }[kind];
     const unread = familyOf(session, folded).some((one) => one.unread);
-    const row = h("div", { class: "ar" + (unread ? " unread" : ""), dataset: { id: session.id } }, mark(kind, session),
-      button({ class: "nm" }, titleOf(session), words ? h("span", { class: "sr", text: ", " + words }) : null));
+    const link = h("a", { class: "lnk", href: hashOf({ kind: "session", id: session.id }) }, mark(kind, session),
+      h("span", { class: "tx" }, h("b", { text: titleOf(session) }), h("span", { class: "t" + (kind === "waiting" ? " w" : ""), "aria-hidden": "true", text: timeOf(kind, session) })),
+      words ? h("span", { class: "sr", text: ", " + words }) : null);
+    link.addEventListener("click", (event) => { if (!plain(event)) return; show({ kind: "session", id: session.id }); picked(); });
+    const row = h("div", { class: "cr" + (unread ? " unread" : ""), dataset: { id: session.id, kind } }, link);
     if (depth) row.dataset.depth = String(Math.min(depth, 3));
     if (kids.length) {
       const twist = button({ class: "tw st", "aria-label": (open ? "Hide" : "Show") + " sub-agents", "aria-expanded": String(open) }, icon(open ? "chev-d" : "chev-r", 16));
-      twist.addEventListener("click", (event) => { event.stopPropagation(); if (open) delete prefs.open[session.id]; else prefs.open[session.id] = true; savePrefs(); renderList(); });
+      twist.addEventListener("click", () => { if (open) delete prefs.open[session.id]; else prefs.open[session.id] = true; savePrefs(); renderList(); });
       row.append(twist);
     }
-    row.append(h("span", { class: "grow" }));
-    if (kind === "waiting") row.append(h("span", { class: "tag", text: "Waiting on you" }));
-    row.dataset.kind = kind;
-    row.append(h("span", { class: "t", text: timeOf(kind, session) }));
-    const hover = h("span", { class: "hov" });
     if (has("sessions.archive") && !session.archived) {
-      const archive = button({ class: "ib st", "aria-label": "Archive", "data-tip": "Archive" }, icon("archive", 20));
-      archive.addEventListener("click", (event) => { event.stopPropagation(); archiveSession(session); });
-      hover.append(archive);
+      const archive = button({ class: "ib st arch", "aria-label": "Archive", "data-tip": "Archive" }, icon("archive", 20));
+      archive.addEventListener("click", () => archiveSession(session));
+      row.append(archive);
     }
-    const more = button({ class: "ib st", "aria-label": "Agent actions", "aria-haspopup": "menu" }, icon("more", 20));
-    more.addEventListener("click", (event) => { event.stopPropagation(); sessionMenu(more, session, true); });
-    hover.append(more);
-    row.append(hover);
-    row.addEventListener("click", () => openSession(session.id));
     into.append(row);
     if (open) for (const kid of kids) appendRow(into, kid, depth + 1);
   }
-  /** A workspace's own page, in place: the reader's Back returns here. A host that offers that workspace none
-   *  answers \`unavailable\`; the home says so and stops offering it there. 03 R5.29c; 06 R-P17 */
+  /** A workspace's own page, in a new tab, the home's tab staying as it is. A host that offers that workspace none
+   *  answers \`unavailable\`; the home says so and stops offering it there. 03 R5.29c, R5.29d; 06 R-P17 */
   async function openWorkspace(id) {
-    try { await call("pages.open", { workspaceId: id, newSession: true }, true); }
+    try { await call("pages.open", { workspaceId: id, newSession: true, newTab: true }, "press"); }
     catch (error) {
       if (!error || error.code !== "unavailable") { handle(error, "Could not open the workspace"); return; }
       noPage.add(id);
@@ -20305,52 +20460,46 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     }
   }
 
-  // ---- what waits on the reader: one card per waiting agent, the newest wait first --------------------------
-  const cardBy = new Map();
-  // While the pointer is over the cards they keep their places, as the rows do: a press on an option answers at
-  // once, so no card may move under it. A wait that ended stays where it was, taking no press; a new one joins below.
-  let cardsHeld = false;
-  waitList.addEventListener("pointerenter", () => { cardsHeld = true; });
-  waitList.addEventListener("pointerleave", () => { cardsHeld = false; drawWaiting(); });
-  function drawWaiting() {
-    const waits = sessions.filter((session) => session.state === "waiting" && session.waiting && !session.archived)
-      .sort((a, b) => (b.attentionAtMs || recency(b)) - (a.attentionAtMs || recency(a)));
-    const fresh = new Map();
-    for (const session of waits) {
-      const key = waitKeyOf(session);
-      let entry = cardBy.get(session.id);
-      // A card stays while its wait does, with what the reader typed or picked in it.
-      if (!entry || entry.key !== key) { entry = { key, card: waitCard(session, session.waiting, true) }; cardBy.set(session.id, entry); }
-      entry.card.update(session);
-      fresh.set(entry.card.node, true);
-    }
-    for (const id of [...cardBy.keys()]) if (!waits.some((session) => session.id === id)) cardBy.delete(id);
-    let want = [...fresh.keys()];
-    if (cardsHeld) {
-      const shown = [...waitList.children];
-      for (const node of shown) if (!fresh.has(node)) for (const control of node.querySelectorAll("button, input")) control.disabled = true;
-      want = shown.concat(want.filter((node) => !shown.includes(node)));
-    }
-    const settle = holdPlace();
-    let at = waitList.firstChild;
-    for (const node of want) { if (node === at) at = at.nextSibling; else waitList.insertBefore(node, at); }
-    while (at) { const next = at.nextSibling; at.remove(); at = next; }
-    waitEl.hidden = !want.length;
-    if (waitCount.textContent !== String(waits.length)) waitCount.textContent = String(waits.length);
-    settle();
-  }
-
-  // ---- the home's duties: unsent drafts, page permissions. 05 R-S12; 02 R-K7; 03 R5.65 -------------------------
+  // ---- the machine's name, and under it the home's duties: unsent drafts, page permissions. 05 R-S12; 02 R-K7; 03 R5.65 --
+  // At \`<you>--<machine>.syns.dev\` the bar names the machine and leads to all of the account's machines; elsewhere it
+  // shows "This machine" only while there is a draft or a permission to reach.
+  const machinePill = button({ class: "pick st", "aria-haspopup": "menu", "aria-expanded": "false", dataset: { machine: "" } });
+  machinePill.addEventListener("click", () => machineMenu());
+  machineSlot.append(machinePill);
+  if (DOOR) navEl.setAttribute("aria-label", "Agents on " + DOOR.machine);
+  let redrawDialog = null;
   function dutiesChanged() {
     if (!built) return;
-    const only = view.kind === "new" && view.perms && grants.some((grant) => grant.from === view.perms) ? view.perms : null;
-    const sig = JSON.stringify([drafts, grants, only, drafts.map((draft) => titleOf(lookup(draft.session))), grants.map((grant) => titleOf(lookup(grant.from)))]);
+    const sig = JSON.stringify([drafts, grants, drafts.map((draft) => titleOf(lookup(draft.session))), grants.map((grant) => titleOf(lookup(grant.from)))]);
     if (sig === dutiesSig) return;
     dutiesSig = sig;
-    const settle = holdPlace();
-    const head = (name, title, count) => h("div", { class: "top" }, icon(name, 20), h("h3", { text: title }), count ? h("span", { class: "sub", text: String(count) }) : null);
-    draftsEl.replaceChildren(head("edit", "Unsent drafts", drafts.length), h("p", { class: "sub", text: "Text you typed into a page that could not be put back where it was." }));
-    if (!drafts.length) draftsEl.append(h("p", { class: "muted", text: "No unsent drafts." }));
+    const name = DOOR ? DOOR.machine : "This machine";
+    machineSlot.hidden = !DOOR && !drafts.length && !grants.length;
+    machinePill.setAttribute("aria-label", name);
+    machinePill.replaceChildren(icon(DOOR && DOOR.machine === "cloud" ? "cloud" : "laptop", 20), h("span", { class: "pl", text: name }), icon("chev-d", 18));
+    if (redrawDialog) redrawDialog();
+  }
+  function machineMenu() {
+    popup(machinePill, (menu) => {
+      menu.append(h("div", { class: "mh", text: DOOR ? DOOR.machine : "This machine" }), h("div", { class: "note", text: HERE }));
+      if (DOOR) menu.append(sep(), item("All machines", "globe", () => allMachines(), { trail: "open", away: true }));
+      if (drafts.length || grants.length) {
+        menu.append(sep());
+        if (drafts.length) menu.append(item("Unsent drafts", "edit", () => showDuty("drafts"), { hint: String(drafts.length), away: true }));
+        if (grants.length) menu.append(item("Page permissions", "lock", () => showDuty("perms"), { hint: String(grants.length), away: true }));
+      }
+    }, { label: DOOR ? DOOR.machine : "This machine" });
+  }
+  /** The account's machines, at its door: another site to the protocol, asked about and opened in a new tab. 03 R5.32\u2013R5.34 */
+  function allMachines() {
+    call("navigation.openExternal", { url: "https://" + DOOR.you + ".syns.dev/_machines", label: "All machines" }, true).catch((error) => handle(error, "Could not open All machines"));
+  }
+  function showDuty(kind) {
+    redrawDialog = dialog(kind === "drafts" ? "Unsent drafts" : "Page permissions", kind === "drafts" ? fillDrafts : fillPerms, machinePill, () => { redrawDialog = null; });
+  }
+  function fillDrafts(body) {
+    body.replaceChildren(h("p", { text: "Text you typed into a page that could not be put back where it was. Kept in this browser for 7 days." }));
+    if (!drafts.length) body.append(h("p", { class: "muted", text: "No unsent drafts." }));
     for (const draft of drafts) {
       const session = lookup(draft.session);
       const text = h("textarea", { readonly: true, "aria-label": "Draft text", autocomplete: "off" });
@@ -20362,28 +20511,28 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       });
       const discard = button({ class: "btn text sm st" }, "Discard");
       discard.addEventListener("click", () => document.dispatchEvent(new CustomEvent("thread-page:draft-discard", { detail: { session: draft.session, documentPath: draft.documentPath, key: draft.key, field: draft.field } })));
-      draftsEl.append(h("div", { class: "dr", dataset: { session: draft.session } },
-        h("span", { class: "where", text: (session ? titleOf(session) : draft.session) + " \xB7 " + draft.documentPath + " \xB7 " + draft.label + " \xB7 " + draft.field + " \u2014 " + (draft.reason === "field-filled" ? "the page filled this field" : "not on the current version") + ", " + when(draft.atMs) }),
+      body.append(h("div", { class: "card", dataset: { session: draft.session } },
+        h("div", { class: "top" }, icon("edit", 20), h("b", { text: session ? titleOf(session) : draft.session })),
+        h("span", { class: "sub", text: draft.documentPath + " \xB7 " + draft.label + " \xB7 " + draft.field + " \u2014 " + (draft.reason === "field-filled" ? "the page filled this field" : "not on the current version") + ", " + when(draft.atMs) }),
         text, h("div", { class: "acts" }, copy, discard)));
     }
-    permsEl.replaceChildren(head("lock", "Page permissions", grants.length), h("p", { class: "sub", text: "Pages that may send your answers into another agent, each granted once by you." }));
-    if (!grants.length) permsEl.append(h("p", { class: "muted", text: "No page holds a permission." }));
-    // Reached from one agent's menu, the card holds that page's pairs only.
-    if (only) permsEl.append(button({ class: "btn text sm st all", onclick: () => { view = { kind: "new" }; dutiesChanged(); } }, "Show every page's permissions"));
+  }
+  function fillPerms(body) {
+    body.replaceChildren(h("p", { text: "Pages that may send your answers into another agent, each granted once by you." }));
+    if (!grants.length) body.append(h("p", { class: "muted", text: "No page holds a permission." }));
     const byFrom = new Map();
-    for (const grant of grants.filter((one) => !only || one.from === only)) { const key = grant.from || "?"; if (!byFrom.has(key)) byFrom.set(key, []); byFrom.get(key).push(grant); }
+    for (const grant of grants) { const key = grant.from || "?"; if (!byFrom.has(key)) byFrom.set(key, []); byFrom.get(key).push(grant); }
     for (const [from, list] of byFrom) {
       const source = from === "~home" ? "This home page" : "The page of \u201C" + (list[0].fromTitle || titleOf(lookup(from)) || from) + "\u201D";
-      const group = h("div", { class: "dr", dataset: { from } }, h("span", { class: "where", text: source + " may answer:" }));
+      const group = h("div", { class: "card", dataset: { from } }, h("span", { class: "where", text: source + " may answer:" }));
       for (const grant of list) {
         const revoke = button({ class: "btn text sm st" }, "Revoke");
         revoke.addEventListener("click", () => document.dispatchEvent(new CustomEvent("thread-page:grant-revoke", { detail: { from: grant.from, to: grant.sessionId } })));
         group.append(h("div", { class: "pair" }, h("span", { class: "grow" }, h("b", { text: grant.title || grant.sessionId }),
           h("span", { class: "sub", text: "Granted " + when(grant.grantedAtMs) + " \xB7 last answered " + (grant.lastAnsweredAtMs ? when(grant.lastAnsweredAtMs) : "never") + " \xB7 " + grant.count + (grant.count === 1 ? " answer" : " answers") })), revoke));
       }
-      permsEl.append(group);
+      body.append(group);
     }
-    settle();
   }
 
   // ---- agent actions --------------------------------------------------------------------------------
@@ -20415,66 +20564,81 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   async function stopSession(session) {
     try { await call("sessions.stop", { sessionId: session.id }, true); toast("Stopped."); } catch (error) { handle(error, "Could not stop it"); }
   }
-  /** The page on its own: in place, where the reader's Back returns to the home. 03 R5.29 */
-  function openPageAlone(session) {
-    call("pages.open", { sessionId: session.id }, true).catch((error) => handle(error, "Could not open the page"));
-  }
-  function sessionMenu(anchor, session, alignRight) {
-    popup(anchor, (menu) => {
-      if (has("sessions.markRead")) menu.append(item(session.unread ? "Mark read" : "Mark unread", "ring", () => markRead(session, !!session.unread)));
-      if (session.page && session.page.available && has("pages.open")) menu.append(item("Open the page on its own", "expand", () => openPageAlone(session)));
-      if (has("sessions.openHost")) menu.append(item("Open in host", "host", () => openInHost(session)));
-      const own = grants.filter((grant) => grant.from === session.id).length;
-      const stop = session.state === "working" && has("sessions.stop");
-      if (own || stop) menu.append(sep());
-      if (own) menu.append(item("Page permissions", "lock", () => go({ kind: "new", perms: session.id }), { hint: String(own) }));
-      if (stop) menu.append(item("Stop the turn", "stop", () => stopSession(session)));
-      if (has("sessions.archive") && !session.archived) menu.append(sep(), item("Archive", "archive", () => archiveSession(session)));
-      if (!menu.children.length) menu.append(h("div", { class: "mh", text: "Nothing to do here on this host." }));
-    }, { alignRight });
-  }
 
-  // ---- navigation -----------------------------------------------------------------------------------
-  /** What a reload comes back to: the overview (the kind \`new\`, as the stored value has always named it), or an
-   *  agent, which also keeps its title, workspace and where search found it, so one past the list's rows opens
-   *  again there. B-0214 */
+  // ---- navigation: the address names what the middle shows. 05 R-S12; 01 R1.12f -------------------------------
+  /** What the stored state keeps of the view: the kind \`new\`, as it has always named it, or the open agent with its
+   *  title, workspace and where search found it, so one past the list's rows is found again when the address names it.
+   *  B-0214 */
   function viewPref() {
     if (view.kind !== "session") return { kind: "new", atMs: Date.now() };
     const row = lookup(view.id);
     const at = foundAt.get(view.id) || view.at || null;
     return { kind: "session", id: view.id, atMs: Date.now(), title: row ? row.title : view.title || null, workspaceId: row ? row.workspaceId : typeof view.workspaceId === "string" ? view.workspaceId : null, at };
   }
-  function go(next, options) {
+  const sameView = (a, b) => a.kind === b.kind && (a.kind !== "session" || a.id === b.id);
+  /** Shows a view in the middle; the address is the caller's: a link's own press, Back and Forward, or \`go\`. */
+  function show(next, options) {
+    if (sameView(next, view) && !(options && options.again)) {
+      // Already shown, New agent still takes what changed for it (a group's + sets its workspace). H10
+      if (next.kind === "new") drawNew();
+      if (options && options.focusNew) focusNew();
+      return;
+    }
     dismiss();
     if (teardown) { teardown(); teardown = null; }
     refresh = null;
     view = next;
     prefs.view = viewPref();
     savePrefs();
-    // The list holds what was just picked or started, also under an open agent.
+    // The list holds what was just picked or started.
     renderList();
     if (next.kind === "session") renderSession(next.id, options);
-    else renderOverview(options);
+    else renderNew(options);
   }
-  function openSession(id) {
-    if (view.kind === "session" && view.id === id) return;
-    go({ kind: "session", id });
+  /** A view the home moves to itself (a start, an archive, a pick in search): the same step a link's press makes, so
+   *  the address follows and Back retraces it. */
+  function go(next, options) {
+    show(next, options);
+    step(hashOf(next));
   }
-  /** The way back from an agent to every agent. */
-  function backButton() {
-    return button({ class: "ib st", "aria-label": "All agents", "data-tip": "All agents", dataset: { back: "" }, onclick: () => go({ kind: "new" }) }, icon("back", 24));
+  /** A step to \`hash\`, as a link's press makes it: the shell adds its history entry and the frame moves there. */
+  function step(hash) {
+    if ((location.hash || "#") === hash) return;
+    const link = h("a", { href: hash, hidden: true });
+    document.body.append(link);
+    link.click();
+    link.remove();
   }
-  function renderOverview(options) {
+  /** The view the address names: \`#agent=<id>\` a chat; anything else New agent. */
+  function viewOfHash(hash) {
+    const found = /^#agent=([^&#]+)$/.exec(hash || "");
+    if (found) { try { const id = decodeURIComponent(found[1]); if (id) return { kind: "session", id }; } catch (error) { /* New agent */ } }
+    return { kind: "new" };
+  }
+  /** A chat named by the address: where the stored view names that same agent, its place (its workspace and where
+   *  search found it) is read from there. Its transcript shows at once; its row joins once the host finds it. B-0214 */
+  function byAddress(next) {
+    if (next.kind !== "session") return next;
+    const saved = prefs.view && prefs.view.kind === "session" && prefs.view.id === next.id ? prefs.view : null;
+    const at = saved && saved.at && typeof saved.at === "object" && (saved.at.cursor === null || typeof saved.at.cursor === "string") && (saved.at.workspaceId === null || typeof saved.at.workspaceId === "string") ? { workspaceId: saved.at.workspaceId, cursor: saved.at.cursor } : null;
+    if (at && !foundAt.has(next.id)) foundAt.set(next.id, at);
+    if (!byId.has(next.id)) restoredIn.set(next.id, saved && typeof saved.workspaceId === "string" ? saved.workspaceId : null);
+    return { kind: "session", id: next.id, title: saved && typeof saved.title === "string" ? saved.title : null, workspaceId: saved && typeof saved.workspaceId === "string" ? saved.workspaceId : null, at };
+  }
+  window.addEventListener("hashchange", () => {
+    const next = viewOfHash(location.hash);
+    if (sameView(next, view)) return;
+    show(byAddress(next), { restore: true });
+  });
+  function renderNew(options) {
     drawNew();
-    agentEl.replaceChildren();
-    agentEl.hidden = true;
-    if (overviewEl.hidden) { overviewEl.hidden = false; overviewEl.scrollTop = overviewTop; }
-    renderList();
-    dutiesChanged();
+    chatPane.hidden = true;
+    chatPane.replaceChildren();
+    newPane.hidden = false;
+    appEl.classList.remove("chat-open");
+    barTitle.textContent = "";
     if (newParts) { newParts.comp.state(); newParts.comp.grow(); }
     if (options && options.focusNew) focusNew();
-    // From one agent's menu: its page's permissions, in view.
-    if (view.perms && typeof permsEl.scrollIntoView === "function") permsEl.scrollIntoView({ block: "nearest" });
   }
 
   // ---- composer (a new agent, and a message to one) -----------------------------------------------------
@@ -20550,7 +20714,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   // A mode that lets the agent do anything carries the warning mark, default or not ("Auto" is not one).
   const risky = (mode) => !!mode && /full|bypass|skip|danger|yolo/i.test(mode.id + " " + mode.displayName);
 
-  // The composer, its choices and its status line are made once: every return to the overview shows the same ones,
+  // The composer, its choices and its status line are made once: every return to New agent shows the same ones,
   // so a start says what happened where the reader looks.
   let newParts = null;
   function drawNew() {
@@ -20559,11 +20723,11 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       const newest = sessions.filter((session) => workspaces.some((workspace) => workspace.id === session.workspaceId)).sort((a, b) => recency(b) - recency(a))[0];
       c.workspaceId = newest ? newest.workspaceId : workspaces[0] ? workspaces[0].id : undefined;
     }
-    const heading = h("div", { class: "ph-h" }, h("h2", { text: "New agent" }));
+    const heading = h("h2", { text: "New agent" });
     if (!has("sessions.start")) {
       const parked = document.getElementById("hub-new-prompt");
       if (parked) parked.remove();
-      newEl.replaceChildren(heading, h("p", { class: "note-host", text: "This host does not start agents from a page. Start one in the host; it appears here." }));
+      newEl.replaceChildren(h("p", { class: "note-host", text: "This host does not start agents from a page. Start one in the host; it appears here." }));
       return;
     }
     if (!newParts) {
@@ -20619,10 +20783,9 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     }
     newParts.draw();
   }
-  /** The caret in New agent's field, in view. */
+  /** The caret in New agent's field. */
   function focusNew() {
-    if (!newParts) return;
-    if (typeof newEl.scrollIntoView === "function") newEl.scrollIntoView({ block: "nearest" });
+    if (!newParts || view.kind !== "new") return;
     newParts.comp.area.focus();
   }
   function workspaceMenu(anchor, done) {
@@ -20683,146 +20846,59 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     }
   }
 
-  // ---- one agent: its page or its chat -------------------------------------------------------------------
-  function modeFor(session) {
-    const chosen = prefs.modes[session.id];
-    const pageOk = !!(session.page && session.page.available) && canEmbed;
-    if (chosen === "chat" || !pageOk) return "chat";
-    return "page";
-  }
+  // ---- one agent's chat, in the middle, with nothing above it. 05 R-S12 --------------------------------------------
+  /** \`fresh\`: started from here; \`restore\`: named by the address (a reload, a link, Back). Either stays open while the
+   *  host still finds it, and only the host saying it is gone makes it "not listed". U57; B-0214; 08 A201 */
   function renderSession(id, options) {
     let session = lookup(id);
-    let placeholder = !session;
     if (!session && loadedAt && !(options && (options.fresh || options.restore))) { renderGone(id); return; }
-    session = session || { id, title: options && options.restore ? view.title || "\u2026" : "New agent", state: "working", waiting: null, page: { available: false }, archived: false, workspaceId: prefs.compose.workspaceId };
-    // Opened from a waiting card: on Chat, where the card stands, without that being the reader's choice for it.
-    const toChat = !!(options && options.chat);
-    let mode = toChat ? "chat" : modeFor(session);
-    const titleEl = h("span", { class: "title", text: titleOf(session) });
-    const more = button({ class: "ib st", "aria-label": "Agent actions", "aria-haspopup": "menu" }, icon("more", 24));
-    more.addEventListener("click", () => sessionMenu(more, lookup(id) || session));
-    const pageBtn = button({ class: "chip st", "aria-pressed": "false" }, icon("page", 16), h("span", { class: "sl", text: "Page" }));
-    const chatBtn = button({ class: "chip st", "aria-pressed": "false" }, icon("chat", 16), h("span", { class: "sl", text: "Chat" }));
-    const seg = h("span", { class: "seg", role: "group", "aria-label": "View" }, pageBtn, chatBtn);
-    const alone = button({ class: "ib st tabbtn", "aria-label": "Open the page on its own", "data-tip": "Open the page on its own" }, icon("expand", 24));
-    alone.addEventListener("click", () => openPageAlone(lookup(id) || session));
-    const hostDot = h("span", { class: "dotw ok" });
-    const hostBtn = button({ class: "btn out sm ico st hostbtn", "aria-label": "Open in host" }, icon("host", 18), h("span", { class: "hl", text: "Open in host" }), hostDot);
-    hostBtn.addEventListener("click", () => openInHost(lookup(id) || session));
-    const archivedTag = h("span", { class: "tag plain", hidden: true, text: "Archived" });
-    const bar = h("div", { class: "ah" }, backButton(), titleEl, archivedTag, more, h("span", { class: "grow" }), seg, alone);
-    if (has("sessions.openHost")) bar.append(hostBtn);
-    // In page view a strip says what the page may not: the agent waits on you, or is not running in its host.
-    const stripText = h("span"), stripAct = button({ class: "btn text sm st" });
-    const strip = h("div", { class: "bar strip", hidden: true }, icon("ask", 20), stripText, h("span", { class: "grow" }), stripAct);
-    let stripRun = null;
-    stripAct.addEventListener("click", () => { if (stripRun) stripRun(); });
-    const body = h("div", { class: "body" });
-    showAgent(bar, strip, body);
-    let stopBody = null;
-    const switchTo = (next, remember) => {
-      if (stopBody) { stopBody(); stopBody = null; }
-      mode = next;
-      if (remember) { prefs.modes[id] = next; savePrefs(); }
-      for (const [node, on] of [[pageBtn, mode === "page"], [chatBtn, mode === "chat"]]) { node.setAttribute("aria-pressed", String(on)); node.classList.toggle("on", on); }
-      if (mode === "chat") strip.hidden = true;
-      stopBody = mode === "page" ? mountPage(body, id, broken) : mountChat(body, id);
-      if (ready) update();
-    };
-    let ready = false;
-    pageBtn.addEventListener("click", () => {
-      const current = lookup(id) || session;
-      if (!canEmbed && current.page && current.page.available) { openPageAlone(current); return; }
-      if (mode !== "page") switchTo("page", true);
-    });
-    chatBtn.addEventListener("click", () => { if (mode !== "chat") switchTo("chat", true); });
+    // Until the host has found it, an agent named by its address claims no state: no Stop, no card, no title.
+    const named = !session && !(options && options.fresh);
+    // Where the stored view named this agent, its title stands meanwhile.
+    session = session || { id, title: named ? view.title || null : "New agent", state: named ? null : "working", waiting: null, archived: false, workspaceId: prefs.compose.workspaceId };
+    newPane.hidden = true;
+    chatPane.hidden = false;
+    appEl.classList.add("chat-open");
     const update = () => {
       const current = lookup(id);
       if (!current) {
         // Listed nowhere: its state is not known, so it claims none. B-0221
         if (unlisted.has(id)) session.state = null;
         if (!loadedAt) return;
-        // Reopened after a reload with nowhere saved to read it (saved before B-0214): the overview, as before.
-        if (options && options.restore && !restoredIn.has(id) && !foundAt.has(id)) { go({ kind: "new" }); return; }
-        // Started from here, or reopened after a reload: it stays open while the host still finds it; only
-        // \`not_found\` makes it "not listed". U57; B-0214
         if (options && (options.fresh || options.restore) && !goneIds.has(id)) { checkGone(id); return; }
         renderGone(id);
         return;
       }
       if (options) { options.fresh = false; options.restore = false; }
       restoredIn.delete(id);
-      // Opened before the list had loaded: now the row says whether there is a page to show.
-      if (placeholder) { placeholder = false; const want = modeFor(current); if (!toChat && !prefs.modes[id] && want !== mode) switchTo(want, false); }
       session = current;
-      titleEl.textContent = titleOf(current);
-      archivedTag.hidden = !current.archived;
+      barTitle.textContent = titleOf(current);
       document.title = titleOf(current);
-      const hasPage = !!(current.page && current.page.available);
-      pageBtn.disabled = !hasPage || !(canEmbed || has("pages.open"));
-      pageBtn.setAttribute("data-tip", hasPage ? "The agent's page" : "No page yet");
-      alone.hidden = !hasPage || !has("pages.open");
-      const live = current.state !== "stopped";
-      hostDot.className = "dotw " + (live ? "ok" : "off");
-      chatBtn.classList.toggle("attn", current.state === "waiting");
-      const waitWord = current.waiting && current.waiting.kind === "approval" ? "a decision" : current.waiting && current.waiting.kind === "question" ? "a question" : "something";
-      if (mode === "page" && current.state === "waiting") {
-        strip.hidden = false;
-        strip.querySelector("use").setAttribute("href", "#i-ask");
-        stripText.textContent = "Waiting on you: " + waitWord + ".";
-        stripAct.textContent = "Answer";
-        stripRun = () => switchTo("chat", false);
-      } else if (mode === "page" && !live && has("sessions.openHost")) {
-        strip.hidden = false;
-        strip.querySelector("use").setAttribute("href", "#i-host");
-        stripText.textContent = "Not running in its host: open it there to continue.";
-        stripAct.textContent = "Open in host";
-        stripRun = () => openInHost(lookup(id) || current);
-      } else strip.hidden = true;
-      hostBtn.setAttribute("data-tip", live ? "Open this agent in its host" : "Not running in its host: open it there");
-      if (mode === "chat" && !toChat && hasPage && canEmbed && !prefs.modes[id] && wasPageless.has(id)) { wasPageless.delete(id); switchTo("page", false); }
-      if (!hasPage) wasPageless.add(id);
       // Opening an agent marks it read, as the host's own list does. 03 R5.7a
       if (current.unread && has("sessions.markRead") && document.visibilityState !== "hidden" && readMarked.get(id) !== (current.attentionAtMs || 1)) {
         readMarked.set(id, current.attentionAtMs || 1);
         markRead(current, true);
       }
-      if (bodyRefresh) bodyRefresh(current);
+      chat.refresh(current);
     };
-    let bodyRefresh = null;
-    // A page that cannot be shown opens the chat instead, without remembering it: Page stays there to try again.
-    const broken = (status) => setTimeout(() => {
-      if (mode !== "page" || view.kind !== "session" || view.id !== id) return;
-      switchTo("chat", false);
-      toast("The page can't be shown here (" + ({ too_large: "too large", not_found: "gone", unavailable: "unreachable", no_page: "not written yet" }[status] || status) + "): this is the chat.");
-    }, 0);
-    const mountChat = (into, sid) => { const chat = chatView(into, sid); bodyRefresh = chat.refresh; return () => { bodyRefresh = null; chat.stop(); }; };
-    switchTo(mode, false);
+    barTitle.textContent = session.title || "";
+    const chat = chatView(chatPane, id);
     update();
-    ready = true;
     refresh = update;
-    teardown = () => { if (stopBody) stopBody(); document.title = "Home"; };
-  }
-  const wasPageless = new Set();
-  /** The agent's page in the whole panel, live, answering its own agent. 02 \xA7Embedded pages */
-  function mountPage(into, id, onBroken) {
-    const wrap = h("div", { class: "pagewrap" });
-    into.replaceChildren(wrap);
-    // \`unavailable\` may pass (the kernel keeps checking): only one that lasts 10 s opens the chat.
-    let waiting = null;
-    const stop = tp.embed(wrap, { sessionId: id, onState: (info) => {
-      clearTimeout(waiting);
-      if (info.status === "unavailable") waiting = setTimeout(() => onBroken(info.status), 10000);
-      else if (["too_large", "not_found", "no_page"].includes(info.status)) onBroken(info.status);
-    } });
-    return () => { clearTimeout(waiting); stop(); wrap.remove(); };
+    teardown = () => { chat.stop(); document.title = "Home"; };
   }
   function renderGone(id) {
     if (teardown) { teardown(); teardown = null; }
     refresh = null;
-    showAgent(h("div", { class: "ah" }, backButton()), h("div", { class: "in" }, h("div", { class: "empty", dataset: { gone: "" } },
+    newPane.hidden = true;
+    chatPane.hidden = false;
+    appEl.classList.add("chat-open");
+    barTitle.textContent = "";
+    const fresh = h("a", { class: "btn text st", href: "#" }, "New agent");
+    fresh.addEventListener("click", (event) => { if (plain(event)) show({ kind: "new" }, { focusNew: true }); });
+    chatPane.replaceChildren(h("div", { class: "mh-new" }, h("div", { class: "empty", dataset: { gone: "" } },
       icon("chat", 24, "big"), h("h2", { text: "This agent is not listed" }), h("p", { text: "It was archived, deleted, or belongs to no workspace the host shows." }),
-      h("div", { class: "row2" }, button({ class: "btn out ico st", onclick: () => openSearch(true) }, icon("search", 20), "Search archived agents"), button({ class: "btn text st", onclick: () => go({ kind: "new" }, { focusNew: true }) }, "New agent")))));
+      h("div", { class: "row2" }, button({ class: "btn out ico st", onclick: () => openSearch(true) }, icon("search", 20), "Search archived agents"), fresh))));
     void id;
   }
 
@@ -20831,38 +20907,79 @@ var BUILTIN_HOME_HTML = `<!doctype html>
   function chatView(into, id) {
     const rows = new Map(), order = [];
     let prev = null, exhausted = false, loadingOlder = false, sig = "", first = true;
-    const expanded = new Set(), toolsOpen = new Set();
+    // A turn's steps: open while it runs, folded once it ends; what the reader chose for a turn holds both ways, also
+    // once it ends. 05 R-S12
+    const chosen = new Map(), toolsOpen = new Set();
+    // Messages sent from here, shown at the transcript's end until their own rows arrive. H14a
+    const pending = [];
+    /** What the Queued or Steered line waits for to leave: a sent message's row, or the next row after one. */
+    let lineUntil = null;
     const col = h("div", { class: "col" });
     const older = h("div", { class: "older" });
     const waitSlot = h("div", { class: "waitslot" });
-    const scroller = h("div", { class: "scroller" }, col, waitSlot);
+    const scroller = h("div", { class: "scroller" }, col);
     const nudge = h("div", { class: "nudge", hidden: true }, icon("host", 18), h("span", { text: "Not running in its host: messages wait until it runs there again." }));
     if (has("sessions.openHost")) nudge.append(button({ class: "btn text sm st", onclick: () => openInHost(lookup(id)) }, "Open in host"));
     const status = h("p", { class: "status", role: "status" });
     const readonly = h("div", { class: "readonly", hidden: true, text: "Archived: read-only." });
     let current = lookup(id);
+    const working = () => !!current && current.state === "working";
     const comp = composer({ id: "hub-chat-prompt", placeholder: "Message this agent\u2026", label: "Message this agent", files: true,
-      canSend: (typed) => typed || (current && current.state === "working" && has("sessions.stop")),
+      canSend: (typed) => typed || (working() && has("sessions.stop")),
       onInput: (text) => chatDrafts.set(id, text),
-      onEmpty: () => { if (current && current.state === "working" && has("sessions.stop")) stopSession(current); },
+      onEmpty: () => { if (working() && has("sessions.stop")) stopSession(current); },
       onSent: () => sendLook(),
       steer: true,
       submit: (prompt, files, mode) => sendTo(prompt, files, mode) });
     comp.area.value = chatDrafts.get(id) || "";
-    const dock = h("div", { class: "dock" }, nudge, readonly);
+    const dock = h("div", { class: "dock" }, waitSlot, nudge, readonly);
     if (has("sessions.send")) dock.append(comp.box, status);
     into.replaceChildren(scroller, dock);
     comp.grow();
 
+    /** A \`user\` row that is the reader's own: marked \`page\` (every send through a page, this home's included) or \`reader\`. */
+    const ownRow = (message) => message.kind === "user" && (!message.from || !message.from.kind || message.from.kind === "page" || message.from.kind === "reader");
+    /** Matches the sent messages with their own rows, oldest first: the first own \`user\` row after every row held when
+     *  it was sent, whose text begins with the text sent, and no earlier message's. H14a */
+    /** Rows already taken by a sent message: no later message takes one again. */
+    const taken = new Set();
+    function settleSent(atReturn) {
+      let changed = false;
+      for (let at = 0; at < pending.length; at += 1) {
+        const sent = pending[at];
+        const after = order.findIndex((rowId, index) => index > sent.lastHeld && !taken.has(rowId) && ownRow(rows.get(rowId)) && (rows.get(rowId).text || "").startsWith(sent.text));
+        if (after < 0) continue;
+        taken.add(order[after]);
+        pending.splice(at, 1);
+        at -= 1;
+        changed = true;
+        // The line leaves when the message's row arrives; where that row was there already, when the next row arrives.
+        if (lineUntil && lineUntil.sent === sent) {
+          if (atReturn) lineUntil = { tail: order[order.length - 1] };
+          else { status.textContent = ""; lineUntil = null; }
+        }
+      }
+      if (!atReturn && lineUntil && "tail" in lineUntil && order[order.length - 1] !== lineUntil.tail) { status.textContent = ""; lineUntil = null; }
+      return changed;
+    }
     async function sendTo(prompt, files, mode) {
       const params = { sessionId: id, prompt };
       if (mode === "steer") params.mode = "steer";
       if (files.length) params.files = files;
+      lineUntil = null;
+      // The rows held when the message is sent, before the host's question: its own row stands after all of them.
+      const lastHeld = order.length - 1;
       status.className = "status"; status.textContent = "Confirm in the dialog to send it\u2026";
       try {
         const result = await call("sessions.send", params, true);
         chatDrafts.delete(id);
         status.textContent = result.delivery === "steered" ? "Steered: it interrupted the turn." : result.delivery === "queued" ? (current && current.state === "stopped" ? "Queued: it reaches the agent when it runs again." : "Queued: it reaches the agent after the current turn.") : "";
+        const sent = { text: prompt, files: files.map((file) => ({ name: file.name, sizeBytes: file.size })), lastHeld };
+        pending.push(sent);
+        lineUntil = status.textContent ? { sent } : null;
+        // Its row already there: it is not shown a second time, and the line leaves at the next row after it.
+        settleSent(true);
+        sig = ""; draw();
         return true;
       } catch (error) {
         if (error && error.code === "cancelled") { status.textContent = "Nothing sent."; return false; }
@@ -20872,12 +20989,12 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       }
     }
     const sendLook = () => {
-      // While a turn runs, typed text can wait for it (Enter) or interrupt it (Steer); an empty field offers Stop.
-      if (comp.steer) comp.steer.hidden = !(current && current.state === "working" && comp.area.value.trim());
-      const working = current && current.state === "working" && has("sessions.stop") && !comp.area.value.trim();
-      comp.send.replaceChildren(icon(working ? "stop" : "up", 20));
-      comp.send.setAttribute("aria-label", working ? "Stop the turn" : "Send");
-      comp.send.setAttribute("data-tip", working ? "Stop the turn" : "Send (Enter)");
+      // While the agent works, typed text can wait for it (Enter) or interrupt it (Steer); an empty field offers Stop.
+      if (comp.steer) comp.steer.hidden = !(working() && comp.area.value.trim());
+      const stop = working() && has("sessions.stop") && !comp.area.value.trim();
+      comp.send.replaceChildren(icon(stop ? "stop" : "up", 20));
+      comp.send.setAttribute("aria-label", stop ? "Stop the turn" : "Send");
+      comp.send.setAttribute("data-tip", stop ? "Stop the turn" : "Send (Enter)");
       comp.state();
     };
     comp.area.addEventListener("input", sendLook);
@@ -20889,6 +21006,8 @@ var BUILTIN_HOME_HTML = `<!doctype html>
         else { rows.set(message.id, message); fresh.push(message.id); }
       }
       if (atStart) order.unshift(...fresh); else order.push(...fresh);
+      // Rows put before what was held move every sent message's place with them.
+      if (atStart && fresh.length) for (const sent of pending) sent.lastHeld += fresh.length;
     }
     let filling = false;
     const stopWatch = every("sessions.messages", { sessionId: id, limit: CHAT_ROWS }, CHAT_MS, async (value, error) => {
@@ -20913,7 +21032,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
           }
         } catch (fillError) { filling = false; if (fillError.code !== "rate_limited") handle(fillError, "Could not read the transcript"); return; }
         filling = false;
-        if (!met) { rows.clear(); order.length = 0; prev = cursor; exhausted = !cursor; }
+        if (!met) { rows.clear(); order.length = 0; prev = cursor; exhausted = !cursor; for (const sent of pending) sent.lastHeld = -1; }
         merge(gap, false);
       }
       merge(list, false);
@@ -20933,74 +21052,135 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       } catch (error) { handle(error, "Could not read earlier messages"); }
       finally { loadingOlder = false; }
     }
-    scroller.addEventListener("scroll", () => { if (scroller.scrollTop < 80) loadOlder(); });
+    // A chat read at its end stays at its end when its view's height changes for any reason (a card above the
+    // composer, the composer growing, the window) or its rows grow; one the reader scrolled up in is left where it is.
+    // Whether it is at its end is kept from the scrolls, since a view that shrinks moves no scroll of its own. 05 R-S12
+    // A scroll that comes with a change of the view's height (one engine moves it as the view shrinks, before the
+    // resize is observed) is not the reader's and changes nothing of it.
+    let atEnd = true, scrolledOnce = false, seenHeight = -1;
+    scroller.addEventListener("scroll", () => {
+      if (seenHeight < 0 || scroller.clientHeight === seenHeight) atEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
+      if (scroller.scrollTop < 80) loadOlder();
+    });
+    const keepEnd = () => { seenHeight = scroller.clientHeight; if (atEnd && scrolledOnce) scroller.scrollTop = scroller.scrollHeight; };
+    /** The reader opened or folded a turn or a step: the place stays where they pressed, also at the chat's end, what
+     *  opened reading on below; the chat is at its end after it only if its end is still in view. H13 */
+    const pressed = () => { sig = ""; draw(true); atEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60; };
+    const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(keepEnd) : null;
+    if (sizes) { sizes.observe(scroller); sizes.observe(col); }
+    // The composer measures itself on each input by collapsing and growing again, which one engine reads as a scroll
+    // with no net change of height to observe: the end is kept there too.
+    comp.area.addEventListener("input", keepEnd);
+    /** Where the transcript does not fill its view, the older rows are read with no scroll, until it does or they end. H12a */
+    function fillView() {
+      if (loadingOlder || exhausted || !prev || !scroller.isConnected || scroller.clientHeight <= 0) return;
+      if (scroller.scrollHeight <= scroller.clientHeight + 1) loadOlder().then(() => setTimeout(fillView, 0));
+    }
+    /** When a turn ends, its rows are read back once (\`before\`, five reads at most), so a step whose result came after
+     *  more newer rows than one read holds shows it. H13a */
+    const readBack = new Set();
+    async function readBackTurn(key, firstId) {
+      if (readBack.has(key)) return;
+      readBack.add(key);
+      let cursor = null;
+      try {
+        for (let page = 0; page < 5; page += 1) {
+          const found = await call("sessions.messages", { sessionId: id, limit: CHAT_ROWS, ...(cursor ? { before: cursor } : {}) });
+          for (const message of found.messages) if (rows.has(message.id)) rows.set(message.id, message);
+          if (!found.messages.length || found.messages.some((message) => message.id === firstId) || found.prevCursor === null) break;
+          cursor = found.prevCursor;
+        }
+      } catch (error) { return; }
+      sig = ""; draw(true);
+    }
 
+    /** A turn runs only while it is the newest and the agent works or waits on the reader; any other state has ended it. */
+    const runs = (index, count) => index === count - 1 && !!current && (current.state === "working" || current.state === "waiting");
+    let liveKey = null;
     function draw(keep) {
-      const list = order.map((rowId) => rows.get(rowId));
-      const next = JSON.stringify([list.map((m) => [m.id, (m.text || "").length, (m.text || "").slice(-24), m.done, m.tool && m.tool.result !== undefined, m.question && m.question.answered]), [...expanded], [...toolsOpen], current && current.state, exhausted]);
+      settleSent();
+      const asked = current && current.state === "waiting" && current.waiting && current.waiting.id ? current.waiting.id : null;
+      // The step the card asks about has no row while the card shows. H13a
+      const list = order.map((rowId) => rows.get(rowId)).filter((message) => !(asked && message.kind !== "user" && (message.id === asked || (message.kind === "question" && message.question && !message.question.answered && message.question.id === asked))));
+      const next = JSON.stringify([list.map((m) => [m.id, (m.text || "").length, (m.text || "").slice(-24), m.done, m.tool && m.tool.result !== undefined, m.question && m.question.answered]), [...chosen], [...toolsOpen], current && current.state, asked, exhausted, pending.length]);
       if (next === sig) return;
       sig = next;
       const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60;
       const fragment = document.createDocumentFragment();
       if (!exhausted && prev) { older.textContent = "Scroll up for earlier messages"; fragment.append(older); }
-      if (!list.length) fragment.append(h("p", { class: "sysline", text: first ? "Loading\u2026" : "No messages yet." }));
-      // A turn: the reader's message, the work (tools and interim text) folded under "Worked for", then the reply.
+      if (!list.length && !pending.length) fragment.append(h("p", { class: "sysline", text: first ? "Loading\u2026" : "No messages yet." }));
+      // A turn: the reader's message, what the agent wrote before its first step, the line standing where that step is
+      // (the steps and what stands between them inside its fold), then what follows the last step. 05 R-S12
       const turns = [];
       for (const message of list) {
         if (message.kind === "user" || !turns.length) turns.push({ user: message.kind === "user" ? message : null, items: [] });
         if (message.kind !== "user") turns[turns.length - 1].items.push(message);
       }
+      let nowLive = null;
       turns.forEach((turn, index) => {
         if (turn.user) fragment.append(userBubble(turn.user));
         const items = turn.items;
-        let lastWork = -1;
-        items.forEach((message, at) => { if (message.kind === "tool") lastWork = at; });
-        const work = items.slice(0, lastWork + 1), tail = items.slice(lastWork + 1);
-        const live = index === turns.length - 1 && current && current.state === "working";
-        if (work.length || (live && !tail.length)) {
-          const key = turn.user ? turn.user.id : "~start";
-          const open = expanded.has(key);
-          const from = turn.user ? turn.user.atMs : work.length ? work[0].atMs : Date.now();
-          const until = live ? Date.now() : (tail.length ? tail[tail.length - 1].atMs : work.length ? work[work.length - 1].atMs : from);
-          const label = live ? "Working for " + span(until - from) : "Worked for " + span(until - from);
-          const toggle = button({ class: "worked" + (live ? " live" : ""), "aria-expanded": String(open), dataset: { from: String(from) } }, live ? h("span", { class: "dotw work" }) : null, h("span", { class: "wl", text: label }), work.length ? icon("chev-r", 16, "chev") : null);
-          if (work.length) toggle.addEventListener("click", () => { if (open) expanded.delete(key); else expanded.add(key); sig = ""; draw(true); });
+        const key = turn.user ? turn.user.id : "~start";
+        const live = runs(index, turns.length);
+        if (live) nowLive = { key, firstId: turn.user ? turn.user.id : items.length ? items[0].id : null };
+        let firstStep = -1, lastStep = -1;
+        items.forEach((message, at) => { if (message.kind === "tool") { if (firstStep < 0) firstStep = at; lastStep = at; } });
+        const before = firstStep < 0 ? items : items.slice(0, firstStep);
+        const work = firstStep < 0 ? [] : items.slice(firstStep, lastStep + 1), after = firstStep < 0 ? [] : items.slice(lastStep + 1);
+        for (const message of before) { const node = stepRow(message, live); if (node) fragment.append(node); }
+        if (work.length || live) {
+          const open = work.length > 0 && (chosen.has(key) ? chosen.get(key) : live);
+          const from = turn.user ? turn.user.atMs : items.length ? items[0].atMs : Date.now();
+          const busy = live && current.state === "working";
+          // Waiting on the reader, the work lasted until it asked.
+          const asking = live && !busy && current.attentionAtMs && current.attentionAtMs > from ? current.attentionAtMs : 0;
+          const until = busy ? Date.now() : Math.max(asking, items.length ? items[items.length - 1].atMs : from);
+          // The count is of the turn's tool steps, on its folded line. 05 R-S12
+          const steps = work.filter((message) => message.kind === "tool").length;
+          const label = busy ? "Working for " + span(until - from) : "Worked for " + span(until - from) + (!open && !live && steps ? " \xB7 " + steps + (steps === 1 ? " step" : " steps") : "");
+          const toggle = button({ class: "worked st" + (busy ? " live" : ""), "aria-expanded": work.length ? String(open) : null, dataset: { from: String(from) } }, busy ? h("span", { class: "dotw work" }) : null, h("span", { class: "wl", text: label }), work.length ? icon("chev-r", 16, "chev") : null);
+          if (work.length) toggle.addEventListener("click", () => { chosen.set(key, !open); pressed(); });
           fragment.append(toggle);
-          if (open && work.length) fragment.append(h("div", { class: "tl" }, work.map(stepRow).filter(Boolean)));
+          if (open) fragment.append(h("div", { class: "tsteps" }, work.map((message) => stepRow(message, live)).filter(Boolean)));
         }
-        for (const message of tail) { const node = stepRow(message); if (node) fragment.append(node); }
+        for (const message of after) { const node = stepRow(message, live); if (node) fragment.append(node); }
       });
+      // A turn that ended is read back once.
+      if (liveKey && (!nowLive || nowLive.key !== liveKey.key)) void readBackTurn(liveKey.key, liveKey.firstId);
+      liveKey = nowLive;
+      for (const sent of pending) fragment.append(userBubble({ kind: "user", text: sent.text, files: sent.files }));
       if (current && current.state === "failed") fragment.append(h("p", { class: "sysline" }, icon("fail", 14), h("span", { text: "The last turn failed." })));
       col.replaceChildren(fragment);
       if (!keep && (atBottom || !scrolledOnce)) { scroller.scrollTop = scroller.scrollHeight; scrolledOnce = list.length > 0; }
+      setTimeout(fillView, 0);
     }
-    let scrolledOnce = false;
     function userBubble(message) {
       const bubble = h("div", { class: "msg u" });
-      if (message.from && message.from.kind && message.from.kind !== "reader") {
-        const word = { page: "From ", session: "From ", plugin: "From a plugin", schedule: "Scheduled" }[message.from.kind] || "";
-        bubble.append(h("span", { class: "from", text: word + (message.from.label && /\\s$/.test(word) ? "\u201C" + message.from.label + "\u201D" : "") }));
-      }
+      // The reader's own (\`page\`, \`reader\`) has no line; another agent's, a plugin's and a schedule's say so. 05 R-S12
+      const from = message.from && message.from.kind;
+      const said = from === "session" ? (message.from.label ? "From \u201C" + message.from.label + "\u201D" : "From another agent") : from === "plugin" ? "From a plugin" : from === "schedule" ? "Scheduled" : "";
+      if (said) bubble.append(h("span", { class: "from", text: said }));
       bubble.append(document.createTextNode((message.text || "") + (message.truncated ? " \u2026" : "")));
-      if (message.files && message.files.length) bubble.append(h("span", { class: "files" }, message.files.map((file) => h("span", { class: "fchip" }, icon("file", 14), h("span", { text: file.name + " \xB7 " + size(file.sizeBytes) })))));
+      if (message.files && message.files.length) bubble.append(h("span", { class: "files" }, message.files.map((file) => h("span", { class: "fchip" }, icon("file", 14), h("span", { text: file.sizeBytes ? file.name + " \xB7 " + size(file.sizeBytes) : file.name })))));
       return bubble;
     }
-    function stepRow(message) {
+    function stepRow(message, live) {
       if (message.kind === "assistant") return markdown(message.text || "", message.truncated);
       if (message.kind === "notice") return /^\\s*[\\w-]*\\s*$/.test(message.text || "") ? null : h("p", { class: "sysline" }, icon("info", 14), h("span", { text: message.text || "" }));
-      if (message.kind === "question" && message.question && !message.question.answered && current && current.waiting && current.waiting.id === message.question.id) return null;
       if (message.kind === "question") return h("p", { class: "sysline" }, icon("ask", 14), h("span", { text: (message.question && message.question.answered ? "Asked: " : "Asks: ") + (message.text || "a question") }));
-      if (message.kind === "tool" && message.tool) return toolRow(message);
+      if (message.kind === "tool" && message.tool) return toolRow(message, live);
       return h("p", { class: "sysline", text: message.text || "" });
     }
-    function toolRow(message) {
+    function toolRow(message, live) {
       const tool = message.tool;
       const open = toolsOpen.has(message.id);
       const name = tool.name || "tool";
-      const kind = /bash|shell|command|exec|terminal/i.test(name) ? "terminal" : /read|edit|write|file|glob|grep|search/i.test(name) ? "file" : /web|fetch|browser|url/i.test(name) ? "globe" : "tool";
-      const head = button({ class: "trow", "aria-expanded": String(open) }, message.done ? icon(kind, 16) : h("span", { class: "dotw work" }),
-        h("span", { class: "tn" }, verbOf(name, message.done) + " ", h("em", { text: summarize(tool.input) })), tool.isError ? h("span", { class: "errtag", text: "error" }) : null);
-      head.addEventListener("click", () => { if (open) toolsOpen.delete(message.id); else toolsOpen.add(message.id); sig = ""; draw(true); });
+      // The dot only while it has no result and its turn runs; otherwise its icon and done word. 05 R-S12
+      const running = tool.result === undefined && live;
+      const verb = verbOf(name);
+      const head = button({ class: "trow", "aria-expanded": String(open) }, running ? h("span", { class: "dotw work" }) : icon(verb.icon, 16),
+        h("span", { class: "tn" }, (running ? verb.running : verb.done) + " ", h("em", { text: summarize(tool.input) })), tool.isError ? h("span", { class: "errtag", text: "error" }) : null, icon(open ? "chev-d" : "chev-r", 16, "chv"));
+      head.addEventListener("click", () => { if (open) toolsOpen.delete(message.id); else toolsOpen.add(message.id); pressed(); });
       if (!open) return head;
       const command = tool.input && typeof tool.input === "object" && typeof tool.input.command === "string" ? tool.input.command : null;
       const box = command !== null ? h("div", { class: "tbox" }, document.createTextNode("$ " + command)) : h("div", { class: "tbox" }, h("span", { class: "lbl", text: "Input" }), pretty(tool.input));
@@ -21011,6 +21191,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       if (message.truncated) box.append(h("span", { class: "lbl", text: "Cut to a bound; the host shows it whole.", style: "margin-top:8px" }));
       return h("div", null, head, box);
     }
+    let drawnFor = null;
     const refreshChat = (session) => {
       current = session;
       nudge.hidden = !(session.state === "stopped" && has("sessions.openHost"));
@@ -21019,26 +21200,29 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       status.hidden = !!session.archived;
       sendLook();
       drawWait(session);
-      if (session.state !== (draw.lastState || "")) { draw.lastState = session.state; sig = ""; draw(); }
+      // A change of state or of what it waits on can start or end a turn, or hide a step.
+      const now = (session.state || "") + "|" + ((session.waiting && session.waiting.id) || "");
+      if (now !== drawnFor) { drawnFor = now; sig = ""; draw(); }
     };
     let waitKey = "";
     function drawWait(session) {
       const wait = session.waiting;
-      const key = wait ? (wait.id || "") + wait.kind + (wait.text || "") : "";
+      const key = wait && session.state === "waiting" ? (wait.id || "") + wait.kind + (wait.text || "") : "";
       if (key === waitKey) return;
       waitKey = key;
-      waitSlot.replaceChildren(wait && session.state === "waiting" ? waitCard(session, wait, false).node : "");
+      waitSlot.replaceChildren(key ? waitCard(session, wait) : "");
     }
     if (current) refreshChat(current);
     // The running turn's clock moves on its own, between reads.
     const clock = setInterval(() => { for (const node of col.querySelectorAll(".worked.live .wl")) node.textContent = "Working for " + span(Date.now() - Number(node.parentNode.dataset.from)); }, 1000);
-    return { stop: () => { stopWatch(); clearInterval(clock); }, refresh: refreshChat };
+    return { stop: () => { stopWatch(); clearInterval(clock); if (sizes) sizes.disconnect(); }, refresh: refreshChat };
   }
-  /** The host's wording for a step: "Ran", "Read", "Edited"\u2026 and the tool's own name otherwise. */
-  function verbOf(name, done) {
-    const pairs = [[/^(bash|shell|exec|command|terminal)/i, "Ran", "Running"], [/^read/i, "Read", "Reading"], [/^(edit|multiedit|str_replace)/i, "Edited", "Editing"], [/^write/i, "Wrote", "Writing"], [/^(grep|glob|search|find)/i, "Searched", "Searching"], [/^(webfetch|fetch)/i, "Fetched", "Fetching"], [/^websearch/i, "Searched the web", "Searching the web"], [/^(task|agent)/i, "Ran an agent", "Running an agent"]];
+  /** The host's wording for a step, and the icon that goes with its verb: "Ran" a terminal, "Read" a file\u2026 and the
+   *  tool's own name with the tool mark otherwise. 05 R-S12 */
+  function verbOf(name) {
+    const pairs = [[/^(bash|shell|exec|command|terminal)/i, "Ran", "Running", "terminal"], [/^read/i, "Read", "Reading", "file"], [/^(edit|multiedit|str_replace)/i, "Edited", "Editing", "file"], [/^write/i, "Wrote", "Writing", "file"], [/^(grep|glob|search|find)/i, "Searched", "Searching", "file"], [/^(webfetch|fetch)/i, "Fetched", "Fetching", "globe"], [/^websearch/i, "Searched the web", "Searching the web", "globe"], [/^(task|agent)/i, "Ran an agent", "Running an agent", "agent"]];
     const found = pairs.find(([pattern]) => pattern.test(name));
-    return found ? (done ? found[1] : found[2]) : name;
+    return found ? { done: found[1], running: found[2], icon: found[3] } : { done: name, running: name, icon: "tool" };
   }
   function summarize(input) {
     if (input === null || input === undefined) return "";
@@ -21055,27 +21239,56 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     try { return document.createTextNode(JSON.stringify(value, null, 2)); } catch (error) { return document.createTextNode(String(value)); }
   }
 
-  /** What an agent waits on, answered where the reader reads it: on the overview, and above the chat's composer.
-   *  Answers go under the once-per-pair grant; a decision is confirmed by the host every time. Where the home cannot
-   *  answer (no respond tier, a wait cut to a bound, one with no id, another kind) the card sends the reader to the
-   *  host. 05 R-S12; 03 R-C7 */
-  function waitCard(session, wait, overview) {
-    const title = h("b"), sub = h("span", { class: "sub" });
-    const card = h("div", { class: "card", dataset: { wait: session.id } }, h("div", { class: "top" }, icon("ask", 20), title, sub));
-    const say = (node, text) => { if (node.textContent !== text) node.textContent = text; };
-    const update = (now) => { say(title, titleOf(now)); say(sub, workspaceName(now.workspaceId) + " \xB7 " + ago(now.attentionAtMs || recency(now))); };
-    update(session);
+  // Presses are watched where they begin, on the document, with what they began on: a pointer's, and the keys that
+  // activate a control (Enter and Space); any other key, a modifier alone included (a screen reader's own keys), opens
+  // none and ends none, and a held key's repeats do not begin it again. A card's click asks which press it came from
+  // (\`takePress\`). A pointer's press ends at its click (a touch's up may never reach the document, when the card it
+  // began on is gone); a key's at a click once the key is up, so a held Enter's repeated clicks all come from the press
+  // it began; and either a moment after it is up, its click having come by then (a touch screen sends a tap's
+  // click after the touch ends); a press begun meanwhile keeps its own start. A key's up can go elsewhere (the host's
+  // dialog takes the focus on Enter): a key press also ends when this document loses the focus or is hidden, and
+  // reads as up once its key has sent no repeat for a second.
+  let press = null, presses = 0;
+  const activates = (event) => event.key === "Enter" || event.key === " " || event.key === "Spacebar";
+  const begin = (event) => { press = { at: Date.now(), last: Date.now(), target: event.target, key: event.type === "keydown", down: true }; presses += 1; };
+  const over = () => press && !(press.key && press.down);
+  const end = () => { if (!press) return; press.down = false; const mine = presses; setTimeout(() => { if (presses === mine) press = null; }, 400); };
+  document.addEventListener("pointerdown", begin, true);
+  document.addEventListener("keydown", (event) => {
+    if (!activates(event)) return;
+    if (!event.repeat) begin(event);
+    else if (press && press.key && press.down) press.last = Date.now();
+  }, true);
+  window.addEventListener("blur", () => { if (press && press.key) end(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && press && press.key) end(); });
+  for (const type of ["pointerup", "pointercancel"]) document.addEventListener(type, end, true);
+  document.addEventListener("keyup", (event) => { if (activates(event)) end(); }, true);
+  document.addEventListener("click", () => { if (over()) press = null; });
+  /** A key still down with no repeat for a second lost its release: no click comes from it any more. */
+  const lapsed = () => press && press.key && press.down && Date.now() - press.last >= 1000;
+  const takePress = () => { if (lapsed()) press = null; const from = press; if (over()) press = null; return from; };
+
+  /** What an agent waits on, answered in its chat, above the composer. Answers go under the once-per-pair grant; a
+   *  decision is confirmed by the host every time. Where the home cannot answer (no respond tier, a wait cut to a
+   *  bound, one with no id, another kind, a sub-agent's) the card says what it can and sends the reader to the host.
+   *  05 R-S12; 03 R-C7 */
+  function waitCard(session, wait) {
+    const card = h("div", { class: "wait-card", role: "group", "aria-label": "The agent asks", dataset: { wait: session.id } });
     // The host takes no answer into a sub-agent from a page: its card says what it waits for and leads to it.
     const child = !!session.parentSessionId;
     const answerable = has("sessions.respond") && wait.id && !session.archived && !child;
     const status = h("span", { class: "hint", role: "status" });
-    // On the overview a card leads to its agent's chat, where the same card stands without this.
-    const open = overview ? button({ class: "btn text sm st", onclick: () => go({ kind: "session", id: session.id }, { chat: true }) }, "Open") : null;
+    // A click answers only if the press it came from began on this card 500 ms or more after the card was drawn; one
+    // that follows a press begun anywhere else (on the card this one replaced, which a touch's events stay with) or
+    // before the card was drawn answers nothing. A click with no press before it (a screen reader's, Voice Control's)
+    // counts at its own time after the same 500 ms. 05 R-S12
+    const born = Date.now();
+    const live = () => { const from = takePress(); return from ? card.contains(from.target) && from.at - born >= 500 : Date.now() - born >= 500; };
     const frozen = (on) => { for (const node of card.querySelectorAll("button, input")) node.disabled = on; };
     const hostLine = (text) => {
-      card.append(h("p", { class: "hint", text }), h("div", { class: "opts" },
-        has("sessions.openHost") ? button({ class: "btn out sm ico st", onclick: () => openInHost(session) }, icon("host", 18), h("span", { text: "Open in host" })) : null, open));
-      return { node: card, update };
+      card.append(h("p", { class: "hint", text }));
+      if (has("sessions.openHost")) card.append(h("div", { class: "opts" }, button({ class: "btn out sm ico st", onclick: () => openInHost(session) }, icon("host", 18), h("span", { text: "Open in host" }))));
+      return card;
     };
     if (wait.kind === "question" && wait.questions && wait.questions.length && !child) {
       // One question that takes one of its options: a press on an option answers. Otherwise the options are
@@ -21084,11 +21297,11 @@ var BUILTIN_HOME_HTML = `<!doctype html>
       let busy = false;
       const send = async (answers) => {
         busy = true; frozen(true); status.textContent = "Sending\u2026";
-        try { await call("sessions.respond", { sessionId: session.id, id: wait.id, answers }, true); status.textContent = "Answered."; if (open) open.disabled = false; }
+        try { await call("sessions.respond", { sessionId: session.id, id: wait.id, answers }, true); status.textContent = "Answered."; }
         catch (error) { busy = false; frozen(false); status.textContent = error && error.code === "cancelled" ? "Not sent." : error && error.code === "not_found" ? "That question is over." : describe(error); }
       };
       const submit = () => {
-        if (busy) return;
+        if (busy || !live()) return;
         const answers = {};
         for (const field of fields) {
           const selected = (field.question.options || []).filter((option) => field.picked.has(option.id)).map((option) => option.id);
@@ -21098,7 +21311,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
         }
         send(answers);
       };
-      const fields = wait.questions.map((question) => {
+      const fields = wait.questions.map((question, index) => {
         const picked = new Set();
         const options = question.options || [];
         const row = h("div", { class: "opts" });
@@ -21107,7 +21320,7 @@ var BUILTIN_HOME_HTML = `<!doctype html>
           const chip = button({ class: "chip st", "aria-pressed": direct ? null : "false", dataset: { option: option.id } }, option.label);
           chip.addEventListener("click", () => {
             if (busy) return;
-            if (direct) { send({ [question.id]: { selected: [option.id] } }); return; }
+            if (direct) { if (live()) send({ [question.id]: { selected: [option.id] } }); return; }
             const was = picked.has(option.id);
             if (!question.multiSelect) picked.clear();
             if (was) picked.delete(option.id); else picked.add(option.id);
@@ -21119,39 +21332,47 @@ var BUILTIN_HOME_HTML = `<!doctype html>
         if (question.allowFreeText && answerable) {
           free = h("input", { class: "chip", type: "text", placeholder: options.length ? "Or type an answer\u2026" : "Type an answer\u2026", autocomplete: "off", "aria-label": "Your answer" });
           free.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); submit(); } });
-          row.append(free);
+          // One question that one option answers: its typed answer has its own Answer beside it.
+          if (direct) row.append(h("div", { class: "opts", style: "flex:1 1 100%" }, free, button({ class: "btn tonal sm st", onclick: submit }, "Answer")));
+          else row.append(free);
         }
-        card.append(h("div", { class: "qa" }, h("p", { class: "qtext", text: question.text }), row.childNodes.length ? row : null));
+        // The first question stands in the card's top line, with the ask mark.
+        const text = index === 0 ? h("div", { class: "top" }, icon("ask", 20), h("b", { class: "qtext", text: question.text })) : h("p", { class: "qtext", text: question.text });
+        card.append(h("div", { class: "qa" }, text, row.childNodes.length ? row : null));
         return { question, picked, free };
       });
       if (!answerable) return hostLine("Answer it in the host.");
       card.append(direct ? status : h("div", { class: "opts" }, button({ class: "btn tonal sm st", onclick: submit }, "Answer"), status));
-      return { node: card, update };
+      return card;
     }
     if (wait.kind === "approval" && wait.approval) {
       const subject = { tool: "Use a tool", command: "Run a command", file_change: "Change files", permission: "Change permissions", plan: "Go ahead with the plan", other: "Go ahead" }[wait.approval.subject] || "Go ahead";
+      card.setAttribute("aria-label", "The agent asks to " + subject.charAt(0).toLowerCase() + subject.slice(1));
+      // The subject is the card's title; the summary, whole, in the code block under it. 05 R-S12
       const summary = wait.approval.summary || "";
-      const short = summary && !/\\n/.test(summary) && summary.length <= 120;
-      card.append(h("p", { class: "qtext" }, subject + (summary ? ":" : "."), short ? [" ", h("code", { text: summary })] : null));
-      if (summary && !short) card.append(h("pre", { text: summary }));
+      card.append(h("div", { class: "top" }, icon("ask", 20), h("b", { text: subject })));
+      if (summary) card.append(h("pre", { text: summary }));
       if (wait.truncated || !answerable) return hostLine(wait.truncated ? "Too long to show whole here: decide in the host." : "Decide in the host.");
       const act = h("div", { class: "opts" });
       const looks = { allow_once: ["Allow once", "btn tonal sm ico st"], allow_for_session: ["Allow for this agent", "btn out sm st"], deny: ["Deny", "btn text sm st"] };
-      for (const decision of wait.approval.decisions || []) {
+      // Always in this order, each only where the wait lists it. 05 R-S12
+      const listed = wait.approval.decisions || [];
+      for (const decision of ["allow_once", "allow_for_session", "deny"].filter((one) => listed.includes(one)).concat(listed.filter((one) => !(one in looks)))) {
         const [label, look] = looks[decision] || [decision, "btn out sm st"];
         const node = button({ class: look }, decision === "allow_once" ? icon("check", 18) : null, h("span", { text: label }));
         node.addEventListener("click", async () => {
+          if (!live()) return;
           frozen(true); status.textContent = "Confirm in the dialog\u2026";
-          try { await call("sessions.respond", { sessionId: session.id, id: wait.id, decision }, true); status.textContent = "Decided."; if (open) open.disabled = false; }
+          try { await call("sessions.respond", { sessionId: session.id, id: wait.id, decision }, true); status.textContent = "Decided."; }
           catch (error) { frozen(false); status.textContent = error && error.code === "cancelled" ? "Not decided." : describe(error); }
         });
         act.append(node);
       }
-      act.append(...[open, status].filter(Boolean));
+      act.append(status);
       card.append(act);
-      return { node: card, update };
+      return card;
     }
-    card.append(h("p", { class: "qtext", text: wait.text || (wait.questions && wait.questions.length ? wait.questions.map((question) => question.text).join(" ") : "") || "It is waiting for you in the host." }));
+    card.append(h("div", { class: "top" }, icon("ask", 20), h("b", { text: wait.text || (wait.questions && wait.questions.length ? wait.questions.map((question) => question.text).join(" ") : "") || "It is waiting for you in the host." })));
     return hostLine(wait.kind === "question" ? "Answer it in the host." : "It waits on something only the host shows.");
   }
 
@@ -21231,15 +21452,17 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     const res = h("div", { class: "ql", role: "listbox" });
     const panel = h("div", { class: "qo", role: "dialog", "aria-label": "Search agents" }, h("div", { class: "qh" }, icon("search", 24), input), tabs, res);
     const back = h("div", { class: "qo-back" });
-    const close = () => { back.remove(); panel.remove(); document.removeEventListener("keydown", keys, true); };
+    const opener = document.activeElement;
+    const close = (back2) => { back.remove(); panel.remove(); document.removeEventListener("keydown", keys, true); if (back2 === true && opener && opener.isConnected && typeof opener.focus === "function") opener.focus({ preventScroll: true }); };
     back.addEventListener("pointerdown", close);
     // A row search read past the list's joins the list as the open agent; the list's rule keeps it there while
     // the host finds it, and only the host saying it is gone makes it "not listed". 03 R5.12a; U57
     const pick = (session) => {
       close();
       // One the host already said is gone opens as "not listed" at once.
-      if (!lookup(session.id) && !goneIds.has(session.id)) { sessions = sessions.concat([session]); byId.set(session.id, session); }
-      openSession(session.id);
+      if (!byId.has(session.id) && !goneIds.has(session.id)) { sessions = sessions.concat([session]); byId.set(session.id, session); }
+      picked();
+      go({ kind: "session", id: session.id });
     };
     const draw = () => {
       const query = input.value.trim().toLowerCase();
@@ -21270,7 +21493,8 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     };
     const keys = (event) => {
       if (closeMenu) return;
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); }
+      else if (event.key === "Tab") trapIn(panel, event);
       else if (event.key === "ArrowDown") { event.preventDefault(); cursor = Math.min(results.length - 1, cursor + 1); draw(); }
       else if (event.key === "ArrowUp") { event.preventDefault(); cursor = Math.max(0, cursor - 1); draw(); }
       else if (event.key === "Enter" && results[cursor] && !(event.target && event.target.closest && event.target.closest(".qt"))) { event.preventDefault(); pick(results[cursor]); }
@@ -21286,26 +21510,20 @@ var BUILTIN_HOME_HTML = `<!doctype html>
     if (showArchived) setArchived(true); else draw();
   }
 
+
   // ---- start ----------------------------------------------------------------------------------------
   await loadWorkspaces();
   await loadProviders();
   built = true;
-  viewEl.replaceChildren(overviewEl, agentEl);
-  // The view's time moves while the reader stays on it, so a reload after a long read still comes back there.
+  if (has("sessions.start")) navEl.insertBefore(newButton, listEl);
+  viewEl.replaceChildren(newPane, chatPane);
+  // The view's time moves while the reader stays on it.
   const touchView = () => { if (prefs.view) { prefs.view = viewPref(); savePrefs(); } };
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") touchView(); });
   setInterval(() => { if (document.visibilityState !== "hidden") touchView(); }, 180000);
-  // A reload comes back to where the reader was; opening the home later, or elsewhere, starts at the overview. A view
-  // an earlier home stored (\`new\`, \`drafts\`, \`permissions\`) is the overview too.
-  const recent = prefs.view && prefs.view.kind && (!prefs.view.atMs || Date.now() - prefs.view.atMs < 10 * 60e3);
-  const start = recent ? prefs.view : { kind: "new" };
-  if (start.kind === "session" && start.id) {
-    // Where search found it and its workspace, for when the list does not hold its row. B-0214
-    const at = start.at && typeof start.at === "object" && (start.at.cursor === null || typeof start.at.cursor === "string") && (start.at.workspaceId === null || typeof start.at.workspaceId === "string") ? { workspaceId: start.at.workspaceId, cursor: start.at.cursor } : null;
-    if (at) foundAt.set(start.id, at);
-    if (typeof start.workspaceId === "string") restoredIn.set(start.id, start.workspaceId);
-    go({ kind: "session", id: start.id, title: typeof start.title === "string" ? start.title : null, workspaceId: restoredIn.has(start.id) ? restoredIn.get(start.id) : null, at }, { restore: true });
-  } else go({ kind: "new" }, { restore: true });
+  // The address names what opens: that agent's chat, or New agent. The stored view decides nothing; it keeps only the
+  // place of the agent it names, read when the address names that same agent. 05 R-S12
+  show(byAddress(viewOfHash(location.hash)), { restore: true, again: true });
   watchSessions();
 })();
 </script>
@@ -21805,7 +22023,7 @@ function documentSessionRoute(ctx) {
 }
 
 // ../pages-core/src/generated/shell-runtime.ts
-var SHELL_RUNTIME = '"use strict";(()=>{var hr=Object.defineProperty;var yr=(e,t,o)=>t in e?hr(e,t,{enumerable:!0,configurable:!0,writable:!0,value:o}):e[t]=o;var ut=(e,t,o)=>yr(e,typeof t!="symbol"?t+"":t,o);var v=Object.freeze({entryDocumentBytes:5242880,uploadFileBytes:25165824,uploadsPerForm:8,submissionBodyBytes:65536,transcriptChars:16e3,answersPerSubmission:64,answerValueChars:8e3,answerListItems:64,capabilityPayloadBytes:65536,capabilityJsonDepth:16,capabilityJsonNodes:1e4,contributedPayloadMaxBytes:1048576,contributedCallMs:3e4,bridgeCallMs:3e4,fileCallMs:9e4,contributionsTtlMs:1e4,pageScriptBytes:262144,pageScriptMs:2e3,contributorInstructionBytes:2048,contributorGuideBytes:16384,contributorMethods:64,declarationBytes:262144,declarationDepth:32,declarationNodes:5e4,methodDescriptionChars:240,scopeChars:1024,scopeSegments:64,fragmentChars:2048,documentQueryChars:2048,questionChars:1024,decisionSummaryChars:16384,promptChars:32768,resultTextBytes:65536,messagesDefault:50,messagesMax:200,messagesResponseBytes:262144,messageTextChars:16e3,toolInputBytes:2048,toolResultBytes:8192,voiceDefaultSeconds:120,voiceMaxSeconds:600,voicePromptChars:1e3,voiceMinMs:1e3,transcriptionBytes:26214400,promptFiles:8,promptFileBytes:25165824,attachGrantMs:18e5,titleChars:240,storageValueBytes:262144,storagePageBytes:4194304,storageSetManyEntries:32,storageKeyChars:128,draftRetentionMs:6048e5,draftsPerSessionBytes:1048576,snapshotDefault:100,snapshotMax:200,activityDefault:8,activityMax:20,actionTokenMs:72e5,confirmationMs:12e4,redeemedConfirmations:4096,selectionTokenMs:6e5,selectionTokens:32,idempotencyRecords:512,idempotencyMs:3e5,ratePerMinute:120,rateConcurrent:8,sessionRatePerMinute:600,sessionRateConcurrent:32,shellPollMs:1e4,shellPollWorkingMs:2e3,shellPollAfterAnswerMs:6e4,refreshSwapMs:4e3,swapIdleMs:3e3,reloadLoopCount:3,reloadLoopClearMs:1e4,reloadPingMs:7500,reloadWaitMs:15e3,includePatternStars:4,includeParts:200,includeElements:400,includeReports:100,includePartBytes:2097152,includeDepth:3,pagesReadEntries:16,pagesReadBytes:8388608,pagesAnswerBytes:98304,embedsPerPage:32,frameDepth:4,embedPollWorkingMs:3e3,embedPollMs:1e4,embedPollAfterAnswerMs:6e4,embedCallsPerMinute:30,homeEmbedCallsPerMinute:60,answerTokenMs:72e5,grantsPerPage:64,grantPages:512,watchDefaultMs:8e3,watchMinMs:2e3,watchMaxMs:3e5,inlineFileBytes:2097152,inlineTotalBytes:3145728,inlineCssDepth:3,shellFetchBytes:26214400,shellFetchImageBytes:10485760,offlineCopyBytes:204800,offlineCacheEntries:32,offlineCacheBytes:8388608,requestIdChars:96,methodNameChars:96,tokenChars:8192,errorMessageChars:512,summaryChars:1024,workspacesMax:200,providersMax:64,modelsPerProvider:64,environmentsPerWorkspace:64,declinedCooldownMs:1e4,confirmArmMs:400,recorderSliceMs:250,textareaIconPx:16,draftFlushMs:200,frameVersionGraceMs:400,draftDebounceMs:250,ledgerWindowMs:6e4,ledgerEntries:256,uploadBodyBytes:Math.ceil(34952533333333336e-9)+4096});function Ne(e){return`${Math.round(e/(1024*1024)*100)/100} MiB`}function Ve(e){return`${Math.round(e/1024*100)/100} KiB`}var ft=["invalid_json","invalid_request","invalid_params","invalid_response","request_too_large","response_too_large","unsupported_version","unknown_method","stale_page","confirmation_required","confirmation_invalid","cancelled","not_found","conflict","unavailable","rate_limited","handler_error","invalid_result","settings_unsupported"],br=new Set(ft);function Vt(e){return typeof e=="string"&&br.has(e)}var xo=Object.freeze({invalid_json:400,invalid_request:400,invalid_params:400,unsupported_version:400,cancelled:400,settings_unsupported:400,confirmation_required:401,unauthenticated:401,confirmation_invalid:403,forbidden:403,ineligible:404,no_page:404,page_too_large:413,unknown_method:404,not_found:404,stale_page:409,conflict:409,request_too_large:413,rate_limited:429,handler_error:500,invalid_result:500,response_too_large:500,invalid_response:502,unavailable:503});var ie=Object.freeze({unauthenticated:"Sign in to read pages.",noPage:"This session has no page yet.",ineligible:"Only visible root sessions have pages.",deleted:"This session was deleted.",pageTooLarge:`The page\'s entry document is larger than ${v.entryDocumentBytes/(1024*1024)} MiB and was not served.`,unreachable:"The page\'s source is unreachable. Reconnect its host and try again.",staleCopy:"The source host is offline; this cached page is read-only.",archived:"This session is archived; its page is read-only.",stalePage:"This page changed; reload it before responding.",handler:"Could not execute the page action.",rateLimited:"Too many requests from this page; try again shortly.",invalidSession:"A valid session id is required.",tokenInvalid:"This page session is invalid or expired; reload the page.",embedReadsOnly:"Shown inside another session\'s page, this page can only read through its plugins; open it on its own or in the home to change anything.",confirmationRequired:"This action needs the reader\'s confirmation.",confirmationInvalid:"This confirmation is not valid for this request.",cancelled:"The reader declined.",notFound:"Not found.",conflict:"The request conflicts with the current state.",unavailable:"This cannot be served right now.",tooLarge:"The request is too large.",invalidJson:"The body is not valid JSON.",summaryTooLong:"The decision\'s summary is too long to show; decide in the host\'s own interface.",homeNoSession:"The built-in home page has no session.",settingsUnsupported:"This session cannot take those settings here; send the reply without them.",notStarted:"This page\'s agent has not started yet; the reader\'s first message starts it.",startNeedsReader:"Nothing was started: the agent starts only when the reader sends the first message from the page themselves.",notStartedFiles:"Files can be attached once the agent has started; send the first message without them.",untrustedWorkspace:"This folder is not trusted yet: open it once in the agent\'s own app and accept, then send again.",notSubmitted:"The agent did not take this message, so it was not sent.",startRefused:"The agent did not start and gave no reason."});var Eo=Object.freeze({archived:ie.archived,offline:ie.staleCopy,summary_too_long:ie.summaryTooLong,untrusted_workspace:ie.untrustedWorkspace,not_submitted:ie.notSubmitted});var Kt="index.html",Yt="uploads";function Jt(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")||e.startsWith(`${Yt}/`)||!e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")?!1:/\\.html?$/i.test(e)}function kr(e){return Jt(e)&&e.split("/").some(t=>t.startsWith("_"))}function ee(e){return Jt(e)&&!kr(e)}function ve(e){return typeof e=="string"&&e.length>1&&e.length<=v.fragmentChars&&e.startsWith("#")?e:""}var Zt=["session","path","render"];function pt(e){if(e==null||e===""||e==="?")return{ok:!0,query:""};if(typeof e!="string"||!e.startsWith("?"))return{ok:!1,message:"A document\'s query starts with ?"};if(e.length>v.documentQueryChars)return{ok:!1,message:`A document\'s query is at most ${v.documentQueryChars} characters`};if(/[#\\s\\u0000-\\u001f\\u007f-\\u009f]/.test(e))return{ok:!1,message:"A document\'s query has no #, spaces or control characters"};let t=new URLSearchParams(e),o=Zt.find(i=>t.has(i));return o?{ok:!1,message:`"${o}" is the host\'s own parameter; name yours differently`}:{ok:!0,query:e}}var Ao=new Set(Zt);var wr="~home",Xt="~new:",Sr=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,xr=/^[A-Za-z0-9_-]{16,64}$/,Er=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;var vr=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;function Le(e){return typeof e=="string"&&Sr.test(e)}function $e(e){return e===wr||Le(e)||Tr(e)}function Tr(e){return typeof e=="string"&&e.startsWith(Xt)&&Rr(e.slice(Xt.length))}function Qt(e){return typeof e=="string"&&xr.test(e)}function Rr(e){return typeof e=="string"&&Er.test(e)}function gt(e){return typeof e=="string"&&vr.test(e)}function Te(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")?!1:e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")}function en(e){let t=e.slice(e.lastIndexOf("/")+1),o=t.lastIndexOf(".");return o<0?"":t.slice(o+1).toLowerCase()}var mt=new Set(["png","jpg","jpeg","gif","webp","avif","bmp","ico","heic","heif","tif","tiff"]);function tn(e){return mt.has(en(e))?v.shellFetchImageBytes:v.shellFetchBytes}var Ar=new Set([...mt,"pdf","mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus","txt","md","csv","tsv","json","log","vtt","srt"]);function nn(e){return Ar.has(en(e))}var Co=new Set([...mt,"mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus"]);function rn(e){let o=((e??"").split(/[\\\\/]/).pop()??"").replace(/[\\u0000-\\u001f\\u007f"<>:|?*]/g,"_").trim().slice(0,200);return o.length>0&&o!=="."&&o!==".."?o:null}function ht(e){return e.slice(e.lastIndexOf("/")+1)||"download"}function on(e){return e.split("/").map(encodeURIComponent).join("/")}var Mr=/[\\u0000-\\u001f\\u007f-\\u009f]/;function Dr(e){if(e==null||e==="")return{ok:!0,scope:null};if(typeof e!="string")return{ok:!1,message:"A scope is a folder path as text, or null"};if(e.length>v.scopeChars)return{ok:!1,message:`A scope is at most ${v.scopeChars} characters`};let t=e.endsWith("/")?e.slice(0,-1):e;if(t.startsWith("/")||/^[A-Za-z]:/.test(t))return{ok:!1,message:"A scope is relative to the session\'s folder, not absolute"};if(t.includes("\\\\"))return{ok:!1,message:"A scope separates folders with /, not \\\\"};if(Mr.test(t))return{ok:!1,message:"A scope cannot contain control characters"};let o=t.split("/");if(o.length>v.scopeSegments)return{ok:!1,message:`A scope is at most ${v.scopeSegments} folders deep`};for(let i of o){if(i===""||i===".")return{ok:!1,message:"A scope has no empty or . folder names"};if(i==="..")return{ok:!1,message:"A scope cannot climb out with .."}}return o[0]==="~"?{ok:!1,message:"A scope is relative to the session\'s folder, not the home folder"}:{ok:!0,scope:t}}function yt(e){if(typeof e!="string"||e==="")return!1;let t=Dr(e);return t.ok&&t.scope===e}function sn(e,t){return t===null?!0:e!==null&&(e===t||e.startsWith(`${t}/`))}function an(e){if(typeof e!="object"||e===null||Array.isArray(e))return!1;let t=e;return Object.keys(t).sort().join(",")!=="scope,title"||t.scope!==null&&!yt(t.scope)?!1:t.title===null||typeof t.title=="string"&&t.title.length<=300}var Ir="up:draft:",Cr="up:drafts:";function Ue(e,t,o){return`${Ir}${e}:${t}:${o}`}function bt(e){return`${Cr}${e}`}function Or(e){return typeof e=="string"||typeof e=="boolean"||Array.isArray(e)&&e.every(t=>typeof t=="string")}function kt(e){return typeof e=="object"&&e!==null&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024}function _r(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.name=="string"&&Number.isSafeInteger(t.selectionStart)&&Number.isSafeInteger(t.selectionEnd)&&t.selectionStart>=0&&t.selectionEnd>=0}function wt(e){return typeof e!="object"||e===null||Array.isArray(e)?!1:Object.entries(e).every(([t,o])=>t.length<=512&&Or(o))}function St(e){if(typeof e!="object"||e===null)return!1;let t=e;return kt(t.form)&&wt(t.fields)&&(t.focus===null||_r(t.focus))&&Number.isSafeInteger(t.savedAtMs)&&typeof t.revision=="string"&&/^[a-f0-9]{64}$/.test(t.revision)}function Ke(e){return typeof e=="number"&&Number.isFinite(e)&&e>=0}function ln(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.window!="object"||t.window===null||!Ke(t.window.x)||!Ke(t.window.y)||!Array.isArray(t.elements)||t.elements.length>64?!1:t.elements.every(o=>typeof o=="object"&&o!==null&&typeof o.key=="string"&&o.key.length>0&&o.key.length<=1024&&Ke(o.top)&&Ke(o.left))}var Pr=2,xt=1;var Br=new Set(ft),Fr=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/,Nr=/^[a-z][a-zA-Z0-9-]*(?:\\.[a-z][a-zA-Z0-9]*)+$/,Lr=/^[a-z][a-z0-9_]{0,63}$/,Et=/^[a-f0-9]{64}$/,$r=/^[A-Za-z0-9._-]{1,128}$/;function S(e){return typeof e=="object"&&e!==null&&!Array.isArray(e)}function W(e,t){return Object.keys(e).length===t.length&&t.every(i=>Object.prototype.hasOwnProperty.call(e,i))}function se(e,t,o=[]){let i=Object.keys(e);return t.every(f=>i.includes(f))&&i.every(f=>t.includes(f)||o.includes(f))}function Ye(e){return typeof e=="string"&&Fr.test(e)}var ke=e=>typeof e=="number"&&Number.isSafeInteger(e),U=(e,t)=>typeof e=="string"&&e.length<=t,J=(e,t)=>e===void 0||t(e);function cn(e){return typeof e=="object"&&e!==null&&typeof e.size=="number"&&typeof e.name=="string"&&typeof e.arrayBuffer=="function"}function vt(e){return S(e)&&W(e,["session","documentPath","key","label","field","value","reason","atMs"])&&$e(e.session)&&ee(e.documentPath)&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024&&U(e.label,512)&&U(e.field,512)&&typeof e.value=="string"&&(e.reason==="not-on-this-version"||e.reason==="field-filled")&&ke(e.atMs)}function dn(e){return S(e)&&W(e,["kind","v","pageRevision","documentPath","embedded"])&&e.kind==="thread-page:ready"&&e.v===Pr&&typeof e.pageRevision=="string"&&Et.test(e.pageRevision)&&ee(e.documentPath)&&typeof e.embedded=="boolean"}function Ur(e){return S(e)&&W(e,["name","label","value"])&&U(e.name,128)&&U(e.label,300)&&(typeof e.value=="boolean"||U(e.value,v.answerValueChars)||Array.isArray(e.value)&&e.value.length<=v.answerListItems&&e.value.every(t=>U(t,2e3)))}function qr(e){return S(e)&&se(e,["field","file"],["transcribe"])&&U(e.field,128)&&cn(e.file)&&J(e.transcribe,t=>typeof t=="boolean")}function Hr(e,t){return!S(e)||!se(e,["v","id","method","params","pageRevision"],["scope","files","embed","frame","via"])||"frame"in e&&!an(e.frame)||"scope"in e&&!yt(e.scope)||"embed"in e&&!(typeof e.embed=="string"&&e.embed.length>0&&e.embed.length<=v.tokenChars)||"via"in e&&!("embed"in e&&typeof e.via=="string"&&e.via.length>0&&e.via.length<=v.tokenChars)||"files"in e&&!(Array.isArray(e.files)&&e.files.every(cn))?!1:e.v===xt&&Ye(e.id)&&typeof e.method=="string"&&e.method.length>=3&&e.method.length<=v.methodNameChars&&Nr.test(e.method)&&typeof e.pageRevision=="string"&&Et.test(e.pageRevision)&&(t===void 0||e.pageRevision===t)}function un(e,t){if(!S(e)||e.v!==xt||typeof e.id!="string"||typeof e.ok!="boolean"||t!==void 0&&e.id!==t)return!1;if(e.ok===!0)return W(e,["v","id","ok","result"]);if(!W(e,["v","id","ok","error"])||!S(e.error))return!1;let o=e.error;return!se(o,["code","message"],["reason","detail"])||"reason"in o&&(typeof o.reason!="string"||!Lr.test(o.reason))||"detail"in o&&!("reason"in o)?!1:typeof o.code=="string"&&Br.has(o.code)&&typeof o.message=="string"&&o.message.length>0&&o.message.length<=v.errorMessageChars}function fn(e){if(!S(e))return!1;if(!("kind"in e))return Hr(e);switch(e.kind){case"thread-page:dirty":return W(e,["kind","custom"])&&typeof e.custom=="boolean";case"thread-page:typing":return W(e,["kind","active"])&&typeof e.active=="boolean";case"thread-page:clean":case"thread-page:escape":return W(e,["kind"]);case"thread-page:draft-discard":return W(e,["kind","session","documentPath","key","field"])&&$e(e.session)&&ee(e.documentPath)&&U(e.key,1024)&&typeof e.key=="string"&&e.key.length>0&&U(e.field,512);case"thread-page:grant-revoke":return W(e,["kind","from","to"])&&$e(e.from)&&$e(e.to);case"thread-page:submit":return se(e,["kind","submissionId","title","writtenAgainst","formId","formTitle","action","answers","files"],["frame"])&&J(e.frame,t=>S(t)&&se(t,["title"],["path"])&&(t.title===null||U(t.title,300))&&J(t.path,ee))&&(e.action===null||U(e.action,v.answerValueChars))&&typeof e.submissionId=="string"&&$r.test(e.submissionId)&&U(e.title,300)&&typeof e.writtenAgainst=="string"&&Et.test(e.writtenAgainst)&&(e.formId===null||U(e.formId,300))&&(e.formTitle===null||U(e.formTitle,300))&&Array.isArray(e.answers)&&e.answers.length<=v.answersPerSubmission&&e.answers.every(Ur)&&Array.isArray(e.files)&&e.files.length<=v.uploadsPerForm&&e.files.every(qr);case"thread-page:open-document":return se(e,["kind","path"],["fragment","query"])&&ee(e.path)&&J(e.fragment,t=>U(t,v.fragmentChars))&&J(e.query,t=>U(t,v.documentQueryChars));case"thread-page:open-file":return W(e,["kind","path","download","name"])&&Te(e.path)&&typeof e.download=="boolean"&&(e.name===null||U(e.name,255));case"thread-page:file-request":return se(e,["kind","id","path","purpose"],["init"])&&Ye(e.id)&&Te(e.path)&&(e.purpose==="media"||e.purpose==="fetch")&&J(e.init,t=>S(t)&&W(t,["method"])&&(t.method==="GET"||t.method==="HEAD"));case"thread-page:fragment":return se(e,["kind","fragment"],["step"])&&U(e.fragment,v.fragmentChars)&&J(e.step,t=>t===!0);case"thread-page:scroll":return W(e,["kind","state"])&&ln(e.state);case"thread-page:draft":return se(e,["kind","form","fields","focus","cleared"],["embed"])&&kt(e.form)&&wt(e.fields)&&(e.focus===null||S(e.focus)&&W(e.focus,["name","selectionStart","selectionEnd"])&&U(e.focus.name,512)&&ke(e.focus.selectionStart)&&ke(e.focus.selectionEnd))&&Array.isArray(e.cleared)&&e.cleared.every(t=>U(t,512))&&J(e.embed,t=>S(t)&&W(t,["sessionId","documentPath"])&&Le(t.sessionId)&&ee(t.documentPath));case"thread-page:flushed":case"thread-page:pong":return W(e,["kind","nonce"])&&ke(e.nonce);case"thread-page:restored":return W(e,["kind","nonce","firstPaintToRestoreMs"])&&ke(e.nonce)&&(e.firstPaintToRestoreMs===null||typeof e.firstPaintToRestoreMs=="number"&&Number.isFinite(e.firstPaintToRestoreMs));case"thread-page:record":return se(e,["kind","id","purpose"],["prompt","language","maxDurationSeconds","keepAudio","control"])&&Ye(e.id)&&(e.purpose==="dictate"||e.purpose==="audio"||e.purpose==="capability")&&J(e.prompt,t=>U(t,v.voicePromptChars))&&J(e.language,t=>U(t,35))&&J(e.maxDurationSeconds,t=>ke(t)&&t>=1&&t<=v.voiceMaxSeconds)&&J(e.keepAudio,t=>typeof t=="boolean")&&J(e.control,t=>t===!0);case"thread-page:embed-dirty":return W(e,["kind","dirty"])&&typeof e.dirty=="boolean";case"thread-page:gesture":return W(e,["kind","atMs"])&&typeof e.atMs=="number"&&Number.isFinite(e.atMs);case"thread-page:page-update-listen":return W(e,["kind","active"])&&typeof e.active=="boolean";case"thread-page:page-updated":return W(e,["kind","nonce","ok"])&&ke(e.nonce)&&typeof e.ok=="boolean";default:return!1}}function N(e,t,o,i,f){let b={code:t,message:o.slice(0,v.errorMessageChars)||"Request failed",...i?{reason:i,...f!==void 0?{detail:f}:{}}:{}};return{v:xt,id:Ye(e)?e:"invalid",ok:!1,error:b}}function pn(e){let t=e?.getAttribute("data-config");if(!t)throw new Error("The page runtime\'s configuration is missing");return JSON.parse(t)}var Tt="X-Pages-Poll",gn="X-Pages-Hand-Over",mn="X-Pages-Working",hn="X-Pages-Source",yn="X-Pages-Session";var Wr={heading:"Confirm this action",confirmLabel:"Confirm",cancelLabel:"Cancel"},kn={heading:"Allow answers from this page?",confirmLabel:"Allow",cancelLabel:"Don\\u2019t allow"},wn={heading:"Decide for the agent",confirmLabel:"Confirm",cancelLabel:"Cancel"},Sn={heading:"Open this file?",confirmLabel:"Open",cancelLabel:"Cancel"};function bn(e){return e.replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"").slice(0,200)}function xn(e,t={}){let o=t.armMs??v.confirmArmMs,i=t.otherQuestionOpen??(()=>!1),f=t.onClosed??(()=>{}),b=e.ownerDocument,p=b.createElement("h2"),y=b.createElement("p");y.setAttribute("data-tp","confirm-summary");let d=b.createElement("p");d.setAttribute("data-tp","confirm-detail"),d.hidden=!0;let r=b.createElement("div"),g=b.createElement("button");g.type="button",g.value="cancel";let l=b.createElement("button");l.type="button",l.value="confirm",r.append(g,l),e.replaceChildren(p,y,d,r);let c=null,a=0,m;function h(k){let x=c;if(c=null,k&&m)try{m()}catch{}m=void 0,e.open&&e.close(),x&&f(),x?.(k)}return g.addEventListener("click",k=>{k.preventDefault(),h(!1)}),l.addEventListener("click",k=>{k.preventDefault(),!(Date.now()<a)&&h(!0)}),e.addEventListener("cancel",k=>{k.preventDefault(),h(!1)}),e.addEventListener("close",()=>{c&&h(!1)}),{confirm(k,x={}){return new Promise(T=>{if(c||i()){T(!1);return}let R=x.wording??Wr;if(a=Date.now()+o,y.textContent=k,x.grant?(d.hidden=!1,d.textContent=`Target: \\u201C${bn(x.grant.title)}\\u201D (${bn(x.grant.sessionId)}). You can revoke this later from the home page or the grants command.`):d.hidden=!0,p.textContent=R.heading,l.textContent=R.confirmLabel,g.textContent=R.cancelLabel,c=T,m=x.onConfirmGesture,typeof e.showModal=="function")try{e.showModal()}catch{h(!1)}else h(!1)})},isOpen:()=>c!==null}}var Tn="A draft was dropped to make room",Gr="A draft was shortened to fit";function En(){let e=new Map;return{get:t=>e.get(t)??null,set:(t,o)=>{e.set(t,o)},remove:t=>{e.delete(t)}}}function jr(e){return{get:t=>e.getItem(t),set:(t,o)=>e.setItem(t,o),remove:t=>e.removeItem(t)}}function me(e){return new TextEncoder().encode(e).length}function Ae(e,t){let o=t.now??(()=>Date.now()),i=bt(t.session),f,b=!1;try{let a=t.tab?e.sessionStorage:e.localStorage;a.getItem(i),f=jr(a)}catch{f=En(),b=!0,t.onFallback?.()}function p(a,m){try{return a()}catch{if(!b){let h=En();for(let k of y().keys){let x=f.get(k);x!==null&&h.set(k,x)}h.set(i,f.get(i)??""),f=h,b=!0,t.onFallback?.();try{return a()}catch{return m}}return m}}function y(){try{let a=f.get(i),m=a?JSON.parse(a):null;return{keys:Array.isArray(m?.keys)?m.keys.filter(h=>typeof h=="string"):[]}}catch{return{keys:[]}}}function d(a){let m=0;for(let h of a)m+=me(f.get(h)??"");f.set(i,JSON.stringify({keys:a,bytes:m}))}function r(a){try{let m=f.get(a),h=m?JSON.parse(m):null;return St(h)?h:null}catch{return null}}function g(a){let m=Ue(t.session,"",""),h=a.slice(m.length-1);return h.slice(0,h.indexOf(":"))}function l(){let a=y().keys,m=[],h=!1;for(let k of a){let x=r(k);if(!x||o()-x.savedAtMs>t.retentionMs){f.remove(k),h=!0;continue}m.push(k)}return h&&d(m),m}function c(a,m){let h={...a.fields},k=me(JSON.stringify({...a,fields:h}));for(let[x,T]of Object.entries(h)){if(k<=m)break;if(typeof T!="string")continue;let R=Math.max(0,T.length-(k-m));h[x]=T.slice(0,R),k=me(JSON.stringify({...a,fields:h}))}return k<=m?{...a,fields:h}:null}return{put(a,m){return p(()=>{let h=[],k=Ue(t.session,a,m.form.key),x=l().filter(B=>B!==k);if(Object.keys(m.fields).length===0)return f.remove(k),d(x),h;let T=m,R=me(JSON.stringify(T));if(R>t.perSessionBytes){if(T=c(m,t.perSessionBytes),!T)return h;R=me(JSON.stringify(T)),h.push(Gr)}let O=R;for(let B of x)O+=me(f.get(B)??"");for(;O>t.perSessionBytes&&x.length>0;){let B=x.shift();O-=me(f.get(B)??""),f.remove(B),h.push(Tn)}return f.set(k,JSON.stringify(T)),d([...x,k]),h},[])},delete(a,m){p(()=>{let h=Ue(t.session,a,m);f.remove(h),d(y().keys.filter(k=>k!==h))},void 0)},list(){return p(()=>l().map(a=>({key:a,documentPath:g(a),record:r(a)})).filter(a=>a.record!==null),[])},forDocument(a){return p(()=>l().filter(m=>m.startsWith(Ue(t.session,a,""))).map(m=>r(m)).filter(m=>m!==null),[])},clearSession(){p(()=>{for(let a of y().keys)f.remove(a);f.remove(i),f.remove(Je(t.session))},void 0)},isFallback:()=>b}}var qe="up:leftovers:",zr="A draft could not be kept for the home page: the browser refused to store it.";function Je(e){return`${qe}${e}`}function Re(e){return[e.session,e.documentPath,e.key,e.field].join("|")}function Rt(e){return e.startsWith("id:")?`#${e.slice(3)}`:e.startsWith("title:")?e.slice(6):e.startsWith("ctl:name:")?e.slice(9):e.startsWith("ctl:")?`#${e.slice(4)}`:"a form"}function He(e){try{let t=e.localStorage;return t.getItem(qe),t}catch{return null}}function Ze(e,t){try{let o=JSON.parse(e.getItem(Je(t))??"[]");return Array.isArray(o)?o.filter(vt):[]}catch{return[]}}var vn=!1;function Xe(e,t,o,i){let f=[],b=[...o].sort((y,d)=>y.atMs-d.atMs),p=0;try{let y=JSON.parse(e.getItem(bt(t))??"{}");p=typeof y.bytes=="number"?y.bytes:0}catch{p=0}for(;b.length>0&&p+me(JSON.stringify(b))>i.perSessionBytes;)b.shift(),f.push(Tn);try{b.length===0?e.removeItem(Je(t)):e.setItem(Je(t),JSON.stringify(b))}catch(y){vn||(vn=!0,console.warn("the browser refused to store a draft for the home page",y)),f.push(zr)}return f}function Rn(e,t,o){let i=He(e);if(!i)return[];let f=Ze(i,t.session).filter(b=>Re(b)!==Re(t));return Xe(i,t.session,[...f,t],o)}function An(e,t,o,i,f){let b=He(e);if(!b)return[];let p=Ze(b,t).filter(d=>!(d.documentPath===o&&d.reason==="not-on-this-version")),y=new Set(p.map(Re));return Xe(b,t,[...p,...i.filter(d=>!y.has(Re(d)))],f)}function Mn(e,t,o,i){let f=He(e);if(!f)return;let b=Ze(f,t),p=Ae(e,{session:t,retentionMs:i.retentionMs,perSessionBytes:i.perSessionBytes}),y=new Map(p.forDocument(o).map(r=>[r.form.key,r])),d=b.filter(r=>{if(r.documentPath!==o||r.reason!=="not-on-this-version")return!0;let g=y.get(r.key)?.fields[r.field];return typeof g=="string"&&g!==""});d.length!==b.length&&Xe(f,t,d,i)}function At(e,t,o=Date.now()){let i=He(e);if(!i)return[];let f=[],b=[];for(let p=0;p<i.length;p+=1){let y=i.key(p);y&&y.startsWith(qe)&&b.push(y)}for(let p of b)try{let y=JSON.parse(i.getItem(p)??"[]");if(!Array.isArray(y))continue;let d=y.filter(vt).filter(r=>o-r.atMs<=t);d.length!==y.length&&(d.length===0?i.removeItem(p):i.setItem(p,JSON.stringify(d))),f.push(...d)}catch{}return f.sort((p,y)=>p.atMs-y.atMs)}function Dn(e,t,o){let i=He(e);if(!i)return;let f=Re(t);Xe(i,t.session,Ze(i,t.session).filter(r=>Re(r)!==f),o);let b=Ae(e,{session:t.session,retentionMs:o.retentionMs,perSessionBytes:o.perSessionBytes}),p=b.forDocument(t.documentPath).find(r=>r.form.key===t.key);if(!p||!(t.field in p.fields))return;let y={...p.fields};delete y[t.field],Object.values(y).every(r=>r===""||r===!1||Array.isArray(r)&&r.length===0)?b.delete(t.documentPath,t.key):b.put(t.documentPath,{...p,fields:y,focus:p.focus&&p.focus.name===t.field?null:p.focus})}var Vr="The recording bar opens only when the reader presses something in the page.",Qe={mode:"refuse",reason:Vr},Kr=["pointerdown","pointerup","mousedown","touchend","click","keydown","keyup"];function In(e,t={}){let o=t.cooldownMs??2e3,i=t.pollMs??100,f=()=>e.navigator.userActivation,b=!1,p=null,y=Number.NEGATIVE_INFINITY;function d(){p!==null&&clearInterval(p),p=setInterval(()=>{let r=f();(!r||!r.isActive)&&(b=!1,p!==null&&clearInterval(p),p=null)},i)}for(let r of Kr)e.addEventListener(r,g=>{g.isTrusted&&(b=!0,d())},!0);return{decide(r={}){let g=f();return g?g.isActive?r.control===!0?{mode:"record"}:b?{mode:"arm",reason:"the last press was in the host\'s chrome"}:Date.now()-y<o?{mode:"arm",reason:"a bar or question just closed"}:{mode:"record"}:Qe:{mode:"arm",reason:"this browser cannot tell who pressed"}},closed(){y=Date.now()}}}function Cn(e){let t=null;return{inPlace(o){e.location.assign(o)},reserveWindow(){try{if(t=e.open("","_blank"),t)try{t.opener=null}catch{}}catch{t=null}},external(o){let i=t;if(t=null,i&&!i.closed)try{return i.location.href=o,!0}catch{try{i.close()}catch{}}try{return e.open(o,"_blank","noopener,noreferrer")!==null}catch{return!1}},release(){let o=t;t=null;try{o?.close()}catch{}}}}var et="pagesOpening",tt="pagesStarts";function nt(e){return S(e)&&Le(e.session)&&typeof e.actionToken=="string"&&e.actionToken.length>0&&typeof e.expiresAt=="number"&&typeof e.documentUrl=="string"&&e.documentUrl.startsWith("/")&&(e.filesUrl===null||typeof e.filesUrl=="string"&&e.filesUrl.startsWith("/"))&&(e.siteRoot===null||typeof e.siteRoot=="string"&&e.siteRoot.startsWith("/"))}var Yr=new Set(["storage.get","storage.set","storage.setMany"]);function Mt(e){return new TextEncoder().encode(JSON.stringify(e)).length}function Jr(e){let t=new Uint8Array(18);e.crypto.getRandomValues(t);let o="";for(let i of t)o+=String.fromCharCode(i);return e.btoa(o).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}function Zr(e){try{let t=e.performance.getEntriesByType("navigation")[0];return t?.type==="reload"||t?.type==="back_forward"}catch{return!1}}function _n(e){let t=Zr(e)&&S(e.history.state)?e.history.state:{},o=Qt(t[et])?t[et]:Jr(e),i=new Set(Array.isArray(t[tt])?t[tt].filter(d=>typeof d=="string").slice(0,64):[]),f=new Map;function b(d,r){let g=Object.keys(r).length>0?Mt(r):0;for(let[l,c]of f)l!==d&&Object.keys(c).length>0&&(g+=Mt(c));return g}function p(d,r,g,l){let c={...f.get(r)??{}};for(let h of g){if(h.value===null){delete c[h.key];continue}if(Mt(h.value)>v.storageValueBytes)return N(d,"request_too_large",`A storage value is at most ${Ve(v.storageValueBytes)} serialised; "${h.key}" is larger`);c[h.key]=h.value}let a=[...f].filter(([h,k])=>h!==r&&Object.keys(k).length>0).length;if(Object.keys(c).length>0&&a>=256)return N(d,"request_too_large",`At most ${256} scopes hold storage before the agent starts`);let m=b(r,c);return m>v.storagePageBytes?N(d,"request_too_large",`A page\'s storage is at most ${Ve(v.storagePageBytes)} across its scopes; this write would make it ${Ve(m)}`):(f.set(r,c),{v:1,id:d,ok:!0,result:l})}function y(d){return!S(d)||Object.keys(d).sort().join(",")!=="key,value"||!gt(d.key)?null:{key:d.key,value:d.value}}return{opening:o,storage(d){if(!Yr.has(d.method))return null;let{id:r}=d,g=d.scope??null;if(d.frame&&!sn(g,d.frame.scope))return N(r,"invalid_params",`This frame is bound to ${d.frame.scope}: its calls stay in that folder or below`);let l=g??"",c=d.params;if(d.method==="storage.get"){if(!S(c)||Object.keys(c).join(",")!=="key"||!gt(c.key))return N(r,"invalid_params","Invalid parameters for storage.get: give { key }, a storage key");let h=f.get(l);return{v:1,id:r,ok:!0,result:h&&Object.prototype.hasOwnProperty.call(h,c.key)?{found:!0,value:h[c.key]}:{found:!1}}}if(d.method==="storage.set"){let h=y(c);return h?p(r,l,[h],{stored:!0}):N(r,"invalid_params","Invalid parameters for storage.set: give { key, value }, key a storage key")}if(!S(c)||Object.keys(c).join(",")!=="entries"||!Array.isArray(c.entries))return N(r,"invalid_params","Invalid parameters for storage.setMany: give { entries: [{ key, value }] }");if(c.entries.length>v.storageSetManyEntries)return N(r,"invalid_params",`At most ${v.storageSetManyEntries} entries in one call`);let a=c.entries.map(y);if(a.some(h=>h===null))return N(r,"invalid_params","Invalid parameters for storage.setMany: each entry is { key, value }, key a storage key");let m=a.map(h=>h.key);return new Set(m).size!==m.length?N(r,"invalid_params","A key appears twice in one call"):p(r,l,a,{stored:a.length})},held(){let d=[];for(let[r,g]of f)Object.keys(g).length>0&&d.push({scope:r===""?null:r,entries:{...g}});return d},starts:()=>[...i],sentBefore:d=>i.has(d),noteSent(d){i.add(d)}}}function Xr(e){let t=ht(e).replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"");return t.length<=60?t:`${t.slice(0,59)}\\u2026`}var Qr=400;function eo(e,t){if(e.filesUrl)return`${e.filesUrl}${on(t)}`;let o=e.documentUrl.indexOf("?");if(o<0)return null;let i=new URLSearchParams(e.documentUrl.slice(o+1)).get("session");return i===null?null:`${e.documentUrl.slice(0,o)}?session=${encodeURIComponent(i)}&file=${encodeURIComponent(t)}`}function Pn(e,t,o,i,f=Qr){function b(g){let l=null;try{l=e.open(g,"_blank")}catch{l=null}if(l)try{l.opener=null}catch{}return l}function p(){let g=e.document;return g.visibilityState==="visible"&&(typeof g.hasFocus!="function"||g.hasFocus())}function y(g,l){b(g)||e.setTimeout(()=>{if(!p())return;let c=!1;i.confirm(`Open \\u201C${Xr(l)}\\u201D in a new tab?`,{wording:Sn,onConfirmGesture:()=>{c=b(g)!==null}}).then(a=>{a&&!c&&e.setTimeout(()=>{p()&&e.location.assign(g)},f)})},f)}function d(g,l){let c=e.document,a=c.createElement("a");a.href=g,a.download=l,a.rel="noopener",a.style.display="none",c.body.appendChild(a);try{a.click()}finally{a.remove()}}let r=g=>eo(t,g);return{urlOf:r,open(g,l,c){if(!Te(g)||ee(g)&&!l)return;let a=r(g);if(a){if(l||!nn(g)){d(a,(c?rn(c):null)??ht(g));return}y(a,g)}},async fetchFor(g,l){let{id:c,path:a}=l,m=(x,T)=>g({kind:"thread-page:file",id:c,ok:!1,status:x,error:T});if(!Te(a))return m(400,"Not a file of this page");if(l.purpose==="media"&&!t.deferredFiles.includes(a))return m(400,"Not a file this document defers");let h=r(a);if(!h)return m(404,"This page has no files of its own");let k=tn(a);try{let x=await o(h,{method:l.init?.method??"GET",credentials:"same-origin",cache:"no-store"});if(!x.ok)return m(x.status,x.status===404?"The file does not exist":`The host answered ${x.status}`);let T=Number(x.headers.get("content-length")??"");if(Number.isFinite(T)&&T>k)return m(413,`Larger than ${Ne(k)}, the most the host reads`);let R=await x.blob();if(R.size>k)return m(413,`Larger than ${Ne(k)}, the most the host reads`);g({kind:"thread-page:file",id:c,ok:!0,status:x.status,contentType:x.headers.get("content-type")??R.type??"",blob:R})}catch(x){m(502,x instanceof Error&&x.message?x.message.slice(0,200):"The file could not be fetched")}}}}var to=3e4,Bn=3e4;function no(e){let t=e.indexOf("?");if(t<0)return e;let o=new URLSearchParams(e.slice(t+1));o.delete("render");let i=o.toString();return i?`${e.slice(0,t)}?${i}`:e.slice(0,t)}function Fn(e,t,o,i){let f=`"${t.pageRevision}"`,b=!1,p=!1,y=null,d=0,r=null,g=t.working,l=0,c=!1,a=t.source,m=!1,h=()=>e.document.visibilityState==="hidden";function k(){return h()?Bn:g||Date.now()<l?t.pollWorkingMs:t.pollMs}function x(R){y!==null&&clearTimeout(y),y=null,!b&&(d=Date.now()+R,y=setTimeout(()=>{y=null,T()},R))}async function T(){if(b||p)return;Date.now()>=t.expiresAt-to&&o.onExpiring(),p=!0,r=new AbortController;let R=t.documentUrl,O=m?{[Tt]:"1"}:{"if-none-match":f,[Tt]:"1"};m=!1;try{let B=await i(no(R),{method:"GET",credentials:"same-origin",cache:"no-store",headers:O,signal:r.signal});if(R!==t.documentUrl)return;if(c&&(c=!1,o.onReachable()),B.status===401||B.status===403){b=!0,o.onUnauthorized();return}if(B.status===404){b=!0,o.onDeleted();return}if(!B.ok&&B.status!==304){o.onUnreachable(),c=!0;return}if(B.headers.get(yn)==="deleted"){b=!0,o.onDeleted();return}if(B.status===304){g=B.headers.get(mn)==="1",o.onWorking(g);let K=B.headers.get(hn);(K==="live"||K==="offline"||K==="archived")&&K!==a&&(a=K,o.onSource(K));return}let P=await B.json().catch(()=>null);if(!ro(P))return;f=`"${P.revision}"`,g=P.working,o.onWorking(g),P.source!==a&&(a=P.source,o.onSource(P.source)),o.onBody(P)}catch(B){B instanceof DOMException&&B.name==="AbortError"||(c=!0,o.onUnreachable())}finally{r=null,p=!1,x(m?0:k())}}return e.document.addEventListener("visibilitychange",()=>{b||(h()?x(Bn):x(0))}),{start:()=>x(k()),stop(){b=!0,y!==null&&clearTimeout(y),y=null,r?.abort()},expectChange(){l=Date.now()+t.pollAfterAnswerMs,!p&&!h()&&(y===null||d-Date.now()>t.pollWorkingMs)&&x(t.pollWorkingMs)},retarget(){y!==null&&clearTimeout(y),y=null,r?.abort(),r=null,f=`"${t.pageRevision}"`,a=t.source,g=t.working,b=!1,p=!1,x(k())},pollNow(R){return R&&R.fresh&&(m=!0),T()},isStopped:()=>b}}function ro(e){return S(e)?typeof e.revision=="string"&&/^[a-f0-9]{64}$/.test(e.revision)&&typeof e.actionToken=="string"&&typeof e.expiresAt=="number"&&typeof e.documentUrl=="string"&&typeof e.working=="boolean"&&(e.source==="live"||e.source==="offline"||e.source==="archived")&&typeof e.empty=="boolean"&&Array.isArray(e.deferredFiles)&&Array.isArray(e.grants)&&S(e.voice)&&typeof e.voice.available=="boolean"&&Array.isArray(e.readMethods):!1}async function Me(e){return oo(new Uint8Array(await e.arrayBuffer()))}function oo(e){let t="";for(let i=0;i<e.length;i+=32768)t+=String.fromCharCode.apply(null,Array.from(e.subarray(i,i+32768)));return btoa(t)}function Nn(e){return{name:e.name||"file",size:e.size,type:e.type||""}}function Ln(e){if(e.length>v.promptFiles)return{code:"request_too_large",message:`At most ${v.promptFiles} files per call; this one has ${e.length}`};let t=e.find(i=>i.size>v.promptFileBytes);if(t)return{code:"request_too_large",message:`\\u201C${t.name}\\u201D is larger than ${Ne(v.promptFileBytes)}, the most one file may be`};let o=e.find(i=>i.size===0);return o?{code:"invalid_params",message:`\\u201C${o.name}\\u201D is empty`}:null}async function Dt(e,t,o,i,f){let b=[];for(let p=0;p<i.length;p+=1){let y=i[p];f(`Attaching ${p+1} of ${i.length}\\u2026`);let d=null;try{let r={actionToken:t.actionToken,requestId:o.requestId,method:o.method,...o.challenge?{challenge:o.challenge}:{},index:p,name:y.name||"file",type:y.type||"",bytes:await Me(y)},g=await e(t.routes.attach,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(r)}),l=await g.json().catch(()=>null);!g.ok||!S(l)||l.ok!==!0||typeof l.attachmentId!="string"?d={code:S(l)&&typeof l.code=="string"?l.code:"",message:S(l)&&typeof l.message=="string"&&l.message?l.message:`Upload failed (${g.status})`,...S(l)&&l.reason==="not_started"?{reason:"not_started"}:{}}:b.push(l.attachmentId)}catch(r){d={code:"",message:r instanceof Error&&r.message?r.message:"Upload failed"}}if(d)return f(""),{ok:!1,code:d.code==="request_too_large"?"request_too_large":d.code==="unavailable"?"unavailable":"handler_error",message:`Could not attach \\u201C${y.name}\\u201D: ${d.message.replace(/\\.$/,"")}. Nothing was started or sent.`,...d.reason?{reason:d.reason}:{}}}return f(""),{ok:!0,attachmentIds:b}}var so=["audio/webm","audio/mp4","audio/ogg"],io=900,$n="Another question is open; answer it first.",We=class extends Error{constructor(o,i){super(i);ut(this,"code",o);this.name="VoiceFailure"}};function ao(e){let t=e.MediaRecorder;return so.find(o=>{try{return t?.isTypeSupported?.(o)===!0}catch{return!1}})}function Un(e){let t=e.split(";")[0]?.trim().toLowerCase()??"";return t==="audio/mp4"?"m4a":t==="audio/ogg"?"ogg":"webm"}function It(e){let t=Math.max(0,Math.floor(e/1e3));return`${Math.floor(t/60)}:${String(t%60).padStart(2,"0")}`}function qn(e){let t=e.ownerDocument,o=t.createElement("canvas");o.width=160,o.height=28;let i=t.createElement("span");i.setAttribute("data-tp","rec-time");let f=t.createElement("span");f.setAttribute("data-tp","rec-status"),f.setAttribute("role","status");let b=t.createElement("button");b.type="button",b.textContent="Cancel",b.setAttribute("data-tp","rec-cancel");let p=t.createElement("button");p.type="button",p.textContent="Record",p.setAttribute("data-tp","rec-record");let y=t.createElement("button");return y.type="button",y.textContent="Done",y.setAttribute("data-tp","rec-done"),e.replaceChildren(o,i,f,b,p,y),e.hidden=!0,e.tabIndex=-1,{bar:e,wave:o,time:i,status:f,cancel:b,done:y,record:p}}function Hn(e,t,o,i){let f=[],b=!1,p=!1,y=!1,d=null,{bar:r,wave:g,time:l,status:c,cancel:a,done:m,record:h}=o;function k(){for(let M of f)try{M()}catch{}}async function x(){if(!t.voice.available)return t.voice.reason??"This host cannot transcribe voice.";if(b)return"The microphone was not allowed. Reload the page to try again.";if(!e.isSecureContext)return"Recording needs a secure connection to this host.";let M=e.navigator.mediaDevices;if(!M||typeof M.getUserMedia!="function"||typeof e.MediaRecorder!="function")return"This browser cannot record here.";try{let I=await e.navigator.permissions?.query({name:"microphone"});if(I&&!y&&(y=!0,I.onchange=()=>k()),I?.state==="denied")return"The microphone is blocked for this page."}catch{}return null}async function T(M){let I;try{let Y={actionToken:t.actionToken,type:M.type||"audio/webm",bytes:await Me(M.blob),...M.prompt?{prompt:M.prompt.slice(-v.voicePromptChars)}:{},...M.language?{language:M.language}:{}};I=await i.fetchImpl(t.routes.transcribe,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(Y)})}catch{throw new We("unavailable","The host could not be reached to transcribe the recording")}let q=await I.json().catch(()=>null);if(I.ok&&S(q)&&q.ok===!0&&typeof q.text=="string")return q.text;let Z=S(q)&&typeof q.code=="string"?q.code:"",F=S(q)&&typeof q.message=="string"&&q.message?q.message:`Transcription failed (${I.status})`;throw new We(Z==="request_too_large"?"request_too_large":Z==="rate_limited"?"rate_limited":"unavailable",F)}async function R(){let M=e.navigator.mediaDevices;if(t.voice.deviceId)try{return await M.getUserMedia({audio:{deviceId:{exact:t.voice.deviceId}}})}catch(I){let q=I.name;if(q==="NotAllowedError"||q==="SecurityError")throw I}return M.getUserMedia({audio:!0})}function O(M){c.textContent=M}function B(M){r.hidden=!1,r.dataset.state="starting",r.dataset.purpose=M,l.textContent="0:00",m.disabled=!0,m.hidden=!1,h.hidden=!0,a.disabled=!1,O("Starting the microphone\\u2026");try{r.focus({preventScroll:!0})}catch{}}function P(){r.hidden=!0,r.dataset.state="",O(""),g.getContext?.("2d")?.clearRect(0,0,g.width,g.height),i.restoreFocus()}function K(M,I){return p||i.questionOpen()?Promise.resolve({ok:!1,code:"unavailable",message:$n}):M.gesture.mode==="refuse"?Promise.resolve({ok:!1,code:"unavailable",message:M.gesture.reason}):(p=!0,x().then(q=>q||i.questionOpen()?(p=!1,{ok:!1,code:"unavailable",message:q??$n}):j(M,I)))}function j(M,I){return new Promise(q=>{let Z=null,F=null,Y=null,ae=0,X=null,G=null,je=[],we="",he=0,Se=0,le=null,ce=!1,Q=!1,ze=null;function ye(){X!==null&&clearInterval(X),G!==null&&clearTimeout(G),X=null,G=null,ae&&e.cancelAnimationFrame?.(ae),ae=0;try{F&&F.state!=="inactive"&&F.stop()}catch{}for(let C of Z?.getTracks()??[])C.stop();Z=null,Y?.close().catch(()=>{}),Y=null}function z(C){ce||(ce=!0,ye(),e.removeEventListener("keydown",de,!0),e.removeEventListener("pagehide",$),a.removeEventListener("click",$),m.removeEventListener("click",ne),ze?.(),h.hidden=!0,m.hidden=!1,p=!1,d=null,P(),i.onClosed?.(),!C.ok&&C.code!=="cancelled"&&i.setStatus(`Voice: ${C.message}`),q(C))}function $(){Q||z({ok:!1,code:"cancelled",message:"The reader cancelled the recording; nothing was sent."})}function de(C){C.key==="Escape"&&(C.preventDefault(),$())}function st(C){let H=new Uint8Array(new ArrayBuffer(C.fftSize)),V=g.getContext?.("2d"),L=()=>{if(ce||Se||!V)return;C.getByteTimeDomainData(H);let{width:oe,height:xe}=g;V.clearRect(0,0,oe,xe),V.fillStyle="currentColor";let ue=Math.max(8,Math.floor(oe/5)),fe=Math.floor(H.length/ue)||1;for(let pe=0;pe<ue;pe+=1){let Ee=0;for(let Oe=0;Oe<fe;Oe+=1)Ee=Math.max(Ee,Math.abs((H[pe*fe+Oe]??128)-128));let Ce=Math.max(2,Math.min(xe,Ee/128*xe*1.8));V.fillRect(pe*5,(xe-Ce)/2,3,Ce)}ae=e.requestAnimationFrame(L)};ae=e.requestAnimationFrame(L)}function De(){if(le)return le;Se=Se||Date.now(),X!==null&&clearInterval(X),X=null,G!==null&&clearTimeout(G),G=null,le=new Promise(C=>{if(!F||F.state==="inactive"){C();return}F.addEventListener("stop",()=>C(),{once:!0});try{F.stop()}catch{C()}});for(let C of Z?.getTracks()??[])C.stop();return le}async function te(){if(Q||!he)return;let C=(Se||Date.now())-he;if(C<v.voiceMinMs){Q=!0,m.disabled=!0,a.disabled=!0,r.dataset.state="short",O("Too short"),ye(),setTimeout(()=>{Q=!1,z({ok:!1,code:"cancelled",message:`The recording was shorter than ${v.voiceMinMs/1e3} s, so nothing was sent.`})},io);return}Q=!0,m.disabled=!0,a.disabled=!0,await De();let H=we||F?.mimeType||"audio/webm",V=new Blob(je,{type:H});if(V.size===0){Q=!1,z({ok:!1,code:"unavailable",message:"Nothing was recorded. Check the microphone and try again."});return}r.dataset.state="working",O(M.purpose==="audio"?"Saving the recording\\u2026":"Transcribing\\u2026");try{let L=await I({blob:V,type:H,durationMs:C});Q=!1,z({ok:!0,value:L})}catch(L){Q=!1,z({ok:!1,code:L instanceof We?L.code:"unavailable",message:L instanceof Error&&L.message?L.message:"The recording could not be transcribed."})}}function ne(){te()}d=$,B(M.purpose),e.addEventListener("keydown",de,!0),e.addEventListener("pagehide",$),a.addEventListener("click",$),m.addEventListener("click",ne);function Ie(){R().then(C=>{if(ce){for(let L of C.getTracks())L.stop();return}Z=C;let H=ao(e);try{F=H?new e.MediaRecorder(C,{mimeType:H}):new e.MediaRecorder(C)}catch{z({ok:!1,code:"unavailable",message:"This browser cannot record here."});return}F.addEventListener("dataavailable",L=>{L.data&&L.data.size>0&&(je.push(L.data),!we&&L.data.type&&(we=L.data.type))}),F.addEventListener("error",()=>z({ok:!1,code:"unavailable",message:"The recording failed."}));try{F.start(v.recorderSliceMs)}catch{z({ok:!1,code:"unavailable",message:"The recording could not start."});return}he=Date.now(),r.dataset.state="recording",m.disabled=!1,O("Recording. Press Done to send it, Cancel or Escape to discard it.");let V=M.maxDurationSeconds*1e3;X=setInterval(()=>{l.textContent=It(Date.now()-he)},v.recorderSliceMs),G=setTimeout(()=>{De().then(()=>{ce||(l.textContent=It(V),r.dataset.state="limit",O(`Reached ${It(V)}, the most for this recording. Done sends it; Cancel discards it.`))})},V);try{let L=e.AudioContext??e.webkitAudioContext;if(L){Y=new L,Y.resume?.().catch(()=>{});let oe=Y.createAnalyser();oe.fftSize=512,Y.createMediaStreamSource(C).connect(oe),st(oe)}}catch{}},C=>{let H=C.name;if(H==="NotAllowedError"||H==="SecurityError"){b=!0,k(),z({ok:!1,code:"unavailable",message:"The microphone was not allowed. Reload the page to try again."});return}z({ok:!1,code:"unavailable",message:H==="NotFoundError"?"No microphone was found.":"The microphone could not be started."})})}if(M.gesture.mode==="arm"){let C=Date.now();r.dataset.state="armed",m.hidden=!0,h.hidden=!1,O("Press Record to start recording, or Cancel.");let H=V=>{!V.isTrusted||ce||Date.now()-C<v.confirmArmMs||(h.removeEventListener("click",H),h.hidden=!0,m.hidden=!1,r.dataset.state="starting",O("Starting the microphone\\u2026"),Ie())};h.addEventListener("click",H),ze=()=>h.removeEventListener("click",H)}else Ie()})}return{async usable(){let M=await x();return{available:M===null,reason:M}},onChange(M){f.push(M)},isOpen:()=>p,capture:K,cancel(){d?.()},transcribe:T}}var lo=new Set(["sessions.start","sessions.send","session.reply"]),Wn=new Set(["session.reply","pages.answer","session.respond","sessions.respond"]),Gn="voice.captureAndTranscribe";function co(e){if(!S(e)||e.kind!=="page"&&e.kind!=="host"&&e.kind!=="external"||typeof e.url!="string")return null;let t=e.url.startsWith("/"),o=/^https?:\\/\\//i.test(e.url);return e.kind==="page"&&!t||e.kind==="external"&&!o||e.kind==="host"&&!t&&!o?null:{kind:e.kind,url:e.url}}function uo(e,t){return e==="context.get"||t.includes(e)}function jn(e){let{config:t,confirmer:o,navigator:i}=e;async function f(l,c,a,m){let h={actionToken:l,request:c,...a?{confirmation:a}:{},...m?{newSession:m.block}:{}};return(await e.fetchImpl(t.routes.bridge,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(h)})).json().catch(()=>null)}async function b(l,c,a){let m={actionToken:l.token(),action:"declined",requestId:c,target:a};try{await e.fetchImpl(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(m)})}catch{}}function p(l,c,a,m){if(!S(a)||!un(a.response,c.id)){i.release(),l.post(N(c.id,"invalid_response","The bridge returned an invalid response"));return}let h=a.response,k=a.navigate===void 0?null:co(a.navigate);if(m&&h.ok&&nt(a.started)&&m.onStarted(a.started),l.post(h),h.ok&&k){k.kind==="external"?i.external(k.url)||e.onBlockedOpen(k.url):i.inPlace(k.url);return}i.release()}async function y(l,c,a,m){let h=c.files??[],k=c;if(c.files!==void 0){if(!lo.has(c.method)||!S(c.params)||"files"in c.params){l.post(N(c.id,"invalid_params",`${c.method} does not take files this way`));return}let T=Ln(h);if(T){l.post(N(c.id,T.code,T.message));return}k={v:c.v,id:c.id,method:c.method,params:{...c.params,files:h.map(Nn)},pageRevision:c.pageRevision,...c.scope!==void 0?{scope:c.scope}:{},...c.frame!==void 0?{frame:c.frame}:{}}}let x=T=>{let{files:R,...O}=k.params;return{...k,params:{...O,attachments:T}}};try{if(h.length>0&&k.method==="session.reply"){let R=await Dt(e.fetchImpl,{...t,actionToken:l.token()},{requestId:k.id,method:k.method},h,e.onStatus);if(!R.ok){l.post(N(k.id,R.code,R.message,R.reason));return}k=x(R.attachmentIds)}let T=await f(l.token(),k,void 0,m);if(S(T)&&S(T.record)){await d(l,k,T.record,a);return}if(S(T)&&S(T.confirm)){let R=T.confirm;if(typeof R.challenge!="string"||typeof R.summary!="string"||R.requestId!==k.id){l.post(N(k.id,"invalid_response","The bridge returned an invalid confirmation"));return}let O=R.kind==="grant"&&S(R.grant)&&typeof R.grant.sessionId=="string"&&typeof R.grant.title=="string"?{sessionId:R.grant.sessionId,title:R.grant.title}:null,B=R.kind==="decision",P=k.method==="navigation.openExternal";if(!await o.confirm(R.summary,{...O?{wording:kn,grant:O}:B?{wording:wn}:{},...P?{onConfirmGesture:()=>i.reserveWindow()}:{}})){i.release(),l.post(N(k.id,"cancelled",O?"You did not allow it, so the answer was not sent":"You declined this action"));let I=S(k.params)?k.params:{};O?b(l,k.id,{kind:"grant",session:O.sessionId}):B&&typeof I.id=="string"&&b(l,k.id,{kind:"decision",session:typeof I.sessionId=="string"?I.sessionId:t.session,waitId:I.id});return}if(h.length>0&&k.method!=="session.reply"){let I=await Dt(e.fetchImpl,{...t,actionToken:l.token()},{requestId:k.id,method:k.method,challenge:R.challenge},h,e.onStatus);if(!I.ok){i.release(),l.post(N(k.id,I.code,I.message));return}k=x(I.attachmentIds)}let j=await f(l.token(),k,R.challenge,m),M=S(j)&&S(j.response)&&S(j.response.error)&&j.response.error.code==="confirmation_invalid";O&&S(j)&&S(j.response)&&!M&&e.onGranted(O),Wn.has(k.method)&&S(j)&&S(j.response)&&j.response.ok===!0&&e.onAnswered(),p(l,k,j,m);return}Wn.has(k.method)&&S(T)&&S(T.response)&&T.response.ok===!0&&e.onAnswered(),p(l,k,T,m)}catch(T){i.release(),l.post(N(k.id,"unavailable",T instanceof Error&&T.message?T.message:"The bridge is unavailable"))}}async function d(l,c,a,m){let h=S(a.params)?a.params:{};if(a.requestId!==c.id||!e.voice){l.post(N(c.id,e.voice?"invalid_response":"unavailable",e.voice?"The bridge returned an invalid answer":"This page cannot record here."));return}let k=e.voice,x=typeof h.maxDurationSeconds=="number"?h.maxDurationSeconds:v.voiceDefaultSeconds,T=typeof h.prompt=="string"?h.prompt:void 0,R=typeof h.language=="string"?h.language:void 0,O=await k.capture({maxDurationSeconds:x,gesture:m,purpose:"capability"},async P=>({text:await k.transcribe({blob:P.blob,type:P.type,...T?{prompt:T}:{},...R?{language:R}:{}}),recording:P}));if(!O.ok){l.post(N(c.id,O.code,O.message));return}let B=h.keepAudio===!0?{text:O.value.text,audio:O.value.recording.blob}:{text:O.value.text};l.post({v:1,id:c.id,ok:!0,result:B})}async function r(l,c,a){let m=c.id;if(!e.voice){l.post({kind:"thread-page:recorded",id:m,ok:!1,code:"unavailable",message:"This page cannot record here."});return}let h=e.voice,k=(c.prompt??"").slice(-v.voicePromptChars),x;if(c.purpose==="audio"?x=await h.capture({maxDurationSeconds:c.maxDurationSeconds??v.voiceDefaultSeconds,gesture:a,purpose:"audio"},async T=>{let R=new Date().toISOString().replace(/[-:]/g,"").replace(/\\..+$/,"").replace("T","-");return{file:new File([T.blob],`recording-${R}.${Un(T.type)}`,{type:T.type})}}):x=await h.capture({maxDurationSeconds:c.maxDurationSeconds??v.voiceDefaultSeconds,gesture:a,purpose:"dictate"},async T=>({text:await h.transcribe({blob:T.blob,type:T.type,...k?{prompt:k}:{},...c.language?{language:c.language}:{}})})),!x.ok){l.post({kind:"thread-page:recorded",id:m,ok:!1,code:x.code,message:x.message});return}l.post({kind:"thread-page:recorded",id:m,ok:!0,...x.value})}function g(l,c,a){return{...l,post(m){l.post(m),!("kind"in m)&&m.id===c&&a.onSettled(m)}}}return{bridge(l,c,a){let m=a?g(l,c.id,a):l;if(l.isShown()||uo(c.method,l.readMethods())){y(m,c,c.method===Gn?e.readerGesture():Qe,a);return}l.whenShown(()=>{y(m,c,c.method===Gn?e.readerGesture():Qe,a)})},record(l,c){if(c.purpose==="capability"){l.post({kind:"thread-page:recorded",id:c.id,ok:!1,code:"unavailable",message:"Recording for a capability is confirmed by the bridge, not asked for directly."});return}let a=()=>{r(l,c,e.readerGesture({control:c.purpose==="dictate"&&c.control===!0}))};l.isShown()?a():l.whenShown(a)}}}var rt="The new version is still loading\\u2026",zn="This page keeps reloading itself and was stopped; reload this tab to try again.",Vn="This session is archived \\u2014 read-only",Kn="This session was deleted.",Yn="Session expiring \\u2014 reload when ready",Jn="Session expired \\u2014 reload this page",Ct="Cannot reach the host",Ot="Drafts survive updates but not a reload in this browser.",Zn="The browser blocked the new tab.";function Xn(e){let t=e.ownerDocument,o=t.createElement("span");o.setAttribute("data-tp","notice-text");let i=t.createElement("a");i.setAttribute("data-tp","notice-link"),i.target="_blank",i.rel="noopener noreferrer",i.hidden=!0,e.replaceChildren(o,i);let f=null,b=null;function p(){o.textContent=f?.text??"";let d=f?.link;i.hidden=!d,i.href=d?d.href:"",i.textContent=d?d.label:"",f&&f.text?e.setAttribute("data-visible","true"):e.removeAttribute("data-visible")}function y(){b!==null&&clearTimeout(b),b=null}return p(),{element:e,set(d){y(),f={text:d},p()},clear(){y(),f=null,p()},link(d,r,g){y(),f={text:d,link:{href:r,label:g}},p()},notice(d,r=6e3){y(),f={text:d},p(),b=setTimeout(()=>{b=null,f=null,p()},r)},text:()=>f?.text??""}}var Qn=" \\u2026 (transcript shortened)";function er(e){return e.length<=v.transcriptChars?e:`${e.slice(0,v.transcriptChars-Qn.length)}${Qn}`}async function fo(e,t){let o=t.file,i=o.name||"file";if(o.size<=0)throw new Error(`\\u201C${i}\\u201D is empty`);if(o.size>e.config.maxUploadBytes)throw new Error(`\\u201C${i}\\u201D is larger than ${Math.round(e.config.maxUploadBytes/(1024*1024))} MiB`);let f={actionToken:e.token(),field:String(t.field||"file").slice(0,128),name:i.slice(0,255),type:o.type||"application/octet-stream",bytes:await Me(o)},b=await e.fetchImpl(e.config.routes.upload,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(f)}),p=await b.json().catch(()=>null);if(!b.ok||!S(p)||p.ok!==!0||typeof p.name!="string"||typeof p.path!="string"||typeof p.sizeBytes!="number")throw new Error(S(p)&&typeof p.message=="string"&&p.message||`Upload failed (${b.status})`);return{field:f.field,name:p.name,path:p.path,sizeBytes:p.sizeBytes}}async function _t(e,t,o){let{submissionId:i}=o;try{let f=o.files;if(f.length>e.config.maxUploads)throw new Error(`This form has ${f.length} files; at most ${e.config.maxUploads} can be sent at once`);let b=[];for(let l=0;l<f.length;l+=1)t({kind:"thread-page:submit-progress",submissionId:i,message:`Uploading ${l+1} of ${f.length}\\u2026`}),b.push(await fo(e,f[l]));let p=f.map((l,c)=>({entry:l,index:c})).filter(({entry:l})=>l.transcribe===!0&&/^audio\\//i.test(l.file.type??""));for(let l=0;l<p.length;l+=1){let{entry:c,index:a}=p[l];t({kind:"thread-page:submit-progress",submissionId:i,message:`Transcribing ${l+1} of ${p.length}\\u2026`});let m=e.voice&&e.config.voice.available?await e.voice.transcribe({blob:c.file,type:c.file.type}).catch(()=>null):null;b[a].transcript=m===null?null:er(m)}b.length>0&&t({kind:"thread-page:submit-progress",submissionId:i,message:"Sending\\u2026"});let y={actionToken:e.token(),submissionId:i,writtenAgainst:o.writtenAgainst,formId:o.formId,formTitle:o.formTitle,title:o.title,action:o.action,answers:o.answers,files:b,...o.frame?{frame:o.frame}:{},...e.start?{newSession:e.start.block}:{}},d=await e.fetchImpl(e.config.routes.submit,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(y)}),r=await d.json().catch(()=>null);if(d.ok&&S(r)&&r.ok===!0){e.onAnswered(),e.start&&nt(r.started)&&e.start.onStarted(r.started);let l=r.delivery==="queued"||r.delivery==="steered"?r.delivery:"started";t({kind:"thread-page:submit-result",submissionId:i,ok:!0,delivery:l,...typeof r.matchedRevision=="string"?{matchedRevision:r.matchedRevision}:{},revisionChanged:r.revisionChanged===!0});return}let g=S(r)&&Vt(r.code)?r.code:"unavailable";t({kind:"thread-page:submit-result",submissionId:i,ok:!1,error:g,message:(S(r)&&typeof r.message=="string"&&r.message||`Request failed (${d.status})`).slice(0,512)})}catch(f){t({kind:"thread-page:submit-result",submissionId:i,ok:!1,error:"unavailable",message:(f instanceof Error&&f.message?f.message:"Request failed").slice(0,512)})}}var po=["allow-scripts","allow-forms","allow-popups","allow-downloads"],Pt=po.join(" ");var tr="fullscreen *; clipboard-write *",js=[`sandbox ${Pt}`,"default-src * data: blob: \'unsafe-inline\' \'unsafe-eval\'","frame-src https: blob: data:","frame-ancestors \'self\'"].join("; ");var go={opacity:"0","pointer-events":"none","z-index":"0"},mo={opacity:"1","pointer-events":"","z-index":"1"};function ho(e,t,o){let i=e.createElement("iframe");return i.setAttribute("sandbox",Pt),i.setAttribute("allow",tr),i.setAttribute("referrerpolicy","no-referrer"),i.setAttribute("title","Page"),i.setAttribute("data-tp-frame",o?"incoming":"shown"),o?yo(i):Bt(i),i.setAttribute("src",t.documentUrl+t.fragment),i}function yo(e){for(let[t,o]of Object.entries(go))e.style.setProperty(t,o);e.setAttribute("aria-hidden","true"),e.setAttribute("inert","")}function Bt(e){for(let[t,o]of Object.entries(mo))o===""?e.style.removeProperty(t):e.style.setProperty(t,o);e.removeAttribute("aria-hidden"),e.removeAttribute("inert"),e.setAttribute("data-tp-frame","shown")}function Ft(e,t,o){return{element:ho(e,t,o),target:t,port:null,connected:!1,restored:!1,shown:!1,dirty:!1,embedDirty:!1,typing:!1,pending:0,toldUpdate:!1,pageUpdate:!1,handing:0,scroll:null,queue:[],handed:new Map,nonce:0,answered:0,pinged:0,loadStartedAt:Date.now(),timers:[],cancelled:!1}}function D(e,t){if(!e.port)return!1;try{return e.port.postMessage(t),!0}catch{return!1}}function Nt(e){for(let t of e.timers)clearTimeout(t);e.timers=[]}function nr(e){e.cancelled=!0,Nt(e),e.queue=[];try{e.port?.close()}catch{}e.port=null,e.element.remove()}var Ge="pagesDocument",Lt="pagesFragment",rr="pagesQuery",$t="pagesFrame";function or(e,t,o,i={}){let f=e.document,b=i.fetchImpl??e.fetch.bind(e),p=i.now??(()=>Date.now()),y=Xn(o.notice),d="LOADING",r=null,g=null,l="revision",c=null,a=t.navigable?ve(e.location.hash):"",m=0,h=null,k=new Map,x=0,T=!1,R=new WeakMap,O=Math.random().toString(36).slice(2),B=0,P={path:t.documentPath,query:t.documentQuery},K=0,j={retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes},M=t.newSession===!0?_n(e):null,I=Ae(e,{session:M?`~opening:${M.opening}`:t.session,...M?{tab:!0}:{},retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:p,onFallback:()=>y.notice(Ot)}),q=Cn(e),Z=In(e),F=null,Y=xn(o.dialog,{otherQuestionOpen:()=>F?.isOpen()??!1,onClosed:()=>{Z.closed(),$()}});o.recorder&&(F=Hn(e,t,qn(o.recorder),{questionOpen:()=>Y.isOpen(),restoreFocus:()=>{try{r?.element.focus({preventScroll:!0})}catch{}},setStatus:n=>y.notice(n),onClosed:()=>{Z.closed(),$()},fetchImpl:b}),F.onChange(()=>{le(),$()}));let ae=Pn(e,t,b,Y),X=jn({config:t,confirmer:Y,navigator:q,voice:F,readerGesture:n=>Z.decide(n),onGranted:()=>{G.pollNow({fresh:!0})},onAnswered:()=>G.expectChange(),onStatus:n=>n?y.set(n):y.clear(),onBlockedOpen:n=>y.link(Zn,n,"Open it"),fetchImpl:b}),G=Fn(e,t,{onBody:n=>ce(n),onWorking:n=>Se(n),onSource:n=>je(n),onDeleted:()=>{d="DELETED",I.clearSession(),g&&fe(),y.set(Kn)},onUnauthorized:()=>y.set(Jn),onUnreachable:()=>y.set(Ct),onReachable:()=>{y.text()===Ct&&y.clear()},onExpiring:()=>y.set(Yn)},b);function je(n){t.source=n;for(let s of[r,g])s&&D(s,we())}function we(){return{kind:"thread-page:source-state",stale:t.source==="offline",archived:t.source==="archived",reason:t.source==="archived"?Vn:null}}function he(){return{kind:"thread-page:session-state",working:t.working,label:t.workingLabel}}function Se(n){if(n!==t.working){t.working=n;for(let s of[r,g])s&&D(s,he())}}async function le(){let n=F?await F.usable():{available:!1,reason:t.voice.reason};for(let s of[r,g])s&&D(s,{kind:"thread-page:voice",available:n.available,reason:n.reason})}function ce(n){t.actionToken=n.actionToken,t.expiresAt=n.expiresAt,t.readMethods=n.readMethods,t.empty=n.empty,JSON.stringify(n.grants)!==JSON.stringify(t.grants)&&(t.grants=n.grants,jt()),(n.voice.available!==t.voice.available||n.voice.reason!==t.voice.reason)&&(t.voice={...t.voice,available:n.voice.available,reason:n.voice.reason},le());for(let u of[r,g])u&&u.target.path===t.documentPath&&(u.target.token=n.actionToken);if(d==="DELETED"||d==="STOPPED")return;let s=r?.target.revision??t.pageRevision;if(n.revision===s){g&&l==="revision"&&g.target.revision!==n.revision&&g.target.path===t.documentPath&&fe(),c&&(c=null,r&&(r.toldUpdate=!1,D(r,{kind:"thread-page:update",available:!1})),d==="DEFERRED"&&(d="SHOWN"));return}ze(n)}function Q(n){return{documentUrl:n.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:a,token:n.actionToken,revision:n.revision,expiresAt:n.expiresAt,source:n.source,empty:n.empty,deferredFiles:n.deferredFiles}}function ze(n){c=n,!(g&&g.target.revision===n.revision)&&(g&&l==="revision"&&fe(),$())}function ye(){r&&(g&&l==="revision"&&fe(),(d==="SHOWN"||d==="INCOMING")&&(d="DEFERRED"),r.toldUpdate||(r.toldUpdate=!0,D(r,{kind:"thread-page:update",available:!0})))}function z(n){let s=Y.isOpen()||(F?.isOpen()??!1);return n.pending>0||s?!0:f.visibilityState==="hidden"?!1:n.typing||n.dirty||n.embedDirty}function $(){if(!(!r||!c||d==="DELETED"||d==="STOPPED"||d==="RELOAD")){if(z(r)){ye();return}if(!(g||r.handing)){if(r.pageUpdate&&r.connected&&r.target.path===t.documentPath){st(r,c);return}ue(Q(c),"revision")}}}let de=new Map;async function st(n,s){let u=++n.nonce;n.handing=u;let w=()=>!n.cancelled&&r===n&&n.handing===u,E=null;try{let _=await b(s.documentUrl,{method:"GET",credentials:"same-origin",cache:"no-store",headers:{[gn]:"1"}});_.ok&&(E=await _.text())}catch{E=null}if(!w())return;if(c?.revision!==s.revision||z(n)){n.handing=0,$();return}let A=E!==null&&await new Promise(_=>{let re=!1,Fe=dt=>{re||(re=!0,de.delete(n),_(dt))};de.set(n,{nonce:u,settle:Fe}),ne(n,t.refreshSwapMs,()=>Fe(!1)),D(n,{kind:"thread-page:page-update",nonce:u,revision:s.revision,documentPath:n.target.path,html:E})||Fe(!1)});if(w()){if(n.handing=0,!A){c&&c.revision===s.revision&&!g?ue(Q(s),"revision"):$();return}n.target={...Q(s),token:t.actionToken,expiresAt:t.expiresAt},pe(n.target),c&&c.revision===s.revision&&(c=null),d==="DEFERRED"&&(d="SHOWN"),n.toldUpdate&&(n.toldUpdate=!1,D(n,{kind:"thread-page:update",available:!1})),G.retarget(),$()}}function De(n){de.get(n)?.settle(!1),nr(n)}function te(n){return{token:()=>n.target.token,readMethods:()=>t.readMethods,isShown:()=>n.shown,whenShown:s=>{n.shown?s():n.queue.push(s)},post:s=>{D(n,s)}}}function ne(n,s,u){let w=setTimeout(()=>{n.cancelled||u()},s);n.timers.push(w)}function Ie(n){let s=++n.pinged;D(n,{kind:"thread-page:ping",nonce:s}),ne(n,t.reload.pingMs,()=>{n.answered<s&&D(n,{kind:"thread-page:ping",nonce:++n.pinged})}),ne(n,t.reload.waitMs,()=>{n.answered>=s||_e()})}function C(n){return n.port?new Promise(s=>{let u=++n.nonce,w=!1,E=()=>{w||(w=!0,s())};H.set(n,{nonce:u,finish:E}),setTimeout(E,t.drafts.flushMs),D(n,{kind:"thread-page:flush",nonce:u})}):Promise.resolve()}let H=new Map;function V(n,s){let u=I.forDocument(n.target.path);n.handed=new Map(u.map(A=>[A.form.key,A]));let w=[...k.entries()].filter(([A])=>A.startsWith(`${n.target.path}:`)).map(([A,_])=>({form:{key:A.slice(n.target.path.length+1)},fields:_}));k.clear();let E={kind:"thread-page:restore",nonce:++n.nonce,scroll:s?r?.scroll??null:null,drafts:u,clearedNotice:w};return t.builtinHome&&(E.leftovers=At(e,t.drafts.retentionMs,p())),E}function L(n,s){n.port=s,n.connected=!0,s.onmessage=w=>Ce(n,w.data),s.start?.(),D(n,we()),D(n,he()),le(),t.builtinHome&&D(n,{kind:"thread-page:grants",grants:t.grants});let u=n!==r&&r!==null&&r.target.path===n.target.path;D(n,V(n,u||n===r)),Ie(n),n===r&&(d="CONNECTING",ne(n,t.refreshSwapMs,()=>{n.shown||oe(n)}))}function oe(n){if(n.shown)return;n.shown=!0,d="SHOWN",D(n,{kind:"thread-page:shown"});let s=n.queue;n.queue=[];for(let u of s)u();try{n.element.focus({preventScroll:!0})}catch{}Ut(n),xe(n),$()}function xe(n){h!==null&&clearTimeout(h),h=setTimeout(()=>{h=null,r===n&&n.answered>0&&(m=0)},t.reload.clearMs)}function ue(n,s){g&&fe();let u=r,w=++x;T=!0;let E=()=>{if(w===x&&(T=!1),w!==x||d==="DELETED")return;if(s==="revision"&&r&&z(r)){ye();return}let A=Ft(f,n,!0);g=A,l=s,d="INCOMING",o.frameHost.appendChild(A.element),ne(A,t.refreshSwapMs,()=>{if(g===A){if(s==="revision"&&r&&z(r)){ye();return}Ee(A,!0)}}),ne(A,t.reload.waitMs,()=>{g===A&&!A.connected&&_e()}),s!=="revision"&&(pe(n),s==="document"&&y.clear())};u?.port?C(u).then(E):E()}function fe(){let n=g;n&&(g=null,De(n),d==="INCOMING"&&(d=r?"SHOWN":"LOADING"))}function pe(n){t.actionToken=n.token,t.pageRevision=n.revision,t.expiresAt=n.expiresAt,t.documentUrl=n.documentUrl,t.documentPath=n.path,t.documentQuery=n.query,t.source=n.source,t.empty=n.empty,t.deferredFiles=n.deferredFiles,a=n.fragment}function Ee(n,s){if(g!==n)return;g=null,Nt(n);let u=r;Bt(n.element),u&&De(u),r=n,pe(n.target),zt(n),c&&c.revision===n.target.revision&&(c=null),s&&!n.restored&&f.visibilityState!=="hidden"?y.set(rt):y.text()===rt&&y.clear(),oe(n),G.retarget(),n.connected?Ie(n):ne(n,t.reload.waitMs,()=>{n.connected||_e()})}function Ce(n,s){if(n.cancelled||!fn(s))return;if(!("kind"in s)){if(t.newSession&&M&&s.embed===void 0&&ur(n,s))return;X.bridge(te(n),s);return}let u=s;switch(u.kind){case"thread-page:pong":n.answered=Math.max(n.answered,u.nonce);return;case"thread-page:restored":n.restored=!0,g===n?l==="revision"&&r&&z(r)?ye():Ee(n,!1):r===n&&(n.shown?y.text()===rt&&y.clear():oe(n));return;case"thread-page:flushed":{let w=H.get(n);w&&w.nonce===u.nonce&&(H.delete(n),w.finish());return}case"thread-page:scroll":n.scroll=u.state;return;case"thread-page:draft":Oe(n,u);return;case"thread-page:dirty":n.dirty=u.custom,n===r&&$();return;case"thread-page:clean":n.dirty=!1,n===r&&$();return;case"thread-page:typing":n.typing=u.active,n===r&&$();return;case"thread-page:embed-dirty":n.embedDirty=u.dirty,n===r&&$();return;case"thread-page:page-update-listen":n.pageUpdate=u.active;return;case"thread-page:page-updated":{let w=de.get(n);w&&w.nonce===u.nonce&&w.settle(u.ok);return}case"thread-page:submit":if(t.newSession&&M&&fr(n,u))return;te(n).whenShown(()=>{n.pending+=1,_t({config:t,token:()=>n.target.token,fetchImpl:b,voice:F,onAnswered:()=>G.expectChange()},w=>{if("kind"in w&&w.kind==="thread-page:submit-result"){n.pending=Math.max(0,n.pending-1),D(n,w),n===r&&$();return}D(n,w)},u)});return;case"thread-page:open-document":te(n).whenShown(()=>{let w=pt(u.query);if(!w.ok){y.notice(`That link cannot be opened: ${w.message}.`);return}ct(u.path,!0,ve(u.fragment),w.query)});return;case"thread-page:open-file":te(n).whenShown(()=>ae.open(u.path,u.download,u.name));return;case"thread-page:file-request":ae.fetchFor(w=>{D(n,w)},u);return;case"thread-page:fragment":n===r&&n.target.path===P.path&&n.target.query===P.query&&mr(ve(u.fragment),u.step===!0),u.step===!0&&D(n,{kind:"thread-page:move-fragment",fragment:u.fragment});return;case"thread-page:record":X.record(te(n),u);return;case"thread-page:escape":F?.cancel();return;case"thread-page:draft-discard":if(!t.builtinHome)return;Dn(e,u,j),qt();return;case"thread-page:grant-revoke":if(!t.builtinHome)return;te(n).whenShown(()=>{pr(u.from,u.to)});return;default:return}}function Oe(n,s){let u=s.embed?s.embed.documentPath:n.target.path,w=s.embed?s.embed.sessionId:t.session,E={form:s.form,fields:s.fields,focus:s.focus,savedAtMs:p(),revision:n.target.revision};if(s.cleared.length>0&&!s.embed&&k.set(`${u}:${s.form.key}`,s.cleared),s.embed){let _=Ae(e,{session:w,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:p});for(let re of _.put(u,E))D(n,{kind:"thread-page:draft-notice",text:re});return}let A=n.handed.get(s.form.key);if(A){n.handed.delete(s.form.key);for(let[_,re]of Object.entries(A.fields)){let Fe=s.fields[_];if(JSON.stringify(Fe)!==JSON.stringify(re)&&typeof re=="string"&&re!==""&&!t.builtinHome&&!t.newSession)for(let dt of Rn(e,{session:t.session,documentPath:u,key:s.form.key,label:Rt(s.form.key),field:_,value:re,reason:"field-filled",atMs:p()},j))D(n,{kind:"thread-page:draft-notice",text:dt})}Ut(n)}for(let _ of I.put(u,E))D(n,{kind:"thread-page:draft-notice",text:_})}function lr(n){let s=new Map(I.forDocument(n.target.path).map(w=>[w.form.key,w])),u=[];for(let w of n.handed.keys()){let E=s.get(w);if(E)for(let[A,_]of Object.entries(E.fields))typeof _=="string"&&_!==""&&u.push({session:t.session,documentPath:n.target.path,key:w,label:Rt(w),field:A,value:_,reason:"not-on-this-version",atMs:E.savedAtMs})}return u}function Ut(n){if(!(t.builtinHome||t.newSession))for(let s of An(e,t.session,n.target.path,lr(n),j))D(n,{kind:"thread-page:draft-notice",text:s})}function qt(){r&&D(r,{kind:"thread-page:drafts",leftovers:At(e,t.drafts.retentionMs,p())})}let ge=null,cr=new Set(["session.reply","storage.set","storage.setMany"]);function Ht(){return Z.decide().mode==="record"}function dr(){try{e.history.replaceState(be(),"",e.location.href)}catch{}}function Wt(n){let s=ge??[];ge=null;for(let u of s)n?u.fail(n):u.run()}function ur(n,s){let u=M;if(ge)return s.method==="storage.get"?(D(n,u.storage(s)),!0):cr.has(s.method)?(ge.push({run:()=>X.bridge(te(n),s),fail:_=>{D(n,N(s.id,_.code,_.message,_.reason))}}),!0):!1;let w=u.storage(s);if(w)return D(n,w),!0;if(s.method!=="session.reply")return!1;let E=Ht(),A=S(s.params)&&typeof s.params.idempotencyKey=="string"?`reply:${s.params.idempotencyKey}`:null;return!E&&!(A&&u.sentBefore(A))?(D(n,N(s.id,"unavailable",ie.startNeedsReader,"not_started")),!0):(A&&!u.sentBefore(A)&&(u.noteSent(A),dr()),ge=[],X.bridge(te(n),s,{block:{opening:u.opening,gesture:E,held:u.held()},onStarted:Gt,onSettled:_=>Wt(_.ok?null:_.error)}),!0)}function fr(n,s){let u=M,w=(A,_,re)=>{D(n,{kind:"thread-page:submit-result",submissionId:s.submissionId,ok:A,error:_,message:re.slice(0,512)})};if(ge)return ge.push({run:()=>Ce(n,s),fail:A=>w(!1,A.code,A.message)}),!0;if(s.files.length>0)return w(!1,"unavailable",`${ie.notStartedFiles.replace(/\\.$/,"")} (not_started).`),!0;if(!Ht())return w(!1,"unavailable",`${ie.startNeedsReader.replace(/\\.$/,"")} (not_started).`),!0;ge=[];let E={opening:u.opening,gesture:!0,held:u.held()};return te(n).whenShown(()=>{n.pending+=1,_t({config:t,token:()=>n.target.token,fetchImpl:b,voice:F,onAnswered:()=>G.expectChange(),start:{block:E,onStarted:Gt}},A=>{if("kind"in A&&A.kind==="thread-page:submit-result"){n.pending=Math.max(0,n.pending-1),D(n,A),Wt(A.ok?null:{code:A.error??"unavailable",message:A.message??"Could not send"}),n===r&&$();return}D(n,A)},s)}),!0}function Gt(n){if(!t.newSession)return;t.newSession=!1,t.session=n.session,t.actionToken=n.actionToken,t.expiresAt=n.expiresAt,t.documentUrl=n.documentUrl,t.filesUrl=n.filesUrl;for(let u of[r,g])u&&(u.target.token=n.actionToken,u.target.documentUrl=n.documentUrl,u.target.expiresAt=n.expiresAt);let s=Ae(e,{session:n.session,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:p,onFallback:()=>y.notice(Ot)});for(let u of I.list())s.put(u.documentPath,u.record);I.clearSession(),I=s;try{e.history.replaceState(be(),"",`${t.routes.page}?${new URLSearchParams({session:n.session})}${a}`)}catch{}r&&D(r,{kind:"thread-page:session",siteRoot:n.siteRoot,uploads:!0}),G.retarget()}function jt(){if(t.builtinHome)for(let n of[r,g])n&&D(n,{kind:"thread-page:grants",grants:t.grants})}async function pr(n,s){let u={actionToken:t.actionToken,action:"revokeGrant",target:s,from:n};try{let w=await b(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(u)}),E=await w.json().catch(()=>null);if(!w.ok||!S(E)||E.ok!==!0)throw new Error(S(E)&&typeof E.message=="string"&&E.message||`Request failed (${w.status})`);t.grants=t.grants.filter(A=>!(A.from===n&&A.sessionId===s)),jt(),G.pollNow()}catch(w){y.notice(w instanceof Error?w.message:"Could not revoke")}}e.addEventListener("message",n=>{let s=n.data;if(!dn(s))return;let u=r&&n.source===r.element.contentWindow?r:g&&n.source===g.element.contentWindow?g:null;if(!u)return;if(u.connected){u===r&&_e();return}let w=n.ports.length===1?n.ports[0]:void 0;w&&(L(u,w),u===r&&s.pageRevision!==u.target.revision&&G.pollNow())});async function it(n,s){let u={actionToken:t.actionToken,path:n,query:s};try{let w=await b(t.routes.documentSession,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(u)}),E=await w.json().catch(()=>null);if(!w.ok||!S(E)||E.ok!==!0||typeof E.actionToken!="string"||typeof E.pageRevision!="string"||typeof E.documentUrl!="string"||typeof E.path!="string"||typeof E.expiresAt!="number")return S(E)&&typeof E.message=="string"&&E.message||"That page could not be opened";let A=E.source==="offline"||E.source==="archived"?E.source:"live";return{documentUrl:E.documentUrl,path:E.path,query:typeof E.query=="string"?E.query:"",fragment:"",token:E.actionToken,revision:E.pageRevision,expiresAt:E.expiresAt,source:A,empty:E.empty===!0,deferredFiles:Array.isArray(E.deferredFiles)?E.deferredFiles.filter(_=>typeof _=="string"):[]}}catch{return"The host could not be reached"}}let at=!1;async function _e(){if(!(at||d==="DELETED")){if(m>=t.reload.loopCount){if(d="STOPPED",r){try{r.port?.close()}catch{}r.port=null}y.set(zn);return}m+=1,at=!0;try{if(!t.navigable){e.location.reload();return}d="RELOAD";let n=await it(P.path,P.query);if(typeof n=="string"){e.location.reload();return}n.fragment=a,ue(n,"reload")}finally{at=!1}}}function Pe(n,s){let u=new URL(e.location.href);for(let E of[...u.searchParams.keys()])E!=="session"&&!(t.newSession&&E==="workspace")&&u.searchParams.delete(E);let w=n===Kt&&!s?"":`${n}${s}`;return w&&u.searchParams.set("path",w),`${u.pathname}${u.search}${a}`}function be(n=P.path,s=P.query){let u=t.newSession&&M?{[et]:M.opening,[tt]:M.starts()}:{};return{[Ge]:n,[Lt]:a,[rr]:s,[$t]:r?lt(r):null,...u}}function lt(n){let s=R.get(n);return s||R.set(n,s=`${O}.${B+=1}`),s}function zt(n){let s=e.history.state;if(!(!t.navigable||!S(s)||typeof s[Ge]!="string"))try{e.history.replaceState({...s,[$t]:lt(n)},"",e.location.href)}catch{}}function gr(n,s,u,w){return!r?.shown||g||T||n[$t]!==lt(r)||s!==P.path||u!==P.query||s!==r.target.path||u!==r.target.query||!D(r,{kind:"thread-page:move-fragment",fragment:w})?!1:(K+=1,a=w,!0)}function mr(n,s){if(!(!t.navigable||n===a)){a=n;try{s&&!t.newSession?e.history.pushState(be(),"",Pe(P.path,P.query)):e.history.replaceState(be(),"",Pe(P.path,P.query))}catch{}}}async function ct(n,s=!0,u="",w=""){if(!t.navigable||!ee(n))return!1;let E=++K;if(n===P.path&&w===P.query){if(u!==a){let _=await it(n,w);return E!==K||typeof _=="string"?!1:(_.fragment=u,a=u,ue(_,"document"),s&&e.history.pushState(be(n,w),"",Pe(n,w)),!0)}return!1}let A=await it(n,w);if(E!==K)return!1;if(typeof A=="string")return y.notice(A),!1;if(A.fragment=u,a=u,P={path:n,query:w},c=null,ue(A,s?"document":"history"),s)try{e.history.pushState(be(n,w),"",Pe(n,w))}catch{}return!0}if(t.navigable){try{e.history.replaceState(be(),"",Pe(t.documentPath,t.documentQuery))}catch{}e.addEventListener("popstate",n=>{let s=n.state;if(!S(s)||typeof s[Ge]!="string")return;let u=pt(s[rr]);gr(s,s[Ge],u.ok?u.query:"",ve(s[Lt]))||ct(s[Ge],!1,ve(s[Lt]),u.ok?u.query:"")})}f.addEventListener("visibilitychange",()=>{f.visibilityState==="hidden"&&r&&C(r),$()}),e.addEventListener("storage",n=>{n.key!==null&&!n.key.startsWith(qe)&&!n.key.startsWith("up:draft")||(t.builtinHome?qt():r&&r.shown&&!t.newSession&&Mn(e,t.session,r.target.path,j))});let Be=Ft(f,{documentUrl:t.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:a,token:t.actionToken,revision:t.pageRevision,expiresAt:t.expiresAt,source:t.source,empty:t.empty,deferredFiles:t.deferredFiles},!1);return r=Be,o.frameHost.appendChild(Be.element),zt(Be),ne(Be,t.reload.waitMs,()=>{Be.connected||_e()}),G.start(),{state:()=>d,shownFrame:()=>r?.element??null,handOversWaiting:()=>de.size,incomingFrame:()=>g?.element??null,poller:G,notice:y,get store(){return I},confirmer:Y,voice:F,openDocument:ct}}var bo=pn(document.currentScript),ot=e=>document.getElementById(e),sr=ot("tp-notice"),ir=ot("tp-frame-host"),ar=ot("tp-dialog");if(!sr||!ir||!ar)throw new Error("The shell\'s document is incomplete");or(window,bo,{notice:sr,frameHost:ir,dialog:ar,recorder:ot("tp-recorder")});})();';
+var SHELL_RUNTIME = '"use strict";(()=>{var yr=Object.defineProperty;var br=(e,t,o)=>t in e?yr(e,t,{enumerable:!0,configurable:!0,writable:!0,value:o}):e[t]=o;var ut=(e,t,o)=>br(e,typeof t!="symbol"?t+"":t,o);var v=Object.freeze({entryDocumentBytes:5242880,uploadFileBytes:25165824,uploadsPerForm:8,submissionBodyBytes:65536,transcriptChars:16e3,answersPerSubmission:64,answerValueChars:8e3,answerListItems:64,capabilityPayloadBytes:65536,capabilityJsonDepth:16,capabilityJsonNodes:1e4,contributedPayloadMaxBytes:1048576,contributedCallMs:3e4,bridgeCallMs:3e4,fileCallMs:9e4,contributionsTtlMs:1e4,pageScriptBytes:262144,pageScriptMs:2e3,contributorInstructionBytes:2048,contributorGuideBytes:16384,contributorMethods:64,declarationBytes:262144,declarationDepth:32,declarationNodes:5e4,methodDescriptionChars:240,scopeChars:1024,scopeSegments:64,fragmentChars:2048,documentQueryChars:2048,questionChars:1024,decisionSummaryChars:16384,promptChars:32768,resultTextBytes:65536,messagesDefault:50,messagesMax:200,messagesResponseBytes:262144,messageTextChars:16e3,toolInputBytes:2048,toolResultBytes:8192,voiceDefaultSeconds:120,voiceMaxSeconds:600,voicePromptChars:1e3,voiceMinMs:1e3,transcriptionBytes:26214400,promptFiles:8,promptFileBytes:25165824,attachGrantMs:18e5,titleChars:240,storageValueBytes:262144,storagePageBytes:4194304,storageSetManyEntries:32,storageKeyChars:128,draftRetentionMs:6048e5,draftsPerSessionBytes:1048576,snapshotDefault:100,snapshotMax:200,activityDefault:8,activityMax:20,actionTokenMs:72e5,confirmationMs:12e4,redeemedConfirmations:4096,selectionTokenMs:6e5,selectionTokens:32,idempotencyRecords:512,idempotencyMs:3e5,ratePerMinute:120,rateConcurrent:8,sessionRatePerMinute:600,sessionRateConcurrent:32,shellPollMs:1e4,shellPollWorkingMs:2e3,shellPollAfterAnswerMs:6e4,refreshSwapMs:4e3,swapIdleMs:3e3,reloadLoopCount:3,reloadLoopClearMs:1e4,reloadPingMs:7500,reloadWaitMs:15e3,includePatternStars:4,includeParts:200,includeElements:400,includeReports:100,includePartBytes:2097152,includeDepth:3,pagesReadEntries:16,pagesReadBytes:8388608,pagesAnswerBytes:98304,embedsPerPage:32,frameDepth:4,embedPollWorkingMs:3e3,embedPollMs:1e4,embedPollAfterAnswerMs:6e4,embedCallsPerMinute:30,homeEmbedCallsPerMinute:60,answerTokenMs:72e5,grantsPerPage:64,grantPages:512,watchDefaultMs:8e3,watchMinMs:2e3,watchMaxMs:3e5,inlineFileBytes:2097152,inlineTotalBytes:3145728,inlineCssDepth:3,shellFetchBytes:26214400,shellFetchImageBytes:10485760,offlineCopyBytes:204800,offlineCacheEntries:32,offlineCacheBytes:8388608,requestIdChars:96,methodNameChars:96,tokenChars:8192,errorMessageChars:512,summaryChars:1024,workspacesMax:200,providersMax:64,modelsPerProvider:64,environmentsPerWorkspace:64,declinedCooldownMs:1e4,confirmArmMs:400,recorderSliceMs:250,textareaIconPx:16,draftFlushMs:200,frameVersionGraceMs:400,draftDebounceMs:250,ledgerWindowMs:6e4,ledgerEntries:256,uploadBodyBytes:Math.ceil(34952533333333336e-9)+4096});function Fe(e){return`${Math.round(e/(1024*1024)*100)/100} MiB`}function Ke(e){return`${Math.round(e/1024*100)/100} KiB`}var ft=["invalid_json","invalid_request","invalid_params","invalid_response","request_too_large","response_too_large","unsupported_version","unknown_method","stale_page","confirmation_required","confirmation_invalid","cancelled","not_found","conflict","unavailable","rate_limited","handler_error","invalid_result","settings_unsupported"],kr=new Set(ft);function Kt(e){return typeof e=="string"&&kr.has(e)}var vo=Object.freeze({invalid_json:400,invalid_request:400,invalid_params:400,unsupported_version:400,cancelled:400,settings_unsupported:400,confirmation_required:401,unauthenticated:401,confirmation_invalid:403,forbidden:403,ineligible:404,no_page:404,page_too_large:413,unknown_method:404,not_found:404,stale_page:409,conflict:409,request_too_large:413,rate_limited:429,handler_error:500,invalid_result:500,response_too_large:500,invalid_response:502,unavailable:503});var de=Object.freeze({unauthenticated:"Sign in to read pages.",noPage:"This session has no page yet.",ineligible:"Only visible root sessions have pages.",deleted:"This session was deleted.",pageTooLarge:`The page\'s entry document is larger than ${v.entryDocumentBytes/(1024*1024)} MiB and was not served.`,unreachable:"The page\'s source is unreachable. Reconnect its host and try again.",staleCopy:"The source host is offline; this cached page is read-only.",archived:"This session is archived; its page is read-only.",stalePage:"This page changed; reload it before responding.",handler:"Could not execute the page action.",rateLimited:"Too many requests from this page; try again shortly.",invalidSession:"A valid session id is required.",tokenInvalid:"This page session is invalid or expired; reload the page.",embedReadsOnly:"Shown inside another session\'s page, this page can only read through its plugins; open it on its own or in the home to change anything.",confirmationRequired:"This action needs the reader\'s confirmation.",confirmationInvalid:"This confirmation is not valid for this request.",cancelled:"The reader declined.",notFound:"Not found.",conflict:"The request conflicts with the current state.",unavailable:"This cannot be served right now.",tooLarge:"The request is too large.",invalidJson:"The body is not valid JSON.",summaryTooLong:"The decision\'s summary is too long to show; decide in the host\'s own interface.",homeNoSession:"The built-in home page has no session.",settingsUnsupported:"This session cannot take those settings here; send the reply without them.",notStarted:"This page\'s agent has not started yet; the reader\'s first message starts it.",startNeedsReader:"Nothing was started: the agent starts only when the reader sends the first message from the page themselves.",notStartedFiles:"Files can be attached once the agent has started; send the first message without them.",untrustedWorkspace:"This folder is not trusted yet: open it once in the agent\'s own app and accept, then send again.",notSubmitted:"The agent did not take this message, so it was not sent.",startRefused:"The agent did not start and gave no reason."});var Ro=Object.freeze({archived:de.archived,offline:de.staleCopy,summary_too_long:de.summaryTooLong,untrusted_workspace:de.untrustedWorkspace,not_submitted:de.notSubmitted});var Yt="index.html",Jt="uploads";function Zt(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")||e.startsWith(`${Jt}/`)||!e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")?!1:/\\.html?$/i.test(e)}function wr(e){return Zt(e)&&e.split("/").some(t=>t.startsWith("_"))}function ee(e){return Zt(e)&&!wr(e)}function he(e){return typeof e=="string"&&e.length>1&&e.length<=v.fragmentChars&&e.startsWith("#")?e:""}var Xt=["session","path","render"];function pt(e){if(e==null||e===""||e==="?")return{ok:!0,query:""};if(typeof e!="string"||!e.startsWith("?"))return{ok:!1,message:"A document\'s query starts with ?"};if(e.length>v.documentQueryChars)return{ok:!1,message:`A document\'s query is at most ${v.documentQueryChars} characters`};if(/[#\\s\\u0000-\\u001f\\u007f-\\u009f]/.test(e))return{ok:!1,message:"A document\'s query has no #, spaces or control characters"};let t=new URLSearchParams(e),o=Xt.find(i=>t.has(i));return o?{ok:!1,message:`"${o}" is the host\'s own parameter; name yours differently`}:{ok:!0,query:e}}var Io=new Set(Xt);var Sr="~home",Qt="~new:",xr=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,Er=/^[A-Za-z0-9_-]{16,64}$/,Tr=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;var vr=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;function Ne(e){return typeof e=="string"&&xr.test(e)}function Le(e){return e===Sr||Ne(e)||Rr(e)}function Rr(e){return typeof e=="string"&&e.startsWith(Qt)&&Ar(e.slice(Qt.length))}function en(e){return typeof e=="string"&&Er.test(e)}function Ar(e){return typeof e=="string"&&Tr.test(e)}function gt(e){return typeof e=="string"&&vr.test(e)}function Re(e){return typeof e!="string"||e.length===0||e.length>1024||e.includes("\\0")||e.includes("\\\\")||e.startsWith("/")?!1:e.split("/").every(t=>t.length>0&&t!=="."&&t!=="..")}function tn(e){let t=e.slice(e.lastIndexOf("/")+1),o=t.lastIndexOf(".");return o<0?"":t.slice(o+1).toLowerCase()}var mt=new Set(["png","jpg","jpeg","gif","webp","avif","bmp","ico","heic","heif","tif","tiff"]);function nn(e){return mt.has(tn(e))?v.shellFetchImageBytes:v.shellFetchBytes}var Mr=new Set([...mt,"pdf","mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus","txt","md","csv","tsv","json","log","vtt","srt"]);function rn(e){return Mr.has(tn(e))}var Po=new Set([...mt,"mp4","m4v","webm","mov","ogv","ogg","oga","mp3","m4a","aac","wav","flac","opus"]);function on(e){let o=((e??"").split(/[\\\\/]/).pop()??"").replace(/[\\u0000-\\u001f\\u007f"<>:|?*]/g,"_").trim().slice(0,200);return o.length>0&&o!=="."&&o!==".."?o:null}function ht(e){return e.slice(e.lastIndexOf("/")+1)||"download"}function sn(e){return e.split("/").map(encodeURIComponent).join("/")}var Dr=/[\\u0000-\\u001f\\u007f-\\u009f]/;function Ir(e){if(e==null||e==="")return{ok:!0,scope:null};if(typeof e!="string")return{ok:!1,message:"A scope is a folder path as text, or null"};if(e.length>v.scopeChars)return{ok:!1,message:`A scope is at most ${v.scopeChars} characters`};let t=e.endsWith("/")?e.slice(0,-1):e;if(t.startsWith("/")||/^[A-Za-z]:/.test(t))return{ok:!1,message:"A scope is relative to the session\'s folder, not absolute"};if(t.includes("\\\\"))return{ok:!1,message:"A scope separates folders with /, not \\\\"};if(Dr.test(t))return{ok:!1,message:"A scope cannot contain control characters"};let o=t.split("/");if(o.length>v.scopeSegments)return{ok:!1,message:`A scope is at most ${v.scopeSegments} folders deep`};for(let i of o){if(i===""||i===".")return{ok:!1,message:"A scope has no empty or . folder names"};if(i==="..")return{ok:!1,message:"A scope cannot climb out with .."}}return o[0]==="~"?{ok:!1,message:"A scope is relative to the session\'s folder, not the home folder"}:{ok:!0,scope:t}}function yt(e){if(typeof e!="string"||e==="")return!1;let t=Ir(e);return t.ok&&t.scope===e}function an(e,t){return t===null?!0:e!==null&&(e===t||e.startsWith(`${t}/`))}function ln(e){if(typeof e!="object"||e===null||Array.isArray(e))return!1;let t=e;return Object.keys(t).sort().join(",")!=="scope,title"||t.scope!==null&&!yt(t.scope)?!1:t.title===null||typeof t.title=="string"&&t.title.length<=300}var Cr="up:draft:",Or="up:drafts:";function $e(e,t,o){return`${Cr}${e}:${t}:${o}`}function bt(e){return`${Or}${e}`}function _r(e){return typeof e=="string"||typeof e=="boolean"||Array.isArray(e)&&e.every(t=>typeof t=="string")}function kt(e){return typeof e=="object"&&e!==null&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024}function Pr(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.name=="string"&&Number.isSafeInteger(t.selectionStart)&&Number.isSafeInteger(t.selectionEnd)&&t.selectionStart>=0&&t.selectionEnd>=0}function wt(e){return typeof e!="object"||e===null||Array.isArray(e)?!1:Object.entries(e).every(([t,o])=>t.length<=512&&_r(o))}function St(e){if(typeof e!="object"||e===null)return!1;let t=e;return kt(t.form)&&wt(t.fields)&&(t.focus===null||Pr(t.focus))&&Number.isSafeInteger(t.savedAtMs)&&typeof t.revision=="string"&&/^[a-f0-9]{64}$/.test(t.revision)}function Ye(e){return typeof e=="number"&&Number.isFinite(e)&&e>=0}function cn(e){if(typeof e!="object"||e===null)return!1;let t=e;return typeof t.window!="object"||t.window===null||!Ye(t.window.x)||!Ye(t.window.y)||!Array.isArray(t.elements)||t.elements.length>64?!1:t.elements.every(o=>typeof o=="object"&&o!==null&&typeof o.key=="string"&&o.key.length>0&&o.key.length<=1024&&Ye(o.top)&&Ye(o.left))}var Br=2,xt=1;var Fr=new Set(ft),Nr=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/,Lr=/^[a-z][a-zA-Z0-9-]*(?:\\.[a-z][a-zA-Z0-9]*)+$/,$r=/^[a-z][a-z0-9_]{0,63}$/,Et=/^[a-f0-9]{64}$/,Ur=/^[A-Za-z0-9._-]{1,128}$/;function E(e){return typeof e=="object"&&e!==null&&!Array.isArray(e)}function H(e,t){return Object.keys(e).length===t.length&&t.every(i=>Object.prototype.hasOwnProperty.call(e,i))}function le(e,t,o=[]){let i=Object.keys(e);return t.every(p=>i.includes(p))&&i.every(p=>t.includes(p)||o.includes(p))}function Je(e){return typeof e=="string"&&Nr.test(e)}var xe=e=>typeof e=="number"&&Number.isSafeInteger(e),U=(e,t)=>typeof e=="string"&&e.length<=t,J=(e,t)=>e===void 0||t(e);function dn(e){return typeof e=="object"&&e!==null&&typeof e.size=="number"&&typeof e.name=="string"&&typeof e.arrayBuffer=="function"}function Tt(e){return E(e)&&H(e,["session","documentPath","key","label","field","value","reason","atMs"])&&Le(e.session)&&ee(e.documentPath)&&typeof e.key=="string"&&e.key.length>0&&e.key.length<=1024&&U(e.label,512)&&U(e.field,512)&&typeof e.value=="string"&&(e.reason==="not-on-this-version"||e.reason==="field-filled")&&xe(e.atMs)}function un(e){return E(e)&&H(e,["kind","v","pageRevision","documentPath","embedded"])&&e.kind==="thread-page:ready"&&e.v===Br&&typeof e.pageRevision=="string"&&Et.test(e.pageRevision)&&ee(e.documentPath)&&typeof e.embedded=="boolean"}function Hr(e){return E(e)&&H(e,["name","label","value"])&&U(e.name,128)&&U(e.label,300)&&(typeof e.value=="boolean"||U(e.value,v.answerValueChars)||Array.isArray(e.value)&&e.value.length<=v.answerListItems&&e.value.every(t=>U(t,2e3)))}function qr(e){return E(e)&&le(e,["field","file"],["transcribe"])&&U(e.field,128)&&dn(e.file)&&J(e.transcribe,t=>typeof t=="boolean")}function Wr(e,t){return!E(e)||!le(e,["v","id","method","params","pageRevision"],["scope","files","embed","frame","via"])||"frame"in e&&!ln(e.frame)||"scope"in e&&!yt(e.scope)||"embed"in e&&!(typeof e.embed=="string"&&e.embed.length>0&&e.embed.length<=v.tokenChars)||"via"in e&&!("embed"in e&&typeof e.via=="string"&&e.via.length>0&&e.via.length<=v.tokenChars)||"files"in e&&!(Array.isArray(e.files)&&e.files.every(dn))?!1:e.v===xt&&Je(e.id)&&typeof e.method=="string"&&e.method.length>=3&&e.method.length<=v.methodNameChars&&Lr.test(e.method)&&typeof e.pageRevision=="string"&&Et.test(e.pageRevision)&&(t===void 0||e.pageRevision===t)}function fn(e,t){if(!E(e)||e.v!==xt||typeof e.id!="string"||typeof e.ok!="boolean"||t!==void 0&&e.id!==t)return!1;if(e.ok===!0)return H(e,["v","id","ok","result"]);if(!H(e,["v","id","ok","error"])||!E(e.error))return!1;let o=e.error;return!le(o,["code","message"],["reason","detail"])||"reason"in o&&(typeof o.reason!="string"||!$r.test(o.reason))||"detail"in o&&!("reason"in o)?!1:typeof o.code=="string"&&Fr.has(o.code)&&typeof o.message=="string"&&o.message.length>0&&o.message.length<=v.errorMessageChars}function pn(e){if(!E(e))return!1;if(!("kind"in e))return Wr(e);switch(e.kind){case"thread-page:dirty":return H(e,["kind","custom"])&&typeof e.custom=="boolean";case"thread-page:typing":return H(e,["kind","active"])&&typeof e.active=="boolean";case"thread-page:clean":case"thread-page:escape":return H(e,["kind"]);case"thread-page:draft-discard":return H(e,["kind","session","documentPath","key","field"])&&Le(e.session)&&ee(e.documentPath)&&U(e.key,1024)&&typeof e.key=="string"&&e.key.length>0&&U(e.field,512);case"thread-page:grant-revoke":return H(e,["kind","from","to"])&&Le(e.from)&&Le(e.to);case"thread-page:submit":return le(e,["kind","submissionId","title","writtenAgainst","formId","formTitle","action","answers","files"],["frame"])&&J(e.frame,t=>E(t)&&le(t,["title"],["path"])&&(t.title===null||U(t.title,300))&&J(t.path,ee))&&(e.action===null||U(e.action,v.answerValueChars))&&typeof e.submissionId=="string"&&Ur.test(e.submissionId)&&U(e.title,300)&&typeof e.writtenAgainst=="string"&&Et.test(e.writtenAgainst)&&(e.formId===null||U(e.formId,300))&&(e.formTitle===null||U(e.formTitle,300))&&Array.isArray(e.answers)&&e.answers.length<=v.answersPerSubmission&&e.answers.every(Hr)&&Array.isArray(e.files)&&e.files.length<=v.uploadsPerForm&&e.files.every(qr);case"thread-page:open-document":return le(e,["kind","path"],["fragment","query"])&&ee(e.path)&&J(e.fragment,t=>U(t,v.fragmentChars))&&J(e.query,t=>U(t,v.documentQueryChars));case"thread-page:open-file":return H(e,["kind","path","download","name"])&&Re(e.path)&&typeof e.download=="boolean"&&(e.name===null||U(e.name,255));case"thread-page:file-request":return le(e,["kind","id","path","purpose"],["init"])&&Je(e.id)&&Re(e.path)&&(e.purpose==="media"||e.purpose==="fetch")&&J(e.init,t=>E(t)&&H(t,["method"])&&(t.method==="GET"||t.method==="HEAD"));case"thread-page:fragment":return le(e,["kind","fragment"],["step"])&&U(e.fragment,v.fragmentChars)&&J(e.step,t=>t===!0);case"thread-page:scroll":return H(e,["kind","state"])&&cn(e.state);case"thread-page:draft":return le(e,["kind","form","fields","focus","cleared"],["embed"])&&kt(e.form)&&wt(e.fields)&&(e.focus===null||E(e.focus)&&H(e.focus,["name","selectionStart","selectionEnd"])&&U(e.focus.name,512)&&xe(e.focus.selectionStart)&&xe(e.focus.selectionEnd))&&Array.isArray(e.cleared)&&e.cleared.every(t=>U(t,512))&&J(e.embed,t=>E(t)&&H(t,["sessionId","documentPath"])&&Ne(t.sessionId)&&ee(t.documentPath));case"thread-page:flushed":case"thread-page:pong":return H(e,["kind","nonce"])&&xe(e.nonce);case"thread-page:restored":return H(e,["kind","nonce","firstPaintToRestoreMs"])&&xe(e.nonce)&&(e.firstPaintToRestoreMs===null||typeof e.firstPaintToRestoreMs=="number"&&Number.isFinite(e.firstPaintToRestoreMs));case"thread-page:record":return le(e,["kind","id","purpose"],["prompt","language","maxDurationSeconds","keepAudio","control"])&&Je(e.id)&&(e.purpose==="dictate"||e.purpose==="audio"||e.purpose==="capability")&&J(e.prompt,t=>U(t,v.voicePromptChars))&&J(e.language,t=>U(t,35))&&J(e.maxDurationSeconds,t=>xe(t)&&t>=1&&t<=v.voiceMaxSeconds)&&J(e.keepAudio,t=>typeof t=="boolean")&&J(e.control,t=>t===!0);case"thread-page:embed-dirty":return H(e,["kind","dirty"])&&typeof e.dirty=="boolean";case"thread-page:gesture":return H(e,["kind","atMs"])&&typeof e.atMs=="number"&&Number.isFinite(e.atMs);case"thread-page:page-update-listen":return H(e,["kind","active"])&&typeof e.active=="boolean";case"thread-page:page-updated":return H(e,["kind","nonce","ok"])&&xe(e.nonce)&&typeof e.ok=="boolean";default:return!1}}function N(e,t,o,i,p){let y={code:t,message:o.slice(0,v.errorMessageChars)||"Request failed",...i?{reason:i,...p!==void 0?{detail:p}:{}}:{}};return{v:xt,id:Je(e)?e:"invalid",ok:!1,error:y}}function gn(e){let t=e?.getAttribute("data-config");if(!t)throw new Error("The page runtime\'s configuration is missing");return JSON.parse(t)}var vt="X-Pages-Poll",mn="X-Pages-Hand-Over",hn="X-Pages-Working",yn="X-Pages-Source",bn="X-Pages-Session";var Gr={heading:"Confirm this action",confirmLabel:"Confirm",cancelLabel:"Cancel"},wn={heading:"Allow answers from this page?",confirmLabel:"Allow",cancelLabel:"Don\\u2019t allow"},Sn={heading:"Decide for the agent",confirmLabel:"Confirm",cancelLabel:"Cancel"},xn={heading:"Open this file?",confirmLabel:"Open",cancelLabel:"Cancel"};function kn(e){return e.replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"").slice(0,200)}function En(e,t={}){let o=t.armMs??v.confirmArmMs,i=t.otherQuestionOpen??(()=>!1),p=t.onClosed??(()=>{}),y=e.ownerDocument,f=y.createElement("h2"),h=y.createElement("p");h.setAttribute("data-tp","confirm-summary");let c=y.createElement("p");c.setAttribute("data-tp","confirm-detail"),c.hidden=!0;let r=y.createElement("div"),g=y.createElement("button");g.type="button",g.value="cancel";let b=y.createElement("button");b.type="button",b.value="confirm",r.append(g,b),e.replaceChildren(f,h,c,r);let d=null,a=0,l;function m(w){let S=d;if(d=null,w&&l)try{l()}catch{}l=void 0,e.open&&e.close(),S&&p(),S?.(w)}return g.addEventListener("click",w=>{w.preventDefault(),m(!1)}),b.addEventListener("click",w=>{w.preventDefault(),!(Date.now()<a)&&m(!0)}),e.addEventListener("cancel",w=>{w.preventDefault(),m(!1)}),e.addEventListener("close",()=>{d&&m(!1)}),{confirm(w,S={}){return new Promise(x=>{if(d||i()){x(!1);return}let D=S.wording??Gr;if(a=Date.now()+o,h.textContent=w,S.grant?(c.hidden=!1,c.textContent=`Target: \\u201C${kn(S.grant.title)}\\u201D (${kn(S.grant.sessionId)}). You can revoke this later from the home page or the grants command.`):c.hidden=!0,f.textContent=D.heading,b.textContent=D.confirmLabel,g.textContent=D.cancelLabel,d=x,l=S.onConfirmGesture,typeof e.showModal=="function")try{e.showModal()}catch{m(!1)}else m(!1)})},isOpen:()=>d!==null}}var Rn="A draft was dropped to make room",jr="A draft was shortened to fit";function Tn(){let e=new Map;return{get:t=>e.get(t)??null,set:(t,o)=>{e.set(t,o)},remove:t=>{e.delete(t)}}}function zr(e){return{get:t=>e.getItem(t),set:(t,o)=>e.setItem(t,o),remove:t=>e.removeItem(t)}}function ye(e){return new TextEncoder().encode(e).length}function Me(e,t){let o=t.now??(()=>Date.now()),i=bt(t.session),p,y=!1;try{let a=t.tab?e.sessionStorage:e.localStorage;a.getItem(i),p=zr(a)}catch{p=Tn(),y=!0,t.onFallback?.()}function f(a,l){try{return a()}catch{if(!y){let m=Tn();for(let w of h().keys){let S=p.get(w);S!==null&&m.set(w,S)}m.set(i,p.get(i)??""),p=m,y=!0,t.onFallback?.();try{return a()}catch{return l}}return l}}function h(){try{let a=p.get(i),l=a?JSON.parse(a):null;return{keys:Array.isArray(l?.keys)?l.keys.filter(m=>typeof m=="string"):[]}}catch{return{keys:[]}}}function c(a){let l=0;for(let m of a)l+=ye(p.get(m)??"");p.set(i,JSON.stringify({keys:a,bytes:l}))}function r(a){try{let l=p.get(a),m=l?JSON.parse(l):null;return St(m)?m:null}catch{return null}}function g(a){let l=$e(t.session,"",""),m=a.slice(l.length-1);return m.slice(0,m.indexOf(":"))}function b(){let a=h().keys,l=[],m=!1;for(let w of a){let S=r(w);if(!S||o()-S.savedAtMs>t.retentionMs){p.remove(w),m=!0;continue}l.push(w)}return m&&c(l),l}function d(a,l){let m={...a.fields},w=ye(JSON.stringify({...a,fields:m}));for(let[S,x]of Object.entries(m)){if(w<=l)break;if(typeof x!="string")continue;let D=Math.max(0,x.length-(w-l));m[S]=x.slice(0,D),w=ye(JSON.stringify({...a,fields:m}))}return w<=l?{...a,fields:m}:null}return{put(a,l){return f(()=>{let m=[],w=$e(t.session,a,l.form.key),S=b().filter(R=>R!==w);if(Object.keys(l.fields).length===0)return p.remove(w),c(S),m;let x=l,D=ye(JSON.stringify(x));if(D>t.perSessionBytes){if(x=d(l,t.perSessionBytes),!x)return m;D=ye(JSON.stringify(x)),m.push(jr)}let M=D;for(let R of S)M+=ye(p.get(R)??"");for(;M>t.perSessionBytes&&S.length>0;){let R=S.shift();M-=ye(p.get(R)??""),p.remove(R),m.push(Rn)}return p.set(w,JSON.stringify(x)),c([...S,w]),m},[])},delete(a,l){f(()=>{let m=$e(t.session,a,l);p.remove(m),c(h().keys.filter(w=>w!==m))},void 0)},list(){return f(()=>b().map(a=>({key:a,documentPath:g(a),record:r(a)})).filter(a=>a.record!==null),[])},forDocument(a){return f(()=>b().filter(l=>l.startsWith($e(t.session,a,""))).map(l=>r(l)).filter(l=>l!==null),[])},clearSession(){f(()=>{for(let a of h().keys)p.remove(a);p.remove(i),p.remove(Ze(t.session))},void 0)},isFallback:()=>y}}var Ue="up:leftovers:",Vr="A draft could not be kept for the home page: the browser refused to store it.";function Ze(e){return`${Ue}${e}`}function Ae(e){return[e.session,e.documentPath,e.key,e.field].join("|")}function Rt(e){return e.startsWith("id:")?`#${e.slice(3)}`:e.startsWith("title:")?e.slice(6):e.startsWith("ctl:name:")?e.slice(9):e.startsWith("ctl:")?`#${e.slice(4)}`:"a form"}function He(e){try{let t=e.localStorage;return t.getItem(Ue),t}catch{return null}}function Xe(e,t){try{let o=JSON.parse(e.getItem(Ze(t))??"[]");return Array.isArray(o)?o.filter(Tt):[]}catch{return[]}}var vn=!1;function Qe(e,t,o,i){let p=[],y=[...o].sort((h,c)=>h.atMs-c.atMs),f=0;try{let h=JSON.parse(e.getItem(bt(t))??"{}");f=typeof h.bytes=="number"?h.bytes:0}catch{f=0}for(;y.length>0&&f+ye(JSON.stringify(y))>i.perSessionBytes;)y.shift(),p.push(Rn);try{y.length===0?e.removeItem(Ze(t)):e.setItem(Ze(t),JSON.stringify(y))}catch(h){vn||(vn=!0,console.warn("the browser refused to store a draft for the home page",h)),p.push(Vr)}return p}function An(e,t,o){let i=He(e);if(!i)return[];let p=Xe(i,t.session).filter(y=>Ae(y)!==Ae(t));return Qe(i,t.session,[...p,t],o)}function Mn(e,t,o,i,p){let y=He(e);if(!y)return[];let f=Xe(y,t).filter(c=>!(c.documentPath===o&&c.reason==="not-on-this-version")),h=new Set(f.map(Ae));return Qe(y,t,[...f,...i.filter(c=>!h.has(Ae(c)))],p)}function Dn(e,t,o,i){let p=He(e);if(!p)return;let y=Xe(p,t),f=Me(e,{session:t,retentionMs:i.retentionMs,perSessionBytes:i.perSessionBytes}),h=new Map(f.forDocument(o).map(r=>[r.form.key,r])),c=y.filter(r=>{if(r.documentPath!==o||r.reason!=="not-on-this-version")return!0;let g=h.get(r.key)?.fields[r.field];return typeof g=="string"&&g!==""});c.length!==y.length&&Qe(p,t,c,i)}function At(e,t,o=Date.now()){let i=He(e);if(!i)return[];let p=[],y=[];for(let f=0;f<i.length;f+=1){let h=i.key(f);h&&h.startsWith(Ue)&&y.push(h)}for(let f of y)try{let h=JSON.parse(i.getItem(f)??"[]");if(!Array.isArray(h))continue;let c=h.filter(Tt).filter(r=>o-r.atMs<=t);c.length!==h.length&&(c.length===0?i.removeItem(f):i.setItem(f,JSON.stringify(c))),p.push(...c)}catch{}return p.sort((f,h)=>f.atMs-h.atMs)}function In(e,t,o){let i=He(e);if(!i)return;let p=Ae(t);Qe(i,t.session,Xe(i,t.session).filter(r=>Ae(r)!==p),o);let y=Me(e,{session:t.session,retentionMs:o.retentionMs,perSessionBytes:o.perSessionBytes}),f=y.forDocument(t.documentPath).find(r=>r.form.key===t.key);if(!f||!(t.field in f.fields))return;let h={...f.fields};delete h[t.field],Object.values(h).every(r=>r===""||r===!1||Array.isArray(r)&&r.length===0)?y.delete(t.documentPath,t.key):y.put(t.documentPath,{...f,fields:h,focus:f.focus&&f.focus.name===t.field?null:f.focus})}var Kr="The recording bar opens only when the reader presses something in the page.",Mt={mode:"refuse",reason:Kr},Yr=["pointerdown","pointerup","mousedown","touchend","click","keydown","keyup"];function Cn(e,t={}){let o=t.cooldownMs??2e3,i=t.pollMs??100,p=()=>e.navigator.userActivation,y=!1,f=null,h=Number.NEGATIVE_INFINITY;function c(){f!==null&&clearInterval(f),f=setInterval(()=>{let r=p();(!r||!r.isActive)&&(y=!1,f!==null&&clearInterval(f),f=null)},i)}for(let r of Yr)e.addEventListener(r,g=>{g.isTrusted&&(y=!0,c())},!0);return{decide(r={}){let g=p();return g?g.isActive?r.control===!0?{mode:"record"}:y?{mode:"arm",reason:"the last press was in the host\'s chrome"}:Date.now()-h<o?{mode:"arm",reason:"a bar or question just closed"}:{mode:"record"}:Mt:{mode:"arm",reason:"this browser cannot tell who pressed"}},closed(){h=Date.now()}}}function On(e){let t=o=>{try{return new URL(o,e.location.href).href}catch{return o}};return{inPlace(o){e.location.assign(o)},claim(){let o=null;try{o=e.open("","_blank")}catch{o=null}if(o)try{o.opener=null}catch{}return o},open(o,i){if(i&&!i.closed)try{return i.location.href=t(o),!0}catch{try{i.close()}catch{}}try{return e.open(t(o),"_blank","noopener,noreferrer")!==null}catch{return!1}},close(o){try{o?.close()}catch{}}}}var et="pagesOpening",tt="pagesStarts";function nt(e){return E(e)&&Ne(e.session)&&typeof e.actionToken=="string"&&e.actionToken.length>0&&typeof e.expiresAt=="number"&&typeof e.documentUrl=="string"&&e.documentUrl.startsWith("/")&&(e.filesUrl===null||typeof e.filesUrl=="string"&&e.filesUrl.startsWith("/"))&&(e.siteRoot===null||typeof e.siteRoot=="string"&&e.siteRoot.startsWith("/"))}var Jr=new Set(["storage.get","storage.set","storage.setMany"]);function Dt(e){return new TextEncoder().encode(JSON.stringify(e)).length}function Zr(e){let t=new Uint8Array(18);e.crypto.getRandomValues(t);let o="";for(let i of t)o+=String.fromCharCode(i);return e.btoa(o).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}function Xr(e){try{let t=e.performance.getEntriesByType("navigation")[0];return t?.type==="reload"||t?.type==="back_forward"}catch{return!1}}function Pn(e){let t=Xr(e)&&E(e.history.state)?e.history.state:{},o=en(t[et])?t[et]:Zr(e),i=new Set(Array.isArray(t[tt])?t[tt].filter(c=>typeof c=="string").slice(0,64):[]),p=new Map;function y(c,r){let g=Object.keys(r).length>0?Dt(r):0;for(let[b,d]of p)b!==c&&Object.keys(d).length>0&&(g+=Dt(d));return g}function f(c,r,g,b){let d={...p.get(r)??{}};for(let m of g){if(m.value===null){delete d[m.key];continue}if(Dt(m.value)>v.storageValueBytes)return N(c,"request_too_large",`A storage value is at most ${Ke(v.storageValueBytes)} serialised; "${m.key}" is larger`);d[m.key]=m.value}let a=[...p].filter(([m,w])=>m!==r&&Object.keys(w).length>0).length;if(Object.keys(d).length>0&&a>=256)return N(c,"request_too_large",`At most ${256} scopes hold storage before the agent starts`);let l=y(r,d);return l>v.storagePageBytes?N(c,"request_too_large",`A page\'s storage is at most ${Ke(v.storagePageBytes)} across its scopes; this write would make it ${Ke(l)}`):(p.set(r,d),{v:1,id:c,ok:!0,result:b})}function h(c){return!E(c)||Object.keys(c).sort().join(",")!=="key,value"||!gt(c.key)?null:{key:c.key,value:c.value}}return{opening:o,storage(c){if(!Jr.has(c.method))return null;let{id:r}=c,g=c.scope??null;if(c.frame&&!an(g,c.frame.scope))return N(r,"invalid_params",`This frame is bound to ${c.frame.scope}: its calls stay in that folder or below`);let b=g??"",d=c.params;if(c.method==="storage.get"){if(!E(d)||Object.keys(d).join(",")!=="key"||!gt(d.key))return N(r,"invalid_params","Invalid parameters for storage.get: give { key }, a storage key");let m=p.get(b);return{v:1,id:r,ok:!0,result:m&&Object.prototype.hasOwnProperty.call(m,d.key)?{found:!0,value:m[d.key]}:{found:!1}}}if(c.method==="storage.set"){let m=h(d);return m?f(r,b,[m],{stored:!0}):N(r,"invalid_params","Invalid parameters for storage.set: give { key, value }, key a storage key")}if(!E(d)||Object.keys(d).join(",")!=="entries"||!Array.isArray(d.entries))return N(r,"invalid_params","Invalid parameters for storage.setMany: give { entries: [{ key, value }] }");if(d.entries.length>v.storageSetManyEntries)return N(r,"invalid_params",`At most ${v.storageSetManyEntries} entries in one call`);let a=d.entries.map(h);if(a.some(m=>m===null))return N(r,"invalid_params","Invalid parameters for storage.setMany: each entry is { key, value }, key a storage key");let l=a.map(m=>m.key);return new Set(l).size!==l.length?N(r,"invalid_params","A key appears twice in one call"):f(r,b,a,{stored:a.length})},held(){let c=[];for(let[r,g]of p)Object.keys(g).length>0&&c.push({scope:r===""?null:r,entries:{...g}});return c},starts:()=>[...i],sentBefore:c=>i.has(c),noteSent(c){i.add(c)}}}function Qr(e){let t=ht(e).replace(/[\\u0000-\\u001f\\u007f\u201C\u201D"\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g,"");return t.length<=60?t:`${t.slice(0,59)}\\u2026`}var eo=400;function to(e,t){if(e.filesUrl)return`${e.filesUrl}${sn(t)}`;let o=e.documentUrl.indexOf("?");if(o<0)return null;let i=new URLSearchParams(e.documentUrl.slice(o+1)).get("session");return i===null?null:`${e.documentUrl.slice(0,o)}?session=${encodeURIComponent(i)}&file=${encodeURIComponent(t)}`}function Bn(e,t,o,i,p=eo){function y(g){let b=null;try{b=e.open(g,"_blank")}catch{b=null}if(b)try{b.opener=null}catch{}return b}function f(){let g=e.document;return g.visibilityState==="visible"&&(typeof g.hasFocus!="function"||g.hasFocus())}function h(g,b){y(g)||e.setTimeout(()=>{if(!f())return;let d=!1;i.confirm(`Open \\u201C${Qr(b)}\\u201D in a new tab?`,{wording:xn,onConfirmGesture:()=>{d=y(g)!==null}}).then(a=>{a&&!d&&e.setTimeout(()=>{f()&&e.location.assign(g)},p)})},p)}function c(g,b){let d=e.document,a=d.createElement("a");a.href=g,a.download=b,a.rel="noopener",a.style.display="none",d.body.appendChild(a);try{a.click()}finally{a.remove()}}let r=g=>to(t,g);return{urlOf:r,open(g,b,d){if(!Re(g)||ee(g)&&!b)return;let a=r(g);if(a){if(b||!rn(g)){c(a,(d?on(d):null)??ht(g));return}h(a,g)}},async fetchFor(g,b){let{id:d,path:a}=b,l=(S,x)=>g({kind:"thread-page:file",id:d,ok:!1,status:S,error:x});if(!Re(a))return l(400,"Not a file of this page");if(b.purpose==="media"&&!t.deferredFiles.includes(a))return l(400,"Not a file this document defers");let m=r(a);if(!m)return l(404,"This page has no files of its own");let w=nn(a);try{let S=await o(m,{method:b.init?.method??"GET",credentials:"same-origin",cache:"no-store"});if(!S.ok)return l(S.status,S.status===404?"The file does not exist":`The host answered ${S.status}`);let x=Number(S.headers.get("content-length")??"");if(Number.isFinite(x)&&x>w)return l(413,`Larger than ${Fe(w)}, the most the host reads`);let D=await S.blob();if(D.size>w)return l(413,`Larger than ${Fe(w)}, the most the host reads`);g({kind:"thread-page:file",id:d,ok:!0,status:S.status,contentType:S.headers.get("content-type")??D.type??"",blob:D})}catch(S){l(502,S instanceof Error&&S.message?S.message.slice(0,200):"The file could not be fetched")}}}}var no=3e4,Fn=3e4;function ro(e){let t=e.indexOf("?");if(t<0)return e;let o=new URLSearchParams(e.slice(t+1));o.delete("render");let i=o.toString();return i?`${e.slice(0,t)}?${i}`:e.slice(0,t)}function Nn(e,t,o,i){let p=`"${t.pageRevision}"`,y=!1,f=!1,h=null,c=0,r=null,g=t.working,b=0,d=!1,a=t.source,l=!1,m=()=>e.document.visibilityState==="hidden";function w(){return m()?Fn:g||Date.now()<b?t.pollWorkingMs:t.pollMs}function S(D){h!==null&&clearTimeout(h),h=null,!y&&(c=Date.now()+D,h=setTimeout(()=>{h=null,x()},D))}async function x(){if(y||f)return;Date.now()>=t.expiresAt-no&&o.onExpiring(),f=!0,r=new AbortController;let D=t.documentUrl,M=l?{[vt]:"1"}:{"if-none-match":p,[vt]:"1"};l=!1;try{let R=await i(ro(D),{method:"GET",credentials:"same-origin",cache:"no-store",headers:M,signal:r.signal});if(D!==t.documentUrl)return;if(d&&(d=!1,o.onReachable()),R.status===401||R.status===403){y=!0,o.onUnauthorized();return}if(R.status===404){y=!0,o.onDeleted();return}if(!R.ok&&R.status!==304){o.onUnreachable(),d=!0;return}if(R.headers.get(bn)==="deleted"){y=!0,o.onDeleted();return}if(R.status===304){g=R.headers.get(hn)==="1",o.onWorking(g);let B=R.headers.get(yn);(B==="live"||B==="offline"||B==="archived")&&B!==a&&(a=B,o.onSource(B));return}let L=await R.json().catch(()=>null);if(!oo(L))return;p=`"${L.revision}"`,g=L.working,o.onWorking(g),L.source!==a&&(a=L.source,o.onSource(L.source)),o.onBody(L)}catch(R){R instanceof DOMException&&R.name==="AbortError"||(d=!0,o.onUnreachable())}finally{r=null,f=!1,S(l?0:w())}}return e.document.addEventListener("visibilitychange",()=>{y||(m()?S(Fn):S(0))}),{start:()=>S(w()),stop(){y=!0,h!==null&&clearTimeout(h),h=null,r?.abort()},expectChange(){b=Date.now()+t.pollAfterAnswerMs,!f&&!m()&&(h===null||c-Date.now()>t.pollWorkingMs)&&S(t.pollWorkingMs)},retarget(){h!==null&&clearTimeout(h),h=null,r?.abort(),r=null,p=`"${t.pageRevision}"`,a=t.source,g=t.working,y=!1,f=!1,S(w())},pollNow(D){return D&&D.fresh&&(l=!0),x()},isStopped:()=>y}}function oo(e){return E(e)?typeof e.revision=="string"&&/^[a-f0-9]{64}$/.test(e.revision)&&typeof e.actionToken=="string"&&typeof e.expiresAt=="number"&&typeof e.documentUrl=="string"&&typeof e.working=="boolean"&&(e.source==="live"||e.source==="offline"||e.source==="archived")&&typeof e.empty=="boolean"&&Array.isArray(e.deferredFiles)&&Array.isArray(e.grants)&&E(e.voice)&&typeof e.voice.available=="boolean"&&Array.isArray(e.readMethods):!1}async function De(e){return so(new Uint8Array(await e.arrayBuffer()))}function so(e){let t="";for(let i=0;i<e.length;i+=32768)t+=String.fromCharCode.apply(null,Array.from(e.subarray(i,i+32768)));return btoa(t)}function Ln(e){return{name:e.name||"file",size:e.size,type:e.type||""}}function $n(e){if(e.length>v.promptFiles)return{code:"request_too_large",message:`At most ${v.promptFiles} files per call; this one has ${e.length}`};let t=e.find(i=>i.size>v.promptFileBytes);if(t)return{code:"request_too_large",message:`\\u201C${t.name}\\u201D is larger than ${Fe(v.promptFileBytes)}, the most one file may be`};let o=e.find(i=>i.size===0);return o?{code:"invalid_params",message:`\\u201C${o.name}\\u201D is empty`}:null}async function It(e,t,o,i,p){let y=[];for(let f=0;f<i.length;f+=1){let h=i[f];p(`Attaching ${f+1} of ${i.length}\\u2026`);let c=null;try{let r={actionToken:t.actionToken,requestId:o.requestId,method:o.method,...o.challenge?{challenge:o.challenge}:{},index:f,name:h.name||"file",type:h.type||"",bytes:await De(h)},g=await e(t.routes.attach,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(r)}),b=await g.json().catch(()=>null);!g.ok||!E(b)||b.ok!==!0||typeof b.attachmentId!="string"?c={code:E(b)&&typeof b.code=="string"?b.code:"",message:E(b)&&typeof b.message=="string"&&b.message?b.message:`Upload failed (${g.status})`,...E(b)&&b.reason==="not_started"?{reason:"not_started"}:{}}:y.push(b.attachmentId)}catch(r){c={code:"",message:r instanceof Error&&r.message?r.message:"Upload failed"}}if(c)return p(""),{ok:!1,code:c.code==="request_too_large"?"request_too_large":c.code==="unavailable"?"unavailable":"handler_error",message:`Could not attach \\u201C${h.name}\\u201D: ${c.message.replace(/\\.$/,"")}. Nothing was started or sent.`,...c.reason?{reason:c.reason}:{}}}return p(""),{ok:!0,attachmentIds:y}}var io=["audio/webm","audio/mp4","audio/ogg"],ao=900,Un="Another question is open; answer it first.",qe=class extends Error{constructor(o,i){super(i);ut(this,"code",o);this.name="VoiceFailure"}};function lo(e){let t=e.MediaRecorder;return io.find(o=>{try{return t?.isTypeSupported?.(o)===!0}catch{return!1}})}function Hn(e){let t=e.split(";")[0]?.trim().toLowerCase()??"";return t==="audio/mp4"?"m4a":t==="audio/ogg"?"ogg":"webm"}function Ct(e){let t=Math.max(0,Math.floor(e/1e3));return`${Math.floor(t/60)}:${String(t%60).padStart(2,"0")}`}function qn(e){let t=e.ownerDocument,o=t.createElement("canvas");o.width=160,o.height=28;let i=t.createElement("span");i.setAttribute("data-tp","rec-time");let p=t.createElement("span");p.setAttribute("data-tp","rec-status"),p.setAttribute("role","status");let y=t.createElement("button");y.type="button",y.textContent="Cancel",y.setAttribute("data-tp","rec-cancel");let f=t.createElement("button");f.type="button",f.textContent="Record",f.setAttribute("data-tp","rec-record");let h=t.createElement("button");return h.type="button",h.textContent="Done",h.setAttribute("data-tp","rec-done"),e.replaceChildren(o,i,p,y,f,h),e.hidden=!0,e.tabIndex=-1,{bar:e,wave:o,time:i,status:p,cancel:y,done:h,record:f}}function Wn(e,t,o,i){let p=[],y=!1,f=!1,h=!1,c=null,{bar:r,wave:g,time:b,status:d,cancel:a,done:l,record:m}=o;function w(){for(let C of p)try{C()}catch{}}async function S(){if(!t.voice.available)return t.voice.reason??"This host cannot transcribe voice.";if(y)return"The microphone was not allowed. Reload the page to try again.";if(!e.isSecureContext)return"Recording needs a secure connection to this host.";let C=e.navigator.mediaDevices;if(!C||typeof C.getUserMedia!="function"||typeof e.MediaRecorder!="function")return"This browser cannot record here.";try{let O=await e.navigator.permissions?.query({name:"microphone"});if(O&&!h&&(h=!0,O.onchange=()=>w()),O?.state==="denied")return"The microphone is blocked for this page."}catch{}return null}async function x(C){let O;try{let q={actionToken:t.actionToken,type:C.type||"audio/webm",bytes:await De(C.blob),...C.prompt?{prompt:C.prompt.slice(-v.voicePromptChars)}:{},...C.language?{language:C.language}:{}};O=await i.fetchImpl(t.routes.transcribe,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(q)})}catch{throw new qe("unavailable","The host could not be reached to transcribe the recording")}let F=await O.json().catch(()=>null);if(O.ok&&E(F)&&F.ok===!0&&typeof F.text=="string")return F.text;let G=E(F)&&typeof F.code=="string"?F.code:"",j=E(F)&&typeof F.message=="string"&&F.message?F.message:`Transcription failed (${O.status})`;throw new qe(G==="request_too_large"?"request_too_large":G==="rate_limited"?"rate_limited":"unavailable",j)}async function D(){let C=e.navigator.mediaDevices;if(t.voice.deviceId)try{return await C.getUserMedia({audio:{deviceId:{exact:t.voice.deviceId}}})}catch(O){let F=O.name;if(F==="NotAllowedError"||F==="SecurityError")throw O}return C.getUserMedia({audio:!0})}function M(C){d.textContent=C}function R(C){r.hidden=!1,r.dataset.state="starting",r.dataset.purpose=C,b.textContent="0:00",l.disabled=!0,l.hidden=!1,m.hidden=!0,a.disabled=!1,M("Starting the microphone\\u2026");try{r.focus({preventScroll:!0})}catch{}}function L(){r.hidden=!0,r.dataset.state="",M(""),g.getContext?.("2d")?.clearRect(0,0,g.width,g.height),i.restoreFocus()}function B(C,O){return f||i.questionOpen()?Promise.resolve({ok:!1,code:"unavailable",message:Un}):C.gesture.mode==="refuse"?Promise.resolve({ok:!1,code:"unavailable",message:C.gesture.reason}):(f=!0,S().then(F=>F||i.questionOpen()?(f=!1,{ok:!1,code:"unavailable",message:F??Un}):ce(C,O)))}function ce(C,O){return new Promise(F=>{let G=null,j=null,q=null,te=0,oe=null,Z=null,Y=[],Ie="",be=0,ke=0,Ee=null,se=!1,ie=!1,Te=null;function Ge(){oe!==null&&clearInterval(oe),Z!==null&&clearTimeout(Z),oe=null,Z=null,te&&e.cancelAnimationFrame?.(te),te=0;try{j&&j.state!=="inactive"&&j.stop()}catch{}for(let _ of G?.getTracks()??[])_.stop();G=null,q?.close().catch(()=>{}),q=null}function K(_){se||(se=!0,Ge(),e.removeEventListener("keydown",z,!0),e.removeEventListener("pagehide",X),a.removeEventListener("click",X),l.removeEventListener("click",Q),Te?.(),m.hidden=!0,l.hidden=!1,f=!1,c=null,L(),i.onClosed?.(),!_.ok&&_.code!=="cancelled"&&i.setStatus(`Voice: ${_.message}`),F(_))}function X(){ie||K({ok:!1,code:"cancelled",message:"The reader cancelled the recording; nothing was sent."})}function z(_){_.key==="Escape"&&(_.preventDefault(),X())}function we(_){let W=new Uint8Array(new ArrayBuffer(_.fftSize)),V=g.getContext?.("2d"),$=()=>{if(se||ke||!V)return;_.getByteTimeDomainData(W);let{width:ue,height:fe}=g;V.clearRect(0,0,ue,fe),V.fillStyle="currentColor";let Ve=Math.max(8,Math.floor(ue/5)),pe=Math.floor(W.length/Ve)||1;for(let ae=0;ae<Ve;ae+=1){let Se=0;for(let ve=0;ve<pe;ve+=1)Se=Math.max(Se,Math.abs((W[ae*pe+ve]??128)-128));let Ce=Math.max(2,Math.min(fe,Se/128*fe*1.8));V.fillRect(ae*5,(fe-Ce)/2,3,Ce)}te=e.requestAnimationFrame($)};te=e.requestAnimationFrame($)}function je(){if(Ee)return Ee;ke=ke||Date.now(),oe!==null&&clearInterval(oe),oe=null,Z!==null&&clearTimeout(Z),Z=null,Ee=new Promise(_=>{if(!j||j.state==="inactive"){_();return}j.addEventListener("stop",()=>_(),{once:!0});try{j.stop()}catch{_()}});for(let _ of G?.getTracks()??[])_.stop();return Ee}async function ze(){if(ie||!be)return;let _=(ke||Date.now())-be;if(_<v.voiceMinMs){ie=!0,l.disabled=!0,a.disabled=!0,r.dataset.state="short",M("Too short"),Ge(),setTimeout(()=>{ie=!1,K({ok:!1,code:"cancelled",message:`The recording was shorter than ${v.voiceMinMs/1e3} s, so nothing was sent.`})},ao);return}ie=!0,l.disabled=!0,a.disabled=!0,await je();let W=Ie||j?.mimeType||"audio/webm",V=new Blob(Y,{type:W});if(V.size===0){ie=!1,K({ok:!1,code:"unavailable",message:"Nothing was recorded. Check the microphone and try again."});return}r.dataset.state="working",M(C.purpose==="audio"?"Saving the recording\\u2026":"Transcribing\\u2026");try{let $=await O({blob:V,type:W,durationMs:_});ie=!1,K({ok:!0,value:$})}catch($){ie=!1,K({ok:!1,code:$ instanceof qe?$.code:"unavailable",message:$ instanceof Error&&$.message?$.message:"The recording could not be transcribed."})}}function Q(){ze()}c=X,R(C.purpose),e.addEventListener("keydown",z,!0),e.addEventListener("pagehide",X),a.addEventListener("click",X),l.addEventListener("click",Q);function ne(){D().then(_=>{if(se){for(let $ of _.getTracks())$.stop();return}G=_;let W=lo(e);try{j=W?new e.MediaRecorder(_,{mimeType:W}):new e.MediaRecorder(_)}catch{K({ok:!1,code:"unavailable",message:"This browser cannot record here."});return}j.addEventListener("dataavailable",$=>{$.data&&$.data.size>0&&(Y.push($.data),!Ie&&$.data.type&&(Ie=$.data.type))}),j.addEventListener("error",()=>K({ok:!1,code:"unavailable",message:"The recording failed."}));try{j.start(v.recorderSliceMs)}catch{K({ok:!1,code:"unavailable",message:"The recording could not start."});return}be=Date.now(),r.dataset.state="recording",l.disabled=!1,M("Recording. Press Done to send it, Cancel or Escape to discard it.");let V=C.maxDurationSeconds*1e3;oe=setInterval(()=>{b.textContent=Ct(Date.now()-be)},v.recorderSliceMs),Z=setTimeout(()=>{je().then(()=>{se||(b.textContent=Ct(V),r.dataset.state="limit",M(`Reached ${Ct(V)}, the most for this recording. Done sends it; Cancel discards it.`))})},V);try{let $=e.AudioContext??e.webkitAudioContext;if($){q=new $,q.resume?.().catch(()=>{});let ue=q.createAnalyser();ue.fftSize=512,q.createMediaStreamSource(_).connect(ue),we(ue)}}catch{}},_=>{let W=_.name;if(W==="NotAllowedError"||W==="SecurityError"){y=!0,w(),K({ok:!1,code:"unavailable",message:"The microphone was not allowed. Reload the page to try again."});return}K({ok:!1,code:"unavailable",message:W==="NotFoundError"?"No microphone was found.":"The microphone could not be started."})})}if(C.gesture.mode==="arm"){let _=Date.now();r.dataset.state="armed",l.hidden=!0,m.hidden=!1,M("Press Record to start recording, or Cancel.");let W=V=>{!V.isTrusted||se||Date.now()-_<v.confirmArmMs||(m.removeEventListener("click",W),m.hidden=!0,l.hidden=!1,r.dataset.state="starting",M("Starting the microphone\\u2026"),ne())};m.addEventListener("click",W),Te=()=>m.removeEventListener("click",W)}else ne()})}return{async usable(){let C=await S();return{available:C===null,reason:C}},onChange(C){p.push(C)},isOpen:()=>f,capture:B,cancel(){c?.()},transcribe:x}}var co=new Set(["sessions.start","sessions.send","session.reply"]),Gn=new Set(["session.reply","pages.answer","session.respond","sessions.respond"]),uo="voice.captureAndTranscribe";function fo(e){if(!E(e)||e.kind!=="page"&&e.kind!=="host"&&e.kind!=="external"||typeof e.url!="string")return null;let t=e.url.startsWith("/"),o=/^https?:\\/\\//i.test(e.url);return e.kind==="page"&&!t||e.kind==="external"&&!o||e.kind==="host"&&!t&&!o?null:{kind:e.kind,url:e.url,...e.kind==="page"&&e.newTab===!0?{newTab:!0}:{}}}function po(e){return e.method==="pages.open"&&E(e.params)&&e.params.newTab===!0}function go(e,t){return e==="context.get"||t.includes(e)}function jn(e){let{config:t,confirmer:o,navigator:i}=e;async function p(d,a,l,m){let w={actionToken:d,request:a,...l?{confirmation:l}:{},...m?{newSession:m.block}:{}};return(await e.fetchImpl(t.routes.bridge,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(w)})).json().catch(()=>null)}async function y(d,a,l){let m={actionToken:d.token(),action:"declined",requestId:a,target:l};try{await e.fetchImpl(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(m)})}catch{}}function f(d){let a=d.tab;return d.tab=null,a}function h(d,a,l,m,w){if(!E(l)||!fn(l.response,a.id)){i.close(f(m)),d.post(N(a.id,"invalid_response","The bridge returned an invalid response"));return}let S=l.response,x=l.navigate===void 0?null:fo(l.navigate);if(w&&S.ok&&nt(l.started)&&w.onStarted(l.started),d.post(S),S.ok&&x){x.kind==="external"||x.newTab?i.open(x.url,f(m))||e.onBlockedOpen(x.url):(i.close(f(m)),i.inPlace(x.url));return}i.close(f(m))}async function c(d,a,l,m,w){let S=a.files??[],x=a;if(a.files!==void 0){if(!co.has(a.method)||!E(a.params)||"files"in a.params){d.post(N(a.id,"invalid_params",`${a.method} does not take files this way`));return}let M=$n(S);if(M){d.post(N(a.id,M.code,M.message));return}x={v:a.v,id:a.id,method:a.method,params:{...a.params,files:S.map(Ln)},pageRevision:a.pageRevision,...a.scope!==void 0?{scope:a.scope}:{},...a.frame!==void 0?{frame:a.frame}:{}}}let D=M=>{let{files:R,...L}=x.params;return{...x,params:{...L,attachments:M}}};try{if(S.length>0&&x.method==="session.reply"){let R=await It(e.fetchImpl,{...t,actionToken:d.token()},{requestId:x.id,method:x.method},S,e.onStatus);if(!R.ok){d.post(N(x.id,R.code,R.message,R.reason));return}x=D(R.attachmentIds)}let M=await p(d.token(),x,void 0,w);if(E(M)&&E(M.record)){await r(d,x,M.record,l);return}if(E(M)&&E(M.confirm)){let R=M.confirm;if(typeof R.challenge!="string"||typeof R.summary!="string"||R.requestId!==x.id){d.post(N(x.id,"invalid_response","The bridge returned an invalid confirmation"));return}let L=R.kind==="grant"&&E(R.grant)&&typeof R.grant.sessionId=="string"&&typeof R.grant.title=="string"?{sessionId:R.grant.sessionId,title:R.grant.title}:null,B=R.kind==="decision",ce=x.method==="navigation.openExternal";if(!await o.confirm(R.summary,{...L?{wording:wn,grant:L}:B?{wording:Sn}:{},...ce?{onConfirmGesture:()=>{m.tab=i.claim()}}:{}})){i.close(f(m)),d.post(N(x.id,"cancelled",L?"You did not allow it, so the answer was not sent":"You declined this action"));let G=E(x.params)?x.params:{};L?y(d,x.id,{kind:"grant",session:L.sessionId}):B&&typeof G.id=="string"&&y(d,x.id,{kind:"decision",session:typeof G.sessionId=="string"?G.sessionId:t.session,waitId:G.id});return}if(S.length>0&&x.method!=="session.reply"){let G=await It(e.fetchImpl,{...t,actionToken:d.token()},{requestId:x.id,method:x.method,challenge:R.challenge},S,e.onStatus);if(!G.ok){i.close(f(m)),d.post(N(x.id,G.code,G.message));return}x=D(G.attachmentIds)}let O=await p(d.token(),x,R.challenge,w),F=E(O)&&E(O.response)&&E(O.response.error)&&O.response.error.code==="confirmation_invalid";L&&E(O)&&E(O.response)&&!F&&e.onGranted(L),Gn.has(x.method)&&E(O)&&E(O.response)&&O.response.ok===!0&&e.onAnswered(),h(d,x,O,m,w);return}Gn.has(x.method)&&E(M)&&E(M.response)&&M.response.ok===!0&&e.onAnswered(),h(d,x,M,m,w)}catch(M){i.close(f(m)),d.post(N(x.id,"unavailable",M instanceof Error&&M.message?M.message:"The bridge is unavailable"))}}async function r(d,a,l,m){let w=E(l.params)?l.params:{};if(l.requestId!==a.id||!e.voice){d.post(N(a.id,e.voice?"invalid_response":"unavailable",e.voice?"The bridge returned an invalid answer":"This page cannot record here."));return}let S=e.voice,x=typeof w.maxDurationSeconds=="number"?w.maxDurationSeconds:v.voiceDefaultSeconds,D=typeof w.prompt=="string"?w.prompt:void 0,M=typeof w.language=="string"?w.language:void 0,R=await S.capture({maxDurationSeconds:x,gesture:m,purpose:"capability"},async B=>({text:await S.transcribe({blob:B.blob,type:B.type,...D?{prompt:D}:{},...M?{language:M}:{}}),recording:B}));if(!R.ok){d.post(N(a.id,R.code,R.message));return}let L=w.keepAudio===!0?{text:R.value.text,audio:R.value.recording.blob}:{text:R.value.text};d.post({v:1,id:a.id,ok:!0,result:L})}async function g(d,a,l){let m=a.id;if(!e.voice){d.post({kind:"thread-page:recorded",id:m,ok:!1,code:"unavailable",message:"This page cannot record here."});return}let w=e.voice,S=(a.prompt??"").slice(-v.voicePromptChars),x;if(a.purpose==="audio"?x=await w.capture({maxDurationSeconds:a.maxDurationSeconds??v.voiceDefaultSeconds,gesture:l,purpose:"audio"},async D=>{let M=new Date().toISOString().replace(/[-:]/g,"").replace(/\\..+$/,"").replace("T","-");return{file:new File([D.blob],`recording-${M}.${Hn(D.type)}`,{type:D.type})}}):x=await w.capture({maxDurationSeconds:a.maxDurationSeconds??v.voiceDefaultSeconds,gesture:l,purpose:"dictate"},async D=>({text:await w.transcribe({blob:D.blob,type:D.type,...S?{prompt:S}:{},...a.language?{language:a.language}:{}})})),!x.ok){d.post({kind:"thread-page:recorded",id:m,ok:!1,code:x.code,message:x.message});return}d.post({kind:"thread-page:recorded",id:m,ok:!0,...x.value})}function b(d,a,l){return{...d,post(m){d.post(m),!("kind"in m)&&m.id===a&&l.onSettled(m)}}}return{bridge(d,a,l){let m=l?b(d,a.id,l):d,w=()=>{let S={tab:po(a)?i.claim():null};c(m,a,a.method===uo?e.readerGesture():Mt,S,l).finally(()=>i.close(f(S)))};if(d.isShown()||go(a.method,d.readMethods())){w();return}d.whenShown(w)},record(d,a){if(a.purpose==="capability"){d.post({kind:"thread-page:recorded",id:a.id,ok:!1,code:"unavailable",message:"Recording for a capability is confirmed by the bridge, not asked for directly."});return}let l=()=>{g(d,a,e.readerGesture({control:a.purpose==="dictate"&&a.control===!0}))};d.isShown()?l():d.whenShown(l)}}}var rt="The new version is still loading\\u2026",zn="This page keeps reloading itself and was stopped; reload this tab to try again.",Vn="This session is archived \\u2014 read-only",Kn="This session was deleted.",Yn="Session expiring \\u2014 reload when ready",Jn="Session expired \\u2014 reload this page",Ot="Cannot reach the host",_t="Drafts survive updates but not a reload in this browser.",Zn="The browser blocked the new tab.";function Xn(e){let t=e.ownerDocument,o=t.createElement("span");o.setAttribute("data-tp","notice-text");let i=t.createElement("a");i.setAttribute("data-tp","notice-link"),i.target="_blank",i.rel="noopener noreferrer",i.hidden=!0,e.replaceChildren(o,i);let p=null,y=null;function f(){o.textContent=p?.text??"";let c=p?.link;i.hidden=!c,i.href=c?c.href:"",i.textContent=c?c.label:"",p&&p.text?e.setAttribute("data-visible","true"):e.removeAttribute("data-visible")}function h(){y!==null&&clearTimeout(y),y=null}return f(),{element:e,set(c){h(),p={text:c},f()},clear(){h(),p=null,f()},link(c,r,g){h(),p={text:c,link:{href:r,label:g}},f()},notice(c,r=6e3){h(),p={text:c},f(),y=setTimeout(()=>{y=null,p=null,f()},r)},text:()=>p?.text??""}}var Qn=" \\u2026 (transcript shortened)";function er(e){return e.length<=v.transcriptChars?e:`${e.slice(0,v.transcriptChars-Qn.length)}${Qn}`}async function mo(e,t){let o=t.file,i=o.name||"file";if(o.size<=0)throw new Error(`\\u201C${i}\\u201D is empty`);if(o.size>e.config.maxUploadBytes)throw new Error(`\\u201C${i}\\u201D is larger than ${Math.round(e.config.maxUploadBytes/(1024*1024))} MiB`);let p={actionToken:e.token(),field:String(t.field||"file").slice(0,128),name:i.slice(0,255),type:o.type||"application/octet-stream",bytes:await De(o)},y=await e.fetchImpl(e.config.routes.upload,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(p)}),f=await y.json().catch(()=>null);if(!y.ok||!E(f)||f.ok!==!0||typeof f.name!="string"||typeof f.path!="string"||typeof f.sizeBytes!="number")throw new Error(E(f)&&typeof f.message=="string"&&f.message||`Upload failed (${y.status})`);return{field:p.field,name:f.name,path:f.path,sizeBytes:f.sizeBytes}}async function Pt(e,t,o){let{submissionId:i}=o;try{let p=o.files;if(p.length>e.config.maxUploads)throw new Error(`This form has ${p.length} files; at most ${e.config.maxUploads} can be sent at once`);let y=[];for(let b=0;b<p.length;b+=1)t({kind:"thread-page:submit-progress",submissionId:i,message:`Uploading ${b+1} of ${p.length}\\u2026`}),y.push(await mo(e,p[b]));let f=p.map((b,d)=>({entry:b,index:d})).filter(({entry:b})=>b.transcribe===!0&&/^audio\\//i.test(b.file.type??""));for(let b=0;b<f.length;b+=1){let{entry:d,index:a}=f[b];t({kind:"thread-page:submit-progress",submissionId:i,message:`Transcribing ${b+1} of ${f.length}\\u2026`});let l=e.voice&&e.config.voice.available?await e.voice.transcribe({blob:d.file,type:d.file.type}).catch(()=>null):null;y[a].transcript=l===null?null:er(l)}y.length>0&&t({kind:"thread-page:submit-progress",submissionId:i,message:"Sending\\u2026"});let h={actionToken:e.token(),submissionId:i,writtenAgainst:o.writtenAgainst,formId:o.formId,formTitle:o.formTitle,title:o.title,action:o.action,answers:o.answers,files:y,...o.frame?{frame:o.frame}:{},...e.start?{newSession:e.start.block}:{}},c=await e.fetchImpl(e.config.routes.submit,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(h)}),r=await c.json().catch(()=>null);if(c.ok&&E(r)&&r.ok===!0){e.onAnswered(),e.start&&nt(r.started)&&e.start.onStarted(r.started);let b=r.delivery==="queued"||r.delivery==="steered"?r.delivery:"started";t({kind:"thread-page:submit-result",submissionId:i,ok:!0,delivery:b,...typeof r.matchedRevision=="string"?{matchedRevision:r.matchedRevision}:{},revisionChanged:r.revisionChanged===!0});return}let g=E(r)&&Kt(r.code)?r.code:"unavailable";t({kind:"thread-page:submit-result",submissionId:i,ok:!1,error:g,message:(E(r)&&typeof r.message=="string"&&r.message||`Request failed (${c.status})`).slice(0,512)})}catch(p){t({kind:"thread-page:submit-result",submissionId:i,ok:!1,error:"unavailable",message:(p instanceof Error&&p.message?p.message:"Request failed").slice(0,512)})}}var ho=["allow-scripts","allow-forms","allow-popups","allow-downloads"],Bt=ho.join(" ");var tr="fullscreen *; clipboard-write *",Ks=[`sandbox ${Bt}`,"default-src * data: blob: \'unsafe-inline\' \'unsafe-eval\'","frame-src https: blob: data:","frame-ancestors \'self\'"].join("; ");var yo={opacity:"0","pointer-events":"none","z-index":"0"},bo={opacity:"1","pointer-events":"","z-index":"1"};function ko(e,t,o){let i=e.createElement("iframe");return i.setAttribute("sandbox",Bt),i.setAttribute("allow",tr),i.setAttribute("referrerpolicy","no-referrer"),i.setAttribute("title","Page"),i.setAttribute("data-tp-frame",o?"incoming":"shown"),o?wo(i):Ft(i),i.setAttribute("src",t.documentUrl+t.fragment),i}function wo(e){for(let[t,o]of Object.entries(yo))e.style.setProperty(t,o);e.setAttribute("aria-hidden","true"),e.setAttribute("inert","")}function Ft(e){for(let[t,o]of Object.entries(bo))o===""?e.style.removeProperty(t):e.style.setProperty(t,o);e.removeAttribute("aria-hidden"),e.removeAttribute("inert"),e.setAttribute("data-tp-frame","shown")}function Nt(e,t,o){return{element:ko(e,t,o),target:t,port:null,connected:!1,restored:!1,shown:!1,dirty:!1,embedDirty:!1,typing:!1,pending:0,toldUpdate:!1,pageUpdate:!1,handing:0,scroll:null,queue:[],handed:new Map,nonce:0,answered:0,pinged:0,loadStartedAt:Date.now(),timers:[],cancelled:!1}}function I(e,t){if(!e.port)return!1;try{return e.port.postMessage(t),!0}catch{return!1}}function Lt(e){for(let t of e.timers)clearTimeout(t);e.timers=[]}function nr(e){e.cancelled=!0,Lt(e),e.queue=[];try{e.port?.close()}catch{}e.port=null,e.element.remove()}var We="pagesDocument",ot="pagesFragment",rr="pagesQuery",$t="pagesFrame";function or(e,t,o,i={}){let p=e.document,y=i.fetchImpl??e.fetch.bind(e),f=i.now??(()=>Date.now()),h=Xn(o.notice),c="LOADING",r=null,g=null,b="revision",d=null,a=t.navigable||t.builtinHome,l=a?he(e.location.hash):"",m=0,w=null,S=new Map,x=0,D=!1,M=new WeakMap,R=Math.random().toString(36).slice(2),L=0,B={path:t.documentPath,query:t.documentQuery},ce=0,C={retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes},O=t.newSession===!0?Pn(e):null,F=Me(e,{session:O?`~opening:${O.opening}`:t.session,...O?{tab:!0}:{},retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:f,onFallback:()=>h.notice(_t)}),G=On(e),j=Cn(e),q=null,te=En(o.dialog,{otherQuestionOpen:()=>q?.isOpen()??!1,onClosed:()=>{j.closed(),z()}});o.recorder&&(q=Wn(e,t,qn(o.recorder),{questionOpen:()=>te.isOpen(),restoreFocus:()=>{try{r?.element.focus({preventScroll:!0})}catch{}},setStatus:n=>h.notice(n),onClosed:()=>{j.closed(),z()},fetchImpl:y}),q.onChange(()=>{se(),z()}));let oe=Bn(e,t,y,te),Z=jn({config:t,confirmer:te,navigator:G,voice:q,readerGesture:n=>j.decide(n),onGranted:()=>{Y.pollNow({fresh:!0})},onAnswered:()=>Y.expectChange(),onStatus:n=>n?h.set(n):h.clear(),onBlockedOpen:n=>h.link(Zn,n,"Open it"),fetchImpl:y}),Y=Nn(e,t,{onBody:n=>ie(n),onWorking:n=>Ee(n),onSource:n=>Ie(n),onDeleted:()=>{c="DELETED",F.clearSession(),g&&ae(),h.set(Kn)},onUnauthorized:()=>h.set(Jn),onUnreachable:()=>h.set(Ot),onReachable:()=>{h.text()===Ot&&h.clear()},onExpiring:()=>h.set(Yn)},y);function Ie(n){t.source=n;for(let s of[r,g])s&&I(s,be())}function be(){return{kind:"thread-page:source-state",stale:t.source==="offline",archived:t.source==="archived",reason:t.source==="archived"?Vn:null}}function ke(){return{kind:"thread-page:session-state",working:t.working,label:t.workingLabel}}function Ee(n){if(n!==t.working){t.working=n;for(let s of[r,g])s&&I(s,ke())}}async function se(){let n=q?await q.usable():{available:!1,reason:t.voice.reason};for(let s of[r,g])s&&I(s,{kind:"thread-page:voice",available:n.available,reason:n.reason})}function ie(n){t.actionToken=n.actionToken,t.expiresAt=n.expiresAt,t.readMethods=n.readMethods,t.empty=n.empty,JSON.stringify(n.grants)!==JSON.stringify(t.grants)&&(t.grants=n.grants,jt()),(n.voice.available!==t.voice.available||n.voice.reason!==t.voice.reason)&&(t.voice={...t.voice,available:n.voice.available,reason:n.voice.reason},se());for(let u of[r,g])u&&u.target.path===t.documentPath&&(u.target.token=n.actionToken);if(c==="DELETED"||c==="STOPPED")return;let s=r?.target.revision??t.pageRevision;if(n.revision===s){g&&b==="revision"&&g.target.revision!==n.revision&&g.target.path===t.documentPath&&ae(),d&&(d=null,r&&(r.toldUpdate=!1,I(r,{kind:"thread-page:update",available:!1})),c==="DEFERRED"&&(c="SHOWN"));return}Ge(n)}function Te(n){return{documentUrl:n.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:l,token:n.actionToken,revision:n.revision,expiresAt:n.expiresAt,source:n.source,empty:n.empty,deferredFiles:n.deferredFiles}}function Ge(n){d=n,!(g&&g.target.revision===n.revision)&&(g&&b==="revision"&&ae(),z())}function K(){r&&(g&&b==="revision"&&ae(),(c==="SHOWN"||c==="INCOMING")&&(c="DEFERRED"),r.toldUpdate||(r.toldUpdate=!0,I(r,{kind:"thread-page:update",available:!0})))}function X(n){let s=te.isOpen()||(q?.isOpen()??!1);return n.pending>0||s?!0:p.visibilityState==="hidden"?!1:n.typing||n.dirty||n.embedDirty}function z(){if(!(!r||!d||c==="DELETED"||c==="STOPPED"||c==="RELOAD")){if(X(r)){K();return}if(!(g||r.handing)){if(r.pageUpdate&&r.connected&&r.target.path===t.documentPath){je(r,d);return}pe(Te(d),"revision")}}}let we=new Map;async function je(n,s){let u=++n.nonce;n.handing=u;let k=()=>!n.cancelled&&r===n&&n.handing===u,T=null;try{let P=await y(s.documentUrl,{method:"GET",credentials:"same-origin",cache:"no-store",headers:{[mn]:"1"}});P.ok&&(T=await P.text())}catch{T=null}if(!k())return;if(d?.revision!==s.revision||X(n)){n.handing=0,z();return}let A=T!==null&&await new Promise(P=>{let re=!1,Be=dt=>{re||(re=!0,we.delete(n),P(dt))};we.set(n,{nonce:u,settle:Be}),ne(n,t.refreshSwapMs,()=>Be(!1)),I(n,{kind:"thread-page:page-update",nonce:u,revision:s.revision,documentPath:n.target.path,html:T})||Be(!1)});if(k()){if(n.handing=0,!A){d&&d.revision===s.revision&&!g?pe(Te(s),"revision"):z();return}n.target={...Te(s),token:t.actionToken,expiresAt:t.expiresAt},Se(n.target),d&&d.revision===s.revision&&(d=null),c==="DEFERRED"&&(c="SHOWN"),n.toldUpdate&&(n.toldUpdate=!1,I(n,{kind:"thread-page:update",available:!1})),Y.retarget(),z()}}function ze(n){we.get(n)?.settle(!1),nr(n)}function Q(n){return{token:()=>n.target.token,readMethods:()=>t.readMethods,isShown:()=>n.shown,whenShown:s=>{n.shown?s():n.queue.push(s)},post:s=>{I(n,s)}}}function ne(n,s,u){let k=setTimeout(()=>{n.cancelled||u()},s);n.timers.push(k)}function _(n){let s=++n.pinged;I(n,{kind:"thread-page:ping",nonce:s}),ne(n,t.reload.pingMs,()=>{n.answered<s&&I(n,{kind:"thread-page:ping",nonce:++n.pinged})}),ne(n,t.reload.waitMs,()=>{n.answered>=s||Oe()})}function W(n){return n.port?new Promise(s=>{let u=++n.nonce,k=!1,T=()=>{k||(k=!0,s())};V.set(n,{nonce:u,finish:T}),setTimeout(T,t.drafts.flushMs),I(n,{kind:"thread-page:flush",nonce:u})}):Promise.resolve()}let V=new Map;function $(n,s){let u=F.forDocument(n.target.path);n.handed=new Map(u.map(A=>[A.form.key,A]));let k=[...S.entries()].filter(([A])=>A.startsWith(`${n.target.path}:`)).map(([A,P])=>({form:{key:A.slice(n.target.path.length+1)},fields:P}));S.clear();let T={kind:"thread-page:restore",nonce:++n.nonce,scroll:s?r?.scroll??null:null,drafts:u,clearedNotice:k};return t.builtinHome&&(T.leftovers=At(e,t.drafts.retentionMs,f())),T}function ue(n,s){n.port=s,n.connected=!0,s.onmessage=k=>ve(n,k.data),s.start?.(),I(n,be()),I(n,ke()),se(),t.builtinHome&&I(n,{kind:"thread-page:grants",grants:t.grants});let u=n!==r&&r!==null&&r.target.path===n.target.path;I(n,$(n,u||n===r)),t.builtinHome&&(n.target.fragment=l,I(n,{kind:"thread-page:move-fragment",fragment:l})),_(n),n===r&&(c="CONNECTING",ne(n,t.refreshSwapMs,()=>{n.shown||fe(n)}))}function fe(n){if(n.shown)return;n.shown=!0,c="SHOWN",I(n,{kind:"thread-page:shown"});let s=n.queue;n.queue=[];for(let u of s)u();try{n.element.focus({preventScroll:!0})}catch{}Ut(n),Ve(n),z()}function Ve(n){w!==null&&clearTimeout(w),w=setTimeout(()=>{w=null,r===n&&n.answered>0&&(m=0)},t.reload.clearMs)}function pe(n,s){g&&ae();let u=r,k=++x;D=!0;let T=()=>{if(k===x&&(D=!1),k!==x||c==="DELETED")return;if(s==="revision"&&r&&X(r)){K();return}let A=Nt(p,n,!0);g=A,b=s,c="INCOMING",o.frameHost.appendChild(A.element),ne(A,t.refreshSwapMs,()=>{if(g===A){if(s==="revision"&&r&&X(r)){K();return}Ce(A,!0)}}),ne(A,t.reload.waitMs,()=>{g===A&&!A.connected&&Oe()}),s!=="revision"&&(Se(n),s==="document"&&h.clear())};u?.port?W(u).then(T):T()}function ae(){let n=g;n&&(g=null,ze(n),c==="INCOMING"&&(c=r?"SHOWN":"LOADING"))}function Se(n){t.actionToken=n.token,t.pageRevision=n.revision,t.expiresAt=n.expiresAt,t.documentUrl=n.documentUrl,t.documentPath=n.path,t.documentQuery=n.query,t.source=n.source,t.empty=n.empty,t.deferredFiles=n.deferredFiles,l=n.fragment}function Ce(n,s){if(g!==n)return;g=null,Lt(n);let u=r;Ft(n.element),u&&ze(u),r=n,Se(n.target),zt(n),d&&d.revision===n.target.revision&&(d=null),s&&!n.restored&&p.visibilityState!=="hidden"?h.set(rt):h.text()===rt&&h.clear(),fe(n),Y.retarget(),n.connected?_(n):ne(n,t.reload.waitMs,()=>{n.connected||Oe()})}function ve(n,s){if(n.cancelled||!pn(s))return;if(!("kind"in s)){if(t.newSession&&O&&s.embed===void 0&&fr(n,s))return;Z.bridge(Q(n),s);return}let u=s;switch(u.kind){case"thread-page:pong":n.answered=Math.max(n.answered,u.nonce);return;case"thread-page:restored":n.restored=!0,g===n?b==="revision"&&r&&X(r)?K():Ce(n,!1):r===n&&(n.shown?h.text()===rt&&h.clear():fe(n));return;case"thread-page:flushed":{let k=V.get(n);k&&k.nonce===u.nonce&&(V.delete(n),k.finish());return}case"thread-page:scroll":n.scroll=u.state;return;case"thread-page:draft":lr(n,u);return;case"thread-page:dirty":n.dirty=u.custom,n===r&&z();return;case"thread-page:clean":n.dirty=!1,n===r&&z();return;case"thread-page:typing":n.typing=u.active,n===r&&z();return;case"thread-page:embed-dirty":n.embedDirty=u.dirty,n===r&&z();return;case"thread-page:page-update-listen":n.pageUpdate=u.active;return;case"thread-page:page-updated":{let k=we.get(n);k&&k.nonce===u.nonce&&k.settle(u.ok);return}case"thread-page:submit":if(t.newSession&&O&&pr(n,u))return;Q(n).whenShown(()=>{n.pending+=1,Pt({config:t,token:()=>n.target.token,fetchImpl:y,voice:q,onAnswered:()=>Y.expectChange()},k=>{if("kind"in k&&k.kind==="thread-page:submit-result"){n.pending=Math.max(0,n.pending-1),I(n,k),n===r&&z();return}I(n,k)},u)});return;case"thread-page:open-document":Q(n).whenShown(()=>{let k=pt(u.query);if(!k.ok){h.notice(`That link cannot be opened: ${k.message}.`);return}ct(u.path,!0,he(u.fragment),k.query)});return;case"thread-page:open-file":Q(n).whenShown(()=>oe.open(u.path,u.download,u.name));return;case"thread-page:file-request":oe.fetchFor(k=>{I(n,k)},u);return;case"thread-page:fragment":n===r&&n.target.path===B.path&&n.target.query===B.query&&hr(he(u.fragment),u.step===!0),u.step===!0&&I(n,{kind:"thread-page:move-fragment",fragment:u.fragment}),t.builtinHome&&n===r&&g&&(g.target.fragment=l,g.connected&&I(g,{kind:"thread-page:move-fragment",fragment:l}));return;case"thread-page:record":Z.record(Q(n),u);return;case"thread-page:escape":q?.cancel();return;case"thread-page:draft-discard":if(!t.builtinHome)return;In(e,u,C),Ht();return;case"thread-page:grant-revoke":if(!t.builtinHome)return;Q(n).whenShown(()=>{gr(u.from,u.to)});return;default:return}}function lr(n,s){let u=s.embed?s.embed.documentPath:n.target.path,k=s.embed?s.embed.sessionId:t.session,T={form:s.form,fields:s.fields,focus:s.focus,savedAtMs:f(),revision:n.target.revision};if(s.cleared.length>0&&!s.embed&&S.set(`${u}:${s.form.key}`,s.cleared),s.embed){let P=Me(e,{session:k,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:f});for(let re of P.put(u,T))I(n,{kind:"thread-page:draft-notice",text:re});return}let A=n.handed.get(s.form.key);if(A){n.handed.delete(s.form.key);for(let[P,re]of Object.entries(A.fields)){let Be=s.fields[P];if(JSON.stringify(Be)!==JSON.stringify(re)&&typeof re=="string"&&re!==""&&!t.builtinHome&&!t.newSession)for(let dt of An(e,{session:t.session,documentPath:u,key:s.form.key,label:Rt(s.form.key),field:P,value:re,reason:"field-filled",atMs:f()},C))I(n,{kind:"thread-page:draft-notice",text:dt})}Ut(n)}for(let P of F.put(u,T))I(n,{kind:"thread-page:draft-notice",text:P})}function cr(n){let s=new Map(F.forDocument(n.target.path).map(k=>[k.form.key,k])),u=[];for(let k of n.handed.keys()){let T=s.get(k);if(T)for(let[A,P]of Object.entries(T.fields))typeof P=="string"&&P!==""&&u.push({session:t.session,documentPath:n.target.path,key:k,label:Rt(k),field:A,value:P,reason:"not-on-this-version",atMs:T.savedAtMs})}return u}function Ut(n){if(!(t.builtinHome||t.newSession))for(let s of Mn(e,t.session,n.target.path,cr(n),C))I(n,{kind:"thread-page:draft-notice",text:s})}function Ht(){r&&I(r,{kind:"thread-page:drafts",leftovers:At(e,t.drafts.retentionMs,f())})}let ge=null,dr=new Set(["session.reply","storage.set","storage.setMany"]);function qt(){return j.decide().mode==="record"}function ur(){try{e.history.replaceState(me(),"",e.location.href)}catch{}}function Wt(n){let s=ge??[];ge=null;for(let u of s)n?u.fail(n):u.run()}function fr(n,s){let u=O;if(ge)return s.method==="storage.get"?(I(n,u.storage(s)),!0):dr.has(s.method)?(ge.push({run:()=>Z.bridge(Q(n),s),fail:P=>{I(n,N(s.id,P.code,P.message,P.reason))}}),!0):!1;let k=u.storage(s);if(k)return I(n,k),!0;if(s.method!=="session.reply")return!1;let T=qt(),A=E(s.params)&&typeof s.params.idempotencyKey=="string"?`reply:${s.params.idempotencyKey}`:null;return!T&&!(A&&u.sentBefore(A))?(I(n,N(s.id,"unavailable",de.startNeedsReader,"not_started")),!0):(A&&!u.sentBefore(A)&&(u.noteSent(A),ur()),ge=[],Z.bridge(Q(n),s,{block:{opening:u.opening,gesture:T,held:u.held()},onStarted:Gt,onSettled:P=>Wt(P.ok?null:P.error)}),!0)}function pr(n,s){let u=O,k=(A,P,re)=>{I(n,{kind:"thread-page:submit-result",submissionId:s.submissionId,ok:A,error:P,message:re.slice(0,512)})};if(ge)return ge.push({run:()=>ve(n,s),fail:A=>k(!1,A.code,A.message)}),!0;if(s.files.length>0)return k(!1,"unavailable",`${de.notStartedFiles.replace(/\\.$/,"")} (not_started).`),!0;if(!qt())return k(!1,"unavailable",`${de.startNeedsReader.replace(/\\.$/,"")} (not_started).`),!0;ge=[];let T={opening:u.opening,gesture:!0,held:u.held()};return Q(n).whenShown(()=>{n.pending+=1,Pt({config:t,token:()=>n.target.token,fetchImpl:y,voice:q,onAnswered:()=>Y.expectChange(),start:{block:T,onStarted:Gt}},A=>{if("kind"in A&&A.kind==="thread-page:submit-result"){n.pending=Math.max(0,n.pending-1),I(n,A),Wt(A.ok?null:{code:A.error??"unavailable",message:A.message??"Could not send"}),n===r&&z();return}I(n,A)},s)}),!0}function Gt(n){if(!t.newSession)return;t.newSession=!1,t.session=n.session,t.actionToken=n.actionToken,t.expiresAt=n.expiresAt,t.documentUrl=n.documentUrl,t.filesUrl=n.filesUrl;for(let u of[r,g])u&&(u.target.token=n.actionToken,u.target.documentUrl=n.documentUrl,u.target.expiresAt=n.expiresAt);let s=Me(e,{session:n.session,retentionMs:t.drafts.retentionMs,perSessionBytes:t.drafts.perSessionBytes,now:f,onFallback:()=>h.notice(_t)});for(let u of F.list())s.put(u.documentPath,u.record);F.clearSession(),F=s;try{e.history.replaceState(me(),"",`${t.routes.page}?${new URLSearchParams({session:n.session})}${l}`)}catch{}r&&I(r,{kind:"thread-page:session",siteRoot:n.siteRoot,uploads:!0}),Y.retarget()}function jt(){if(t.builtinHome)for(let n of[r,g])n&&I(n,{kind:"thread-page:grants",grants:t.grants})}async function gr(n,s){let u={actionToken:t.actionToken,action:"revokeGrant",target:s,from:n};try{let k=await y(t.routes.chromeAction,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(u)}),T=await k.json().catch(()=>null);if(!k.ok||!E(T)||T.ok!==!0)throw new Error(E(T)&&typeof T.message=="string"&&T.message||`Request failed (${k.status})`);t.grants=t.grants.filter(A=>!(A.from===n&&A.sessionId===s)),jt(),Y.pollNow()}catch(k){h.notice(k instanceof Error?k.message:"Could not revoke")}}e.addEventListener("message",n=>{let s=n.data;if(!un(s))return;let u=r&&n.source===r.element.contentWindow?r:g&&n.source===g.element.contentWindow?g:null;if(!u)return;if(u.connected){u===r&&Oe();return}let k=n.ports.length===1?n.ports[0]:void 0;k&&(ue(u,k),u===r&&s.pageRevision!==u.target.revision&&Y.pollNow())});async function it(n,s){let u={actionToken:t.actionToken,path:n,query:s};try{let k=await y(t.routes.documentSession,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify(u)}),T=await k.json().catch(()=>null);if(!k.ok||!E(T)||T.ok!==!0||typeof T.actionToken!="string"||typeof T.pageRevision!="string"||typeof T.documentUrl!="string"||typeof T.path!="string"||typeof T.expiresAt!="number")return E(T)&&typeof T.message=="string"&&T.message||"That page could not be opened";let A=T.source==="offline"||T.source==="archived"?T.source:"live";return{documentUrl:T.documentUrl,path:T.path,query:typeof T.query=="string"?T.query:"",fragment:"",token:T.actionToken,revision:T.pageRevision,expiresAt:T.expiresAt,source:A,empty:T.empty===!0,deferredFiles:Array.isArray(T.deferredFiles)?T.deferredFiles.filter(P=>typeof P=="string"):[]}}catch{return"The host could not be reached"}}let at=!1;async function Oe(){if(!(at||c==="DELETED")){if(m>=t.reload.loopCount){if(c="STOPPED",r){try{r.port?.close()}catch{}r.port=null}h.set(zn);return}m+=1,at=!0;try{if(!t.navigable){e.location.reload();return}c="RELOAD";let n=await it(B.path,B.query);if(typeof n=="string"){e.location.reload();return}n.fragment=l,pe(n,"reload")}finally{at=!1}}}function _e(n,s){let u=new URL(e.location.href);for(let T of[...u.searchParams.keys()])T!=="session"&&!(t.newSession&&T==="workspace")&&!(t.builtinHome&&T==="builtin")&&u.searchParams.delete(T);let k=n===Yt&&!s?"":`${n}${s}`;return k&&u.searchParams.set("path",k),`${u.pathname}${u.search}${l}`}function me(n=B.path,s=B.query){let u=t.newSession&&O?{[et]:O.opening,[tt]:O.starts()}:{};return{[We]:n,[ot]:l,[rr]:s,[$t]:r?lt(r):null,...u}}function lt(n){let s=M.get(n);return s||M.set(n,s=`${R}.${L+=1}`),s}function zt(n){let s=e.history.state;if(!(!a||!E(s)||typeof s[We]!="string"))try{e.history.replaceState({...s,[$t]:lt(n)},"",e.location.href)}catch{}}function mr(n,s,u,k){return!r?.shown||g||D||n[$t]!==lt(r)||s!==B.path||u!==B.query||s!==r.target.path||u!==r.target.query||!I(r,{kind:"thread-page:move-fragment",fragment:k})?!1:(ce+=1,l=k,!0)}function Vt(n){ce+=1,l=n;for(let s of[r,g])s&&(s.target.fragment=n,s.connected&&I(s,{kind:"thread-page:move-fragment",fragment:n}))}function hr(n,s){if(!(!a||n===l)){l=n;try{s&&!t.newSession?e.history.pushState(me(),"",_e(B.path,B.query)):e.history.replaceState(me(),"",_e(B.path,B.query))}catch{}}}async function ct(n,s=!0,u="",k=""){if(!t.navigable||!ee(n))return!1;let T=++ce;if(n===B.path&&k===B.query){if(u!==l){let P=await it(n,k);return T!==ce||typeof P=="string"?!1:(P.fragment=u,l=u,pe(P,"document"),s&&e.history.pushState(me(n,k),"",_e(n,k)),!0)}return!1}let A=await it(n,k);if(T!==ce)return!1;if(typeof A=="string")return h.notice(A),!1;if(A.fragment=u,l=u,B={path:n,query:k},d=null,pe(A,s?"document":"history"),s)try{e.history.pushState(me(n,k),"",_e(n,k))}catch{}return!0}if(a){try{e.history.replaceState(me(),"",_e(t.documentPath,t.documentQuery))}catch{}e.addEventListener("popstate",n=>{let s=n.state;if(!E(s)||typeof s[We]!="string")return;if(t.builtinHome){Vt(he(s[ot]));return}let u=pt(s[rr]);mr(s,s[We],u.ok?u.query:"",he(s[ot]))||ct(s[We],!1,he(s[ot]),u.ok?u.query:"")}),t.builtinHome&&e.addEventListener("hashchange",()=>{let n=he(e.location.hash);if(n!==l){Vt(n);try{e.history.replaceState(me(),"",e.location.href)}catch{}}})}p.addEventListener("visibilitychange",()=>{p.visibilityState==="hidden"&&r&&W(r),z()}),e.addEventListener("storage",n=>{n.key!==null&&!n.key.startsWith(Ue)&&!n.key.startsWith("up:draft")||(t.builtinHome?Ht():r&&r.shown&&!t.newSession&&Dn(e,t.session,r.target.path,C))});let Pe=Nt(p,{documentUrl:t.documentUrl,path:t.documentPath,query:t.documentQuery,fragment:l,token:t.actionToken,revision:t.pageRevision,expiresAt:t.expiresAt,source:t.source,empty:t.empty,deferredFiles:t.deferredFiles},!1);return r=Pe,o.frameHost.appendChild(Pe.element),zt(Pe),ne(Pe,t.reload.waitMs,()=>{Pe.connected||Oe()}),Y.start(),{state:()=>c,shownFrame:()=>r?.element??null,handOversWaiting:()=>we.size,incomingFrame:()=>g?.element??null,poller:Y,notice:h,get store(){return F},confirmer:te,voice:q,openDocument:ct}}var So=gn(document.currentScript),st=e=>document.getElementById(e),sr=st("tp-notice"),ir=st("tp-frame-host"),ar=st("tp-dialog");if(!sr||!ir||!ar)throw new Error("The shell\'s document is incomplete");or(window,So,{notice:sr,frameHost:ir,dialog:ar,recorder:st("tp-recorder")});})();';
 
 // ../pages-core/src/serving/shell-html.ts
 var SHELL_CSS = `:root{color-scheme:light dark;font:14px/1.4 system-ui,sans-serif;--bg:#f7f7f5;--surface:#fff;--ink:#17181b;--muted:#676c75;--line:#dfe0e3;--accent:#315fc5;--warn:#a54312}

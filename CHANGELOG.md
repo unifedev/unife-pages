@@ -1,8 +1,18 @@
 # Changelog
 
-Derived from the private monorepo's CHANGELOG (`unifedev/unife` f305c2b): the parts that
+Derived from the private monorepo's CHANGELOG (`unifedev/unife` e003162): the parts that
 concern the Claude Code plugin and the server inlined into it. References to `reviews/`, `NOTES.md`, `DESIGN.md`
 and branch names are to that monorepo.
+
+## 0.6.37 — 2026-11-14
+
+The built-in home is a list of agents by workspace and, beside it, New agent or one agent's chat, and a page can open
+another page in a new tab with `pages.open { newTab: true }` (unife-home-is-a-chat-list-and-a-chat).
+
+`@unifedev/claude-pages` 0.6.37; `@unifedev/pages-core` 0.6.17. No agent text changed: the agents' guide does not name
+`newTab` yet. The bb plugin `@unifedev/thread-pages` stays 1.14.13 and gets nothing from this release, until a page
+learns which workspaces have a page to open. The home's phone layout and Safari's handling of the new tab are not yet
+tried on a phone.
 
 ## 0.6.36 — 2026-11-14
 
